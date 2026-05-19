@@ -887,8 +887,22 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
 }
 
 fn render_user_block(text: &str, width: usize, theme: &Theme) -> Vec<Line<'static>> {
-    let content_width = width.saturating_sub(theme.thread_gutter);
+    let content_width = width.saturating_sub(theme.thread_gutter + theme.user_right_gap);
     let mut lines = Vec::new();
+    let leading = theme
+        .user_leading_bar
+        .to_string()
+        .repeat(theme.thread_gutter);
+    lines.push(Line::from(vec![
+        Span::styled(
+            leading.clone(),
+            Style::default()
+                .fg(theme.thread_accent)
+                .bg(theme.thread_accent),
+        ),
+        Span::styled(" ".repeat(content_width), Style::default().bg(theme.user_bg)),
+        Span::raw(" ".repeat(theme.user_right_gap)),
+    ]));
     for row in wrap_plain_text(text, content_width.saturating_sub(theme.user_pad * 2)) {
         let content = format!(
             "{}{}{}",
@@ -899,16 +913,25 @@ fn render_user_block(text: &str, width: usize, theme: &Theme) -> Vec<Line<'stati
         let padded = pad_to_width(&content, content_width);
         lines.push(Line::from(vec![
             Span::styled(
-                format!(
-                    "{}{}",
-                    theme.thread_bar_char,
-                    " ".repeat(theme.thread_gutter.saturating_sub(1))
-                ),
-                Style::default().fg(theme.thread_accent),
+                leading.clone(),
+                Style::default()
+                    .fg(theme.thread_accent)
+                    .bg(theme.thread_accent),
             ),
             Span::styled(padded, Style::default().bg(theme.user_bg).fg(theme.text)),
+            Span::raw(" ".repeat(theme.user_right_gap)),
         ]));
     }
+    lines.push(Line::from(vec![
+        Span::styled(
+            leading,
+            Style::default()
+                .fg(theme.thread_accent)
+                .bg(theme.thread_accent),
+        ),
+        Span::styled(" ".repeat(content_width), Style::default().bg(theme.user_bg)),
+        Span::raw(" ".repeat(theme.user_right_gap)),
+    ]));
     lines
 }
 
@@ -921,7 +944,10 @@ fn render_thought_header(thought: &ThoughtData, width: usize, theme: &Theme) -> 
             None => "Thought".to_string(),
         };
     }
-    let body_width = width.saturating_sub(theme.thread_gutter);
+    let body_width = width
+        .saturating_sub(theme.thread_gutter)
+        .saturating_sub(theme.answer_left_pad)
+        .saturating_sub(theme.answer_right_pad);
     let label = truncate_to_width(&format!("{marker}  {summary}"), body_width);
     thread_line(
         Line::styled(
@@ -942,21 +968,32 @@ fn thread_line(
     theme: &Theme,
     tone: ThreadTone,
 ) -> Line<'static> {
-    let body_width = width.saturating_sub(theme.thread_gutter);
+    let content_pad = match tone {
+        ThreadTone::Rail | ThreadTone::Thought => theme.answer_left_pad,
+    };
+    let right_pad = match tone {
+        ThreadTone::Rail | ThreadTone::Thought => theme.answer_right_pad,
+    };
+    let body_width = width
+        .saturating_sub(theme.thread_gutter)
+        .saturating_sub(content_pad);
+    let body_width = body_width.saturating_sub(right_pad);
     let mut spans = vec![Span::styled(
-        format!(
-            "{}{}",
+        centered_bar(
             match tone {
                 ThreadTone::Rail => theme.rail_char,
                 ThreadTone::Thought => theme.thought_bar_char,
             },
-            " ".repeat(theme.thread_gutter.saturating_sub(1))
+            theme.thread_gutter,
         ),
         Style::default().fg(match tone {
             ThreadTone::Rail => theme.rail,
             ThreadTone::Thought => theme.thought_bar,
         }),
     )];
+    if content_pad > 0 {
+        spans.push(Span::raw(" ".repeat(content_pad)));
+    }
     if line.spans.is_empty() {
         spans.push(Span::raw(" ".repeat(body_width)));
         return Line::from(spans);
@@ -970,6 +1007,9 @@ fn thread_line(
     if current_width < body_width {
         spans.push(Span::raw(" ".repeat(body_width - current_width)));
     }
+    if right_pad > 0 {
+        spans.push(Span::raw(" ".repeat(right_pad)));
+    }
     Line::from(spans)
 }
 
@@ -978,17 +1018,17 @@ fn empty_content_line(width: usize, theme: &Theme) -> Line<'static> {
 }
 
 fn render_footer_line(footer: &str, width: usize, theme: &Theme) -> Line<'static> {
-    let body_width = width.saturating_sub(theme.thread_gutter);
+    let body_width = width
+        .saturating_sub(theme.thread_gutter)
+        .saturating_sub(theme.answer_left_pad)
+        .saturating_sub(theme.answer_right_pad);
     let label = truncate_to_width(footer, body_width.saturating_sub(4));
     let mut spans = vec![
         Span::styled(
-            format!(
-                "{}{}",
-                theme.rail_char,
-                " ".repeat(theme.thread_gutter.saturating_sub(1))
-            ),
+            centered_bar(theme.rail_char, theme.thread_gutter),
             Style::default().fg(theme.rail),
         ),
+        Span::raw(" ".repeat(theme.answer_left_pad)),
         Span::styled(theme.footer_icon.to_string(), Style::default().fg(theme.footer_icon_color)),
         Span::raw(" "),
     ];
@@ -1009,6 +1049,9 @@ fn render_footer_line(footer: &str, width: usize, theme: &Theme) -> Line<'static
         .saturating_sub(theme.thread_gutter);
     if used < body_width {
         spans.push(Span::raw(" ".repeat(body_width - used)));
+    }
+    if theme.answer_right_pad > 0 {
+        spans.push(Span::raw(" ".repeat(theme.answer_right_pad)));
     }
     Line::from(spans)
 }
@@ -1649,6 +1692,18 @@ fn string_width(text: &str) -> usize {
     UnicodeWidthStr::width(text)
 }
 
+fn centered_bar(bar: char, width: usize) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let center = width / 2;
+    let mut output = String::with_capacity(width);
+    for index in 0..width {
+        output.push(if index == center { bar } else { ' ' });
+    }
+    output
+}
+
 fn render_mermaid_ascii(graph: &MermaidGraph, width: usize) -> Vec<String> {
     let mut lines = Vec::new();
     for (index, edge) in graph.edges.iter().enumerate() {
@@ -1958,10 +2013,13 @@ struct Theme {
     mermaid_text: Color,
     rail_char: char,
     thought_bar_char: char,
-    thread_bar_char: char,
+    user_leading_bar: char,
     footer_icon: char,
     thread_gutter: usize,
     user_pad: usize,
+    user_right_gap: usize,
+    answer_left_pad: usize,
+    answer_right_pad: usize,
 }
 
 #[derive(Clone, Deserialize)]
@@ -2051,7 +2109,7 @@ impl Default for Theme {
             scroll_track: Color::Rgb(107, 116, 144),
             status_active_bg: Color::Rgb(42, 38, 84),
             status_idle_bg: Color::Rgb(28, 34, 55),
-            user_bg: Color::Rgb(24, 24, 24),
+            user_bg: Color::Rgb(32, 33, 36),
             code_bg: Color::Rgb(18, 20, 24),
             rail: Color::Rgb(150, 150, 156),
             thread_accent: Color::Rgb(0, 210, 230),
@@ -2065,10 +2123,13 @@ impl Default for Theme {
             mermaid_text: Color::Rgb(214, 218, 228),
             rail_char: '│',
             thought_bar_char: '│',
-            thread_bar_char: '│',
+            user_leading_bar: '│',
             footer_icon: '◻',
-            thread_gutter: 3,
+            thread_gutter: 1,
             user_pad: 1,
+            user_right_gap: 3,
+            answer_left_pad: 4,
+            answer_right_pad: 4,
         }
     }
 }
