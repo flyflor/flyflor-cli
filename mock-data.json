@@ -1,0 +1,76 @@
+{
+  "turns": [
+    {
+      "user": "你好",
+      "thought": {
+        "summary": "Thought for 493ms",
+        "duration_ms": 493,
+        "expanded": false,
+        "content": "## Greeting intent\n先给出一段最简单的问候，用于校验会话块的基础层级和垂直节奏。\n\n```mermaid\nflowchart TD\n    A[User says hello] --> B[Assistant prepares greeting]\n    B --> C[Render answer]\n```\n"
+      },
+      "answer": "你好！我是 Sisyphus，你的 AI 协作伙伴。有什么需要帮忙的吗？无论是代码、架构设计、调试，还是其他技术问题，随时告诉我。",
+      "footer": "Sisyphus - Ultraworker · DeepSeek V4 Flash · 2.6s"
+    },
+    {
+      "user": "另外要完美适配 markdown，我需要用复杂内容测试，包括表格、引用、代码块和流程图。",
+      "thought": {
+        "summary": "Thought for 728ms",
+        "duration_ms": 728,
+        "expanded": true,
+        "content": "### Markdown coverage\n当前 TUI 的重点不是做完整 CommonMark 解析器，而是保证这些高频块在终端下有稳定视觉：\n- headings\n- ordered / unordered lists\n- blockquote\n- fenced code\n- tables\n- mermaid source preview\n\n> mermaid 在 TUI 里先渲染成代码型流程图描述，后续如果要 ASCII graph 再单独做。\n"
+      },
+      "answer": "# Markdown Test Matrix\n下面这段内容就是后续要长期保留的测试数据。\n\n## Inline styles\n支持 **bold**、*italic*、`inline code` 和 [links](https://example.com/docs)。\n\n## Quote\n> Flyflor TUI should render markdown blocks with deterministic wrapping.\n\n## Checklist\n1. Resize 后布局不炸。\n2. Scroll position 能重算。\n3. Thought 折叠后高度变化正确。\n\n## Table\n| case | input | expected |\n| --- | --- | --- |\n| short | single line | no wrap glitch |\n| medium | markdown table | aligned columns |\n| long | multi paragraph answer | stable scrolling |\n\n## Code\n```rust\nfn render_markdown(input: &str) -> Vec<String> {\n    input.lines().map(str::to_string).collect()\n}\n```\n\n## Mermaid\n```mermaid\nflowchart LR\n    Input[User Input] --> Parse[Markdown Parse]\n    Parse --> Layout[Compute Visual Lines]\n    Layout --> Scroll[Update Scrollbar]\n    Scroll --> Draw[Draw TUI]\n```\n\n---\n\n### Follow-up\n后面可以再补：嵌套列表、超长链接、混合中英文宽度、超宽表格裁剪。",
+      "footer": "flyflor · markdown suite · 728ms · local"
+    },
+    {
+      "user": "我还要验证超长段落、连续消息发送，以及窗口 resize 后滚动位置是否正确。",
+      "thought": {
+        "summary": "Thought for 604ms",
+        "duration_ms": 604,
+        "expanded": false,
+        "content": "## Stress cases\n这轮主要覆盖三件事：\n1. 长段落自动换行\n2. 连续 turn 之间间距稳定\n3. 收缩窗口后每个 block 的可见高度重新计算\n"
+      },
+      "answer": "## Long Paragraph\n为了验证终端宽度变化时的行为，这里故意保留一段很长的连续说明文本：Flyflor 的左侧会话区必须在窄窗口、中等窗口和宽窗口下都保持相同的信息层级，不能因为某个 block 内部换行发生变化就让 Thought 点击区域错位，也不能让滚动条 thumb 的位置和真实滚动偏移脱节，否则整个交互就会显得非常不可靠。\n\n- 连续发送时，新 turn 追加到底部\n- 若当前 stick to bottom，则自动跟随到底部\n- 若用户已经上滚查看历史，则不能强行跳底\n\n```text\nresize -> recompute lines -> recompute max_scroll -> keep relative offset\n```\n",
+      "footer": "flyflor · stress test · 604ms · local"
+    }
+  ],
+  "todos": [
+    { "marker": "○", "label": "重构左侧 turn 渲染模型", "status": "进行中", "active": true },
+    { "marker": "○", "label": "接入 markdown block 渲染", "status": "进行中", "active": true },
+    { "marker": "›", "label": "Thought 点击展开/折叠", "status": "待验证", "active": false },
+    { "marker": "○", "label": "完善表格与流程图测试", "status": "待验证", "active": false },
+    { "marker": "○", "label": "修正 resize 后 scroll 状态", "status": "待验证", "active": false },
+    { "marker": "○", "label": "右侧 panel 重绘优化", "status": "待开始", "active": false },
+    { "marker": "○", "label": "继续贴近原型细节", "status": "待开始", "active": false }
+  ],
+  "right_panel": {
+    "thinking_label": "Ctrl+B Thinking",
+    "blackboard_status": "active · 3 steps · 2 decisions",
+    "questions": [
+      "  1. 静态 TUI 要先完成结构还原。",
+      "› 2. 会话 / Thought / 回答 要拆开渲染。",
+      "   3. Markdown 需要复杂测试样本。"
+    ],
+    "goal_lines": [
+      "先重构左侧为结构化 turn，再补 markdown block 渲染。",
+      "当前优先级：点击展开 Thought、表格、代码块、流程图预览、",
+      "以及窗口 resize 后重新计算滚动位置与命中区域。"
+    ],
+    "model_stats": [
+      { "label": "model", "value": "flyflor-pro" },
+      { "label": "provider", "value": "OpenTUI" },
+      { "label": "temperature", "value": "0.4" },
+      { "label": "top_p", "value": "1.0" }
+    ],
+    "token_stats": [
+      { "label": "input", "value": "4,912" },
+      { "label": "output", "value": "2,048" },
+      { "label": "total", "value": "6,960" }
+    ],
+    "context_total": "128K",
+    "context_percent": "31.4%",
+    "context_bar": "■■■■■■■■■□□□□□□□□□□□",
+    "context_usage": "40,192 / 128,000",
+    "footer": "◔ 00:16:42  |  ◌  3 turns  |  ⌂  local  |  ● healthy"
+  }
+}

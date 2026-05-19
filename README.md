@@ -1,36 +1,44 @@
 # flyflor-cli
 
-Mock Flyflor TUI built on OpenTUI. This is a first-pass prototype for validating the hard part: a large, cell-aware virtual chat viewport with fixed side panels and terminal input chrome.
+Rust TUI prototype for the Flyflor chat client.
 
 ## Run
 
 ```bash
-bun install
-bun run dev
+cargo run
 ```
 
-Keys:
-
-- `j` / `Down`: scroll down
-- `k` / `Up`: scroll up
-- `PageDown` / `Space`: page down
-- `PageUp`: page up
-- `Home`: top
-- `End` / `Ctrl+E`: bottom
-- Mouse wheel over the left chat pane scrolls the virtual viewport
-- Drag the left scrollbar thumb to jump through the virtual list
-- Type a message and press `Enter` to append a mock user/assistant turn
-- `Esc` or `Ctrl+C`: quit
-
-## Verify
+Dev mode:
 
 ```bash
-bun run check
-bun run snapshot
+cargo run -- --dev
 ```
 
-The snapshot script uses OpenTUI's official test renderer and mock input/mouse helpers to prove message submission, bottom anchoring, mouse wheel scrolling, and scrollbar dragging move the visible window.
+or
 
-## Implementation Notes
+```bash
+FLYFLOR_DEV=1 cargo run
+```
 
-The left chat area is a custom `VirtualChatRenderable`, not a plain `ScrollBox` full of thousands of child renderables. It measures each block at the current terminal cell width, caches wrapped rows by block, stores block heights in a Fenwick tree, and renders only the visible rows plus a small overscan region.
+## Current scope
+
+- Static mock UI based on the design draft
+- Full-history chat viewport with keyboard scrolling
+- Right-side status panel and bottom composer shell
+
+## Controls
+
+- `q` or `Ctrl+C`: quit
+- `F2` or `Ctrl+D`: toggle dev mode
+- `Up` / `k`: scroll up
+- `Down` / `j`: scroll down
+- `PageUp`: scroll one page up
+- `PageDown` or `Space`: scroll one page down
+- `g`: jump to top
+- `G`: jump to bottom
+
+## Dev mode
+
+- Shows layout rectangles, viewport size, and scroll state in an overlay
+- Keeps product UI intact and layers debug information on top
+- Intended for spacing, sizing, and scroll-behavior iteration while rebuilding the design
