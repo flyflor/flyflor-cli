@@ -43,7 +43,10 @@ impl AppState {
         focus.set(FocusTarget::ConversionInput);
 
         Self {
-            header: HeaderState::default(),
+            header: HeaderState {
+                status_text: String::from("flyflor · ready"),
+                ..HeaderState::default()
+            },
             layout: ContextLayoutState {
                 conversion: ConversionState::new(turns),
                 bulletin_board: BulletinBoardState::new(right_panel, TodoState::new(todos)),

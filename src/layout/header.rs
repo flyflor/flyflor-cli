@@ -24,7 +24,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &HeaderState, theme: &Theme)
     ]);
     let right = Line::from(vec![
         Span::styled("●", Style::default().fg(theme.green)),
-        Span::styled(" flyflor · ready", Style::default().fg(theme.text)),
+        Span::styled(format!(" {}", state.status_text), Style::default().fg(theme.text)),
         if state.copied {
             Span::styled(" · COPIED", Style::default().fg(theme.green))
         } else {

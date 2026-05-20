@@ -1,11 +1,16 @@
 mod app;
+mod cli;
 mod context;
+mod gateway_core;
 mod layout;
+mod protocol;
+mod runtime;
 mod state;
 
 use std::{env, io, time::Duration};
 
 use app::App;
+use cli::{CliConfig, KernelMode};
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind,
@@ -23,11 +28,13 @@ use ratatui::{
     widgets::Paragraph,
 };
 use serde::Deserialize;
+use runtime::RuntimeBridge;
 use state::AppState;
 use unicode_width::UnicodeWidthStr;
 
 fn main() -> io::Result<()> {
-    let mouse_capture = mouse_capture_enabled();
+    let config = CliConfig::from_env().map_err(io::Error::other)?;
+    let mouse_capture = config.mouse_capture.unwrap_or_else(mouse_capture_enabled);
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -36,7 +43,7 @@ fn main() -> io::Result<()> {
         execute!(stdout, EnableMouseCapture)?;
     }
     let terminal = ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(stdout))?;
-    let result = run(terminal, mouse_capture);
+    let result = run(terminal, mouse_capture, config);
     disable_raw_mode()?;
     pop_keyboard_enhancement_flags(&mut io::stdout());
     if mouse_capture {
@@ -46,19 +53,36 @@ fn main() -> io::Result<()> {
     result
 }
 
-fn run(mut terminal: DefaultTerminal, mouse_capture_enabled_by_default: bool) -> io::Result<()> {
+fn run(
+    mut terminal: DefaultTerminal,
+    mouse_capture_enabled_by_default: bool,
+    config: CliConfig,
+) -> io::Result<()> {
     let mock = load_mock_data();
-    let state = AppState::new(
-        mock.turns,
-        mock.right_panel,
-        mock.todos,
-        dev_mode_enabled(),
-        !mouse_capture_enabled_by_default,
-    );
+    let mut bridge = RuntimeBridge::new(config.clone());
+    if !matches!(config.kernel_mode, KernelMode::Mock) {
+        bridge.initialize().map_err(io::Error::other)?;
+    }
+    let (turns, right_panel, todos) = if matches!(config.kernel_mode, KernelMode::Mock) {
+        bridge.turns = mock.turns.clone();
+        bridge.right_panel = mock.right_panel.clone();
+        bridge.todos = mock.todos.clone();
+        (mock.turns, mock.right_panel, mock.todos)
+    } else {
+        (bridge.turns.clone(), bridge.right_panel.clone(), bridge.todos.clone())
+    };
+    let state = AppState::new(turns, right_panel, todos, config.dev_mode, !mouse_capture_enabled_by_default);
     let mut app = App::new(state);
     let mut mouse_capture_enabled = mouse_capture_enabled_by_default;
 
     loop {
+        bridge.tick();
+        if !matches!(config.kernel_mode, KernelMode::Mock) {
+            app.state.layout.conversion.turns = bridge.turns.clone();
+            app.state.layout.bulletin_board.todo.items = bridge.todos.clone();
+            app.state.layout.bulletin_board.apply_right_panel_data(bridge.right_panel.clone());
+            app.state.header.status_text = bridge.header_status();
+        }
         if app.state.native_selection_mode == mouse_capture_enabled {
             if app.state.native_selection_mode {
                 execute!(io::stdout(), DisableMouseCapture)?;
@@ -81,12 +105,21 @@ fn run(mut terminal: DefaultTerminal, mouse_capture_enabled_by_default: bool) ->
         }
 
         match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => app.handle_key(key),
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                if let Some(text) = app.handle_key(key) {
+                    if matches!(config.kernel_mode, KernelMode::Mock) {
+                        bridge.add_mock_turn(text);
+                    } else {
+                        let _ = bridge.send_input(text);
+                    }
+                }
+            }
             Event::Mouse(mouse) => app.handle_mouse(mouse),
             _ => {}
         }
 
         if app.state.should_quit {
+            bridge.shutdown();
             return Ok(());
         }
     }
@@ -1317,6 +1350,24 @@ pub struct RightPanelData {
     footer: String,
 }
 
+impl RightPanelData {
+    pub fn default_live() -> Self {
+        Self {
+            thinking_label: String::from("booting"),
+            blackboard_status: String::from("connection: idle"),
+            questions: vec![String::from("› waiting for runtime")],
+            goal_lines: vec![String::from("waiting for flyflor core")],
+            model_stats: vec![],
+            token_stats: vec![],
+            context_total: String::from("planning"),
+            context_percent: String::from("0"),
+            context_bar: String::from("□□□□□□□□□□"),
+            context_usage: String::from("0 todo items"),
+            footer: String::from("managed-local · idle"),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct MockData {
     turns: Vec<Turn>,
@@ -1365,13 +1416,6 @@ impl Default for Theme {
 
 fn load_mock_data() -> MockData {
     serde_json::from_str(include_str!("../mock-data.json")).expect("invalid mock-data.json")
-}
-
-fn dev_mode_enabled() -> bool {
-    env::args().any(|arg| arg == "--dev")
-        || env::var("FLYFLOR_DEV")
-            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "on" | "ON"))
-            .unwrap_or(false)
 }
 
 fn mouse_capture_enabled() -> bool {

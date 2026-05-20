@@ -53,6 +53,20 @@ impl BulletinBoardState {
         self.focused = focused;
     }
 
+    pub fn apply_right_panel_data(&mut self, right_panel: RightPanelData) {
+        self.questions.thinking_label = right_panel.thinking_label;
+        self.questions.questions = right_panel.questions;
+        self.details.blackboard_status = right_panel.blackboard_status;
+        self.details.goal_lines = right_panel.goal_lines;
+        self.details.model_stats = right_panel.model_stats;
+        self.details.token_stats = right_panel.token_stats;
+        self.details.context_total = right_panel.context_total;
+        self.details.context_percent = right_panel.context_percent;
+        self.details.context_bar = right_panel.context_bar;
+        self.details.context_usage = right_panel.context_usage;
+        self.details.footer = right_panel.footer;
+    }
+
     pub fn refresh_lines(&mut self, theme: &Theme, width: usize) {
         let mut lines = Vec::new();
         let mut plain_lines = Vec::new();

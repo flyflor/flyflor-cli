@@ -104,7 +104,7 @@ impl App {
             .set_focused(current == Some(FocusTarget::BulletinBoard));
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) {
+    pub fn handle_key(&mut self, key: KeyEvent) -> Option<String> {
         self.state.copied_notice = false;
 
         if self.state.native_selection_mode {
@@ -118,17 +118,17 @@ impl App {
                 }
                 _ => {}
             }
-            return;
+            return None;
         }
 
         if Self::is_copy_shortcut(&key) {
             let _ = self.copy_active_selection();
-            return;
+            return None;
         }
 
         if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
             let _ = self.copy_active_selection();
-            return;
+            return None;
         }
 
         match key.code {
@@ -149,12 +149,12 @@ impl App {
         if is_tab(&key) {
             self.state.focus.next();
             self.sync_focus();
-            return;
+            return None;
         }
         if is_backtab(&key) {
             self.state.focus.prev();
             self.sync_focus();
-            return;
+            return None;
         }
 
         match self.state.focus.current().copied() {
@@ -172,9 +172,15 @@ impl App {
                 _ => {}
             },
             Some(FocusTarget::ConversionInput) => {
-                if self.state.layout.conversion.handle_input_key(key) {
-                    self.state.should_quit = true;
-                    return;
+                match self.state.layout.conversion.handle_input_key(key) {
+                    crate::context::conversion::state::InputAction::Quit => {
+                        self.state.should_quit = true;
+                        return None;
+                    }
+                    crate::context::conversion::state::InputAction::Submit(text) => {
+                        return Some(text);
+                    }
+                    crate::context::conversion::state::InputAction::None => {}
                 }
                 if matches!(key.code, KeyCode::Up | KeyCode::Char('k'))
                     && key.modifiers.contains(KeyModifiers::CONTROL)
@@ -194,6 +200,7 @@ impl App {
             },
             None => {}
         }
+        None
     }
 
     pub fn handle_mouse(&mut self, mouse: MouseEvent) {

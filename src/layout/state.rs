@@ -9,6 +9,7 @@ pub struct HeaderState {
     pub native_selection_mode: bool,
     pub copied: bool,
     pub footer_text: String,
+    pub status_text: String,
 }
 
 pub struct ContextLayoutState {

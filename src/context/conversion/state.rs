@@ -10,8 +10,8 @@ use ratatui_interact::{
 };
 
 use crate::{
-    ScrollState, Theme, ThoughtHitbox, Turn, apply_scroll_delta, build_runtime_turn, drag_scroll,
-    in_rect, render_turns, update_scroll_state_from_rendered,
+    ScrollState, Theme, ThoughtHitbox, Turn, apply_scroll_delta, drag_scroll, in_rect, render_turns,
+    update_scroll_state_from_rendered,
 };
 
 #[derive(Default)]
@@ -252,28 +252,26 @@ impl ConversionState {
         self.input_click_region.handle_click(x, y).is_some()
     }
 
-    pub fn handle_input_key(&mut self, key: KeyEvent) -> bool {
+    pub fn handle_input_key(&mut self, key: KeyEvent) -> InputAction {
         if is_enter(&key) {
             let text = self.input.text.trim().to_string();
             if text.is_empty() {
-                return false;
+                return InputAction::None;
             }
             if text == "/exit" {
-                return true;
+                return InputAction::Quit;
             }
-            let turn_index = self.turns.len() + 1;
-            self.turns.push(build_runtime_turn(turn_index, text));
             self.input.clear();
             self.scroll.stick_to_bottom = true;
-            return false;
+            return InputAction::Submit(text);
         }
         if is_backspace(&key) {
             self.input.delete_char_backward();
-            return false;
+            return InputAction::None;
         }
         if is_delete(&key) {
             self.input.delete_char_forward();
-            return false;
+            return InputAction::None;
         }
 
         match key.code {
@@ -290,8 +288,14 @@ impl ConversionState {
                 }
             }
         }
-        false
+        InputAction::None
     }
+}
+
+pub enum InputAction {
+    None,
+    Quit,
+    Submit(String),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
