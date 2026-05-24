@@ -300,8 +300,9 @@ fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         Span::styled("●", Style::default().fg(status_dot)),
         Span::styled(
             format!(
-                " flyflor · {} · {status_text} · {} turns",
+                " flyflor · {} · {} · {status_text} · {} turns",
                 app.interaction_mode.label(),
+                app.fork_session_label(),
                 app.turns.len()
             ),
             Style::default().fg(theme.text),
@@ -318,6 +319,13 @@ fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             Rect::new(area.x, area.y + 1, area.width, 1),
         );
     }
+}
+
+fn fork_footer_suffix(app: &App) -> String {
+    app.active_fork
+        .as_ref()
+        .map(|fork| format!("   fork {}", truncate_to_width(&fork.fork_id, 18)))
+        .unwrap_or_default()
 }
 
 fn draw_left_panel(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
@@ -553,6 +561,19 @@ fn slash_commands() -> Vec<SlashCommand> {
             kind: SlashCommandKind::Memory,
         },
     ]
+}
+
+fn slash_commands_for_fork(in_fork: bool) -> Vec<SlashCommand> {
+    let mut commands = slash_commands();
+    if in_fork {
+        commands.push(SlashCommand {
+            name: "exit fork",
+            title: "退出 fork",
+            detail: "回到父级/root 对话",
+            kind: SlashCommandKind::ExitFork,
+        });
+    }
+    commands
 }
 
 fn render_command_palette_lines(menu: &CommandPalette, theme: &Theme) -> Vec<Line<'static>> {
@@ -843,6 +864,11 @@ fn working_light_bar(width: usize, phase: usize) -> String {
         .collect()
 }
 
+fn working_shimmer_style(index: usize, phase: usize, theme: &Theme) -> Style {
+    let colors = [theme.pink, theme.purple, theme.blue, theme.purple];
+    Style::default().fg(colors[(index + phase) % colors.len()])
+}
+
 fn working_light_phase(now_ms: u64) -> usize {
     (now_ms / 360 % 8) as usize
 }
@@ -1010,6 +1036,8 @@ struct App {
     selection: TranscriptSelection,
     composer_notice: Option<ComposerNotice>,
     active_context_fork_id: Option<String>,
+    active_fork: Option<ActiveForkSession>,
+    root_turns: Vec<Turn>,
     pending_turns: HashMap<String, usize>,
     interaction_mode: InteractionMode,
     yolo_mode: bool,
@@ -1104,6 +1132,7 @@ enum SlashCommandKind {
     Blackboard,
     Todo,
     Memory,
+    ExitFork,
 }
 
 #[derive(Clone, Copy)]
@@ -1112,6 +1141,14 @@ struct SlashCommand {
     title: &'static str,
     detail: &'static str,
     kind: SlashCommandKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ActiveForkSession {
+    fork_id: String,
+    parent_fork_id: Option<String>,
+    root_id: Option<String>,
+    summary: Option<String>,
 }
 
 #[derive(Clone)]
@@ -1243,6 +1280,13 @@ impl App {
             selection: TranscriptSelection::default(),
             composer_notice: None,
             active_context_fork_id: demo_mode.then(|| "fork-demo-1".to_string()),
+            active_fork: demo_mode.then(|| ActiveForkSession {
+                fork_id: "fork-demo-1".to_string(),
+                parent_fork_id: None,
+                root_id: Some("root-demo".to_string()),
+                summary: Some("demo fork".to_string()),
+            }),
+            root_turns: Vec::new(),
             pending_turns: HashMap::new(),
             interaction_mode: if demo_mode {
                 InteractionMode::Yolo
@@ -1280,6 +1324,7 @@ impl App {
             self.interaction_mode = InteractionMode::Yolo;
             self.yolo_mode = true;
             self.pending_fork_create = true;
+            self.root_turns = self.turns.clone();
         }
         self
     }
@@ -1402,10 +1447,33 @@ impl App {
                 }
                 let _ = self.socket_tx.send(SocketCommand::ForkMemoryGet);
             }
-            SocketEvent::ForkCreated { fork_id, summary } => {
+            SocketEvent::ForkCreated {
+                fork_id,
+                parent_id,
+                root_id,
+                summary,
+            } => {
                 self.pending_fork_create = false;
+                let parent_fork_id = parent_id.or_else(|| self.active_context_fork_id.clone());
+                if self.active_fork.is_none() {
+                    self.root_turns = self.turns.clone();
+                }
                 self.active_context_fork_id = Some(fork_id.clone());
-                self.right_source.blackboard_status = format!("active fork · {fork_id}");
+                self.active_fork = Some(ActiveForkSession {
+                    fork_id: fork_id.clone(),
+                    parent_fork_id,
+                    root_id,
+                    summary: summary.clone(),
+                });
+                self.turns.clear();
+                self.pending_turns.clear();
+                self.chat_render_key = None;
+                self.left.initial_scroll_applied = false;
+                self.left.stick_to_bottom = true;
+                self.right_source.blackboard_status = format!("已进入 fork 对话 · {fork_id}");
+                let _ = self.socket_tx.send(SocketCommand::HistoryList {
+                    context_fork_id: self.active_context_fork_id.clone(),
+                });
                 if let Some(summary) = summary {
                     log_event(format!("fork created id={fork_id} summary={summary}"));
                 } else {
@@ -1452,6 +1520,18 @@ impl App {
                 .is_some_and(|turn| turn.footer.contains("streaming"))
     }
 
+    fn fork_session_label(&self) -> String {
+        self.active_fork
+            .as_ref()
+            .map(|fork| {
+                format!(
+                    "fork {}",
+                    truncate_to_width(fork.summary.as_deref().unwrap_or(&fork.fork_id), 24)
+                )
+            })
+            .unwrap_or_else(|| "root".to_string())
+    }
+
     fn toggle_interaction_mode(&mut self) {
         self.interaction_mode = self.interaction_mode.next();
         self.yolo_mode = self.interaction_mode.yolo();
@@ -1468,14 +1548,8 @@ impl App {
             self.command_palette = None;
             return;
         }
-        let query = self
-            .input
-            .trim_start_matches('/')
-            .split_whitespace()
-            .next()
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        let items = slash_commands()
+        let query = self.input.trim_start_matches('/').to_ascii_lowercase();
+        let items = slash_commands_for_fork(self.active_fork.is_some())
             .into_iter()
             .filter(|command| command.name.starts_with(query.as_str()))
             .collect::<Vec<_>>();
@@ -1580,9 +1654,10 @@ impl App {
     fn execute_slash_command(&mut self, command: SlashCommandKind) {
         match command {
             SlashCommandKind::Exit => self.should_quit = true,
+            SlashCommandKind::ExitFork => self.exit_fork_session(),
             SlashCommandKind::Help => {
                 self.right_source.blackboard_status =
-                    "命令：/help /yolo /model /status /history /fork /ask /blackboard /todo /memory · /yolo 危险：外模式会绕过沙箱/高权限执行"
+                    "命令：/help /yolo /model /status /history /fork /ask /blackboard /todo /memory · fork 中可用 /exit fork · /yolo 危险：外模式会绕过沙箱/高权限执行"
                         .to_string();
             }
             SlashCommandKind::Yolo => {
@@ -1618,7 +1693,13 @@ impl App {
             }
             SlashCommandKind::History => {
                 self.right_source.blackboard_status = "已请求刷新历史".to_string();
-                if self.socket_tx.send(SocketCommand::HistoryList).is_err() {
+                if self
+                    .socket_tx
+                    .send(SocketCommand::HistoryList {
+                        context_fork_id: self.active_context_fork_id.clone(),
+                    })
+                    .is_err()
+                {
                     self.right_source.blackboard_status =
                         "history refresh failed · socket worker is not running".to_string();
                 }
@@ -1669,6 +1750,22 @@ impl App {
                     latest_context_summary(&self.turns, ContextRowKind::Recall, "暂无回忆摘要");
             }
         }
+    }
+
+    fn exit_fork_session(&mut self) {
+        let Some(fork) = self.active_fork.take() else {
+            self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
+            return;
+        };
+        self.active_context_fork_id = fork.parent_fork_id;
+        if !self.root_turns.is_empty() {
+            self.turns = std::mem::take(&mut self.root_turns);
+        }
+        self.pending_turns.clear();
+        self.chat_render_key = None;
+        self.left.initial_scroll_applied = false;
+        self.left.stick_to_bottom = true;
+        self.right_source.blackboard_status = "已退出 fork，回到父级/root 对话".to_string();
     }
 
     fn latest_assistant_turn_index(&self) -> Option<usize> {
@@ -2023,7 +2120,10 @@ impl App {
             return false;
         };
         match row.kind {
-            ContextRowKind::Recall | ContextRowKind::Fork | ContextRowKind::Blackboard => {
+            ContextRowKind::Recall
+            | ContextRowKind::Thought
+            | ContextRowKind::Fork
+            | ContextRowKind::Blackboard => {
                 row.expanded = !row.expanded;
                 self.left.stick_to_bottom = false;
             }
@@ -2334,6 +2434,15 @@ impl App {
         }
         if text == "/exit" {
             self.should_quit = true;
+            return;
+        }
+        if text == "/exit fork" {
+            if self.active_fork.is_some() {
+                self.exit_fork_session();
+            } else {
+                self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
+            }
+            self.input.clear();
             return;
         }
         if text.starts_with('/') {
@@ -2726,23 +2835,42 @@ fn render_user_block(text: &str, width: usize, theme: &Theme) -> Vec<Line<'stati
 }
 
 fn render_context_row_header(row: &ContextRow, width: usize, theme: &Theme) -> Line<'static> {
+    render_context_row_header_with_phase(row, width, theme, 0)
+}
+
+fn render_context_row_header_with_phase(
+    row: &ContextRow,
+    width: usize,
+    theme: &Theme,
+    phase: usize,
+) -> Line<'static> {
     let marker = context_row_marker(row);
     let body_width = thread_body_width(width, theme, ThreadTone::Thought);
     let label = truncate_to_width(
         &format!("{marker} {} {}", context_row_label(row.kind), row.summary),
         body_width,
     );
+    let style = if row_is_running(row) {
+        working_shimmer_style(0, phase, theme).add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+            .fg(theme.thought_text)
+            .add_modifier(Modifier::BOLD)
+    };
     thread_line(
-        Line::styled(
-            pad_to_width(&label, body_width),
-            Style::default()
-                .fg(theme.thought_text)
-                .add_modifier(Modifier::BOLD),
-        ),
+        Line::from(vec![Span::styled(pad_to_width(&label, body_width), style)]),
         width,
         theme,
         ThreadTone::Thought,
     )
+}
+
+fn row_is_running(row: &ContextRow) -> bool {
+    row.detail.contains("状态：running")
+        || row.detail.contains("状态：streaming")
+        || row.detail.contains("状态：thinking")
+        || row.summary.contains("运行中")
+        || row.summary.contains("思考中")
 }
 
 fn thought_summary(thought: &ThoughtData) -> String {
@@ -2760,6 +2888,7 @@ fn context_row_marker(row: &ContextRow) -> &'static str {
         ContextRowKind::AskResume => "◎",
         ContextRowKind::CreateFork => "⊕",
         ContextRowKind::Blackboard => "▼",
+        ContextRowKind::Thought => "▼",
         _ if row.expanded => "▼",
         _ => "▶",
     }
@@ -2767,9 +2896,10 @@ fn context_row_marker(row: &ContextRow) -> &'static str {
 
 fn context_row_label(kind: ContextRowKind) -> &'static str {
     match kind {
-        ContextRowKind::Recall => "回忆中",
-        ContextRowKind::Fork => "fork",
-        ContextRowKind::Blackboard => "blackboard",
+        ContextRowKind::Recall => "☁️ 回忆中",
+        ContextRowKind::Thought => "😌 思考中",
+        ContextRowKind::Fork => "🍀 fork",
+        ContextRowKind::Blackboard => "🤔 黑板讨论",
         ContextRowKind::AskResume => "重新回答",
         ContextRowKind::CreateFork => "新建 fork",
     }
@@ -3700,6 +3830,9 @@ fn render_right_panel_sections(
     ];
 
     for (index, section) in sections.iter_mut().enumerate() {
+        if section.title == "TODO List" {
+            continue;
+        }
         let selected = index == focused_index;
         section.lines = render_right_section_lines(section, width, selected);
     }
@@ -4247,7 +4380,7 @@ fn composer_footer_line(app: &App, theme: &Theme) -> Line<'static> {
 
     Line::from(vec![
         Span::styled(
-            footer_mode_text(app),
+            format!("{}{}", footer_mode_text(app), fork_footer_suffix(app)),
             Style::default()
                 .fg(app.interaction_mode.color(theme))
                 .add_modifier(Modifier::BOLD),
@@ -4561,7 +4694,9 @@ enum SocketCommand {
     },
     ForkMemoryGet,
     StatusGet,
-    HistoryList,
+    HistoryList {
+        context_fork_id: Option<String>,
+    },
 }
 
 enum SocketEvent {
@@ -4582,6 +4717,8 @@ enum SocketEvent {
     },
     ForkCreated {
         fork_id: String,
+        parent_id: Option<String>,
+        root_id: Option<String>,
         summary: Option<String>,
     },
     ForkMemoryLoaded(ForkMemorySnapshot),
@@ -4669,7 +4806,7 @@ fn run_socket_session(
         .map_err(|error| error.to_string())?;
 
     socket
-        .send(Message::text(history_list_envelope(now).to_string()))
+        .send(Message::text(history_list_envelope(now, None).to_string()))
         .map_err(|error| error.to_string())?;
     socket
         .send(Message::text(task_list_envelope(now).to_string()))
@@ -4782,12 +4919,12 @@ fn run_socket_session(
                         return Err(error.to_string());
                     }
                 }
-                SocketCommand::HistoryList => {
+                SocketCommand::HistoryList { context_fork_id } => {
                     let now = now_millis();
                     log_event("send history.list");
-                    if let Err(error) =
-                        socket.send(Message::text(history_list_envelope(now).to_string()))
-                    {
+                    if let Err(error) = socket.send(Message::text(
+                        history_list_envelope(now, context_fork_id.as_deref()).to_string(),
+                    )) {
                         log_event(format!("history.list failed error={error}"));
                         let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
                         return Err(error.to_string());
@@ -4842,7 +4979,7 @@ fn client_hello_envelope(now: u64) -> Value {
     })
 }
 
-fn history_list_envelope(now: u64) -> Value {
+fn history_list_envelope(now: u64, context_fork_id: Option<&str>) -> Value {
     let history_limit = env::var("FLYFLOR_HISTORY_LIMIT")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
@@ -4854,6 +4991,9 @@ fn history_list_envelope(now: u64) -> Value {
     let mut history_payload = json!({ "limit": history_limit });
     if let Some(before_ts) = before_ts {
         history_payload["beforeTs"] = json!(before_ts);
+    }
+    if let Some(context_fork_id) = context_fork_id {
+        history_payload["contextForkId"] = json!(context_fork_id);
     }
     let history_request_id = format!("flyflor-cli-history-{now}");
     let history_envelope_id = format!("env-{history_request_id}");
@@ -5164,8 +5304,13 @@ fn parse_fork_snapshot(raw: &str) -> Result<Option<SocketEvent>, String> {
     let Some(fork_id) = value_string(fork, "id") else {
         return Ok(None);
     };
+    let session = data.get("session");
     Ok(Some(SocketEvent::ForkCreated {
-        fork_id,
+        fork_id: session
+            .and_then(|session| value_string(session, "activeForkId"))
+            .unwrap_or(fork_id),
+        parent_id: session.and_then(|session| value_string(session, "parentId")),
+        root_id: session.and_then(|session| value_string(session, "rootId")),
         summary: value_string(fork, "summary")
             .or_else(|| value_string(fork, "continuitySummary"))
             .or_else(|| value_string(fork, "title")),
@@ -5292,7 +5437,11 @@ fn parse_context_snapshot(raw: &str) -> Result<Option<SocketEvent>, String> {
     let envelope: SocketEnvelope = serde_json::from_str(raw).map_err(|error| error.to_string())?;
     if !matches!(
         envelope.message_type.as_str(),
-        "thought.snapshot" | "blackboard.snapshot" | "ask.snapshot"
+        "thought.snapshot"
+            | "recall.snapshot"
+            | "memory.snapshot"
+            | "blackboard.snapshot"
+            | "ask.snapshot"
     ) {
         return Ok(None);
     }
@@ -5334,19 +5483,15 @@ fn turn_from_context_snapshot(snapshot: &Value) -> Option<Turn> {
         "thought.snapshot" => {
             let thought = data.get("thought").unwrap_or(data);
             json!({
-                "planning": {
-                    "replays": [{
-                        "id": value_string(thought, "id").unwrap_or_else(|| "thought".to_string()),
-                        "kind": "recall",
-                        "title": value_string(thought, "title")
-                            .or_else(|| value_string(thought, "summary"))
-                            .unwrap_or_else(|| "回忆中 摘要".to_string()),
-                        "summary": value_string(thought, "summary")
-                            .or_else(|| value_string(thought, "content"))
-                            .unwrap_or_else(|| "thought snapshot".to_string())
-                    }]
-                }
+                "thought": thought
             })
+        }
+        "recall.snapshot" | "memory.snapshot" => {
+            let recall = data
+                .get("recall")
+                .or_else(|| data.get("memory"))
+                .unwrap_or(data);
+            json!({ "recall": recall })
         }
         "blackboard.snapshot" => {
             let blackboard = data.get("blackboard").unwrap_or(data);
@@ -5377,7 +5522,8 @@ fn turn_from_context_snapshot(snapshot: &Value) -> Option<Turn> {
         user: format!("socket {kind}"),
         thought: None,
         answer: match kind {
-            "thought.snapshot" => "收到回忆摘要。".to_string(),
+            "thought.snapshot" => "收到思考摘要。".to_string(),
+            "recall.snapshot" | "memory.snapshot" => "收到回忆摘要。".to_string(),
             "blackboard.snapshot" => "收到 blackboard 摘要。".to_string(),
             "ask.snapshot" => "需要用户选择 ASK 回答。".to_string(),
             _ => kind.to_string(),
@@ -5745,6 +5891,33 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
         });
     }
 
+    if let Some(thought) = metadata
+        .get("thought")
+        .or_else(|| metadata.get("thinking"))
+        .or_else(|| metadata.get("directWithWatch"))
+        .or_else(|| metadata.get("direct-with-watch"))
+    {
+        rows.push(ContextRow {
+            kind: ContextRowKind::Thought,
+            summary: context_value_summary(thought, "思考详情"),
+            detail: format_thought_detail(thought),
+            expanded: false,
+        });
+    }
+
+    if let Some(recall) = metadata
+        .get("recall")
+        .or_else(|| metadata.get("memory"))
+        .or_else(|| metadata.get("scopeMemory"))
+    {
+        rows.push(ContextRow {
+            kind: ContextRowKind::Recall,
+            summary: context_value_summary(recall, "召回记忆"),
+            detail: format_recall_detail(recall),
+            expanded: false,
+        });
+    }
+
     if let Some(planning) = metadata.get("planning") {
         if let Some(forks) = planning.get("contextForks").and_then(Value::as_array) {
             if let Some(row) = aggregate_context_row(ContextRowKind::Fork, forks, "context fork") {
@@ -5899,6 +6072,12 @@ fn format_context_detail_item(
     if kind == ContextRowKind::Blackboard {
         return format_blackboard_discussion(value);
     }
+    if kind == ContextRowKind::Recall {
+        return format_recall_detail(value);
+    }
+    if kind == ContextRowKind::Thought {
+        return format_thought_detail(value);
+    }
     let title = context_value_summary(value, fallback_label);
     let mut lines = vec![format!("{index}. {title}")];
     push_detail_field(&mut lines, "id", value_string(value, "id"));
@@ -5946,6 +6125,76 @@ fn format_fork_context_detail_item(index: usize, value: &Value, fallback_label: 
     lines.join("\n")
 }
 
+fn format_recall_detail(value: &Value) -> String {
+    let mut lines = vec![format!(
+        "### scope 记忆装配：{}",
+        context_value_summary(value, "召回记忆")
+    )];
+    push_detail_field(&mut lines, "scope", value_string(value, "scopeId"));
+    push_detail_field(
+        &mut lines,
+        "摘要",
+        value_string(value, "summary").or_else(|| value_string(value, "content")),
+    );
+    if let Some(items) = value
+        .get("items")
+        .or_else(|| value.get("memories"))
+        .or_else(|| value.get("recalls"))
+        .and_then(Value::as_array)
+    {
+        for (index, item) in items.iter().enumerate() {
+            lines.push(format!(
+                "{}. {}",
+                index + 1,
+                context_value_summary(item, "memory")
+            ));
+            push_detail_field(
+                &mut lines,
+                "   内容",
+                value_string(item, "content").or_else(|| value_string(item, "summary")),
+            );
+        }
+    }
+    lines.join("\n\n")
+}
+
+fn format_thought_detail(value: &Value) -> String {
+    let mut lines = vec![format!(
+        "### LLM 思考详情：{}",
+        context_value_summary(value, "思考详情")
+    )];
+    push_detail_field(&mut lines, "状态", value_string(value, "status"));
+    push_detail_field(
+        &mut lines,
+        "摘要",
+        value_string(value, "summary").or_else(|| value_string(value, "title")),
+    );
+    push_detail_field(
+        &mut lines,
+        "内容",
+        value_string(value, "content")
+            .or_else(|| value_string(value, "text"))
+            .or_else(|| value_string(value, "detail")),
+    );
+    if let Some(steps) = value
+        .get("steps")
+        .or_else(|| value.get("messages"))
+        .and_then(Value::as_array)
+    {
+        for (index, step) in steps.iter().enumerate() {
+            lines.push(format!(
+                "{}. {}",
+                index + 1,
+                value_string(step, "content")
+                    .or_else(|| value_string(step, "text"))
+                    .or_else(|| value_string(step, "summary"))
+                    .unwrap_or_else(|| "思考步骤".to_string())
+            ));
+        }
+    }
+    lines.join("\n\n")
+}
+
 fn blackboard_summary(value: &Value) -> String {
     value_string(value, "summary")
         .or_else(|| value_string(value, "title"))
@@ -5964,7 +6213,7 @@ fn format_blackboard_discussion(value: &Value) -> String {
     )];
     let content = value.get("content").unwrap_or(value);
     append_blackboard_content(&mut lines, content, 1);
-    lines.join("\n")
+    lines.join("\n\n")
 }
 
 fn append_blackboard_content(lines: &mut Vec<String>, value: &Value, round: usize) {
@@ -6289,6 +6538,7 @@ struct ContextRow {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ContextRowKind {
     Recall,
+    Thought,
     Fork,
     Blackboard,
     AskResume,
@@ -6982,7 +7232,7 @@ mod tests {
                     96,
                     &Theme::default(),
                 ));
-                assert!(header.contains("▼ blackboard 确认右侧布局修复方案"));
+                assert!(header.contains("▼ 🤔 黑板讨论 确认右侧布局修复方案"));
                 assert!(blackboard.detail.contains("Blackboard discussion"));
                 assert!(blackboard.detail.contains("Status: closed"));
                 assert!(blackboard.detail.contains("reason: 确认右侧布局修复方案"));
@@ -7033,6 +7283,224 @@ mod tests {
     }
 
     #[test]
+    fn context_row_labels_use_new_copy() {
+        let theme = Theme::default();
+        let rows = vec![
+            ContextRow {
+                kind: ContextRowKind::Thought,
+                summary: "摘要".to_string(),
+                detail: String::new(),
+                expanded: true,
+            },
+            ContextRow {
+                kind: ContextRowKind::Recall,
+                summary: "摘要".to_string(),
+                detail: String::new(),
+                expanded: true,
+            },
+            ContextRow {
+                kind: ContextRowKind::Fork,
+                summary: "摘要".to_string(),
+                detail: String::new(),
+                expanded: true,
+            },
+            ContextRow {
+                kind: ContextRowKind::Blackboard,
+                summary: "摘要".to_string(),
+                detail: String::new(),
+                expanded: true,
+            },
+            ContextRow {
+                kind: ContextRowKind::AskResume,
+                summary: "摘要".to_string(),
+                detail: String::new(),
+                expanded: false,
+            },
+            ContextRow {
+                kind: ContextRowKind::CreateFork,
+                summary: "摘要".to_string(),
+                detail: String::new(),
+                expanded: false,
+            },
+        ];
+        let text = rows
+            .iter()
+            .map(|row| line_text(&render_context_row_header(row, 96, &theme)))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("▼ 😌 思考中 摘要"));
+        assert!(text.contains("▼ ☁️ 回忆中 摘要"));
+        assert!(text.contains("▼ 🍀 fork 摘要"));
+        assert!(text.contains("▼ 🤔 黑板讨论 摘要"));
+        assert!(text.contains("◎ 重新回答 摘要"));
+        assert!(text.contains("⊕ 新建 fork 摘要"));
+    }
+
+    #[test]
+    fn recall_and_thought_expand_as_markdown_and_copy() {
+        let theme = Theme::default();
+        let mut turn = test_turn("u", "answer");
+        turn.metadata = Some(json!({
+            "recall": {
+                "summary": "装配 scope 记忆",
+                "scopeId": "scope-1",
+                "items": [{ "summary": "项目记忆", "content": "recall-copy-detail" }]
+            },
+            "thought": {
+                "summary": "直接观察",
+                "status": "running",
+                "content": "thought-copy-detail"
+            }
+        }));
+        turn.context_rows = context_rows_from_metadata(&turn.metadata);
+        for row in &mut turn.context_rows {
+            if matches!(row.kind, ContextRowKind::Recall | ContextRowKind::Thought) {
+                row.expanded = true;
+            }
+        }
+        let mut app = App::new();
+        app.turns = vec![turn];
+        app.update_left_viewport(Rect::new(0, 0, 96, 30), &theme);
+        let rendered = app
+            .chat_lines
+            .iter()
+            .map(line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("scope 记忆装配"));
+        assert!(rendered.contains("recall-copy-detail"));
+        assert!(rendered.contains("LLM 思考详情"));
+        assert!(rendered.contains("thought-copy-detail"));
+
+        app.selection.anchor = Some(SelectionPoint {
+            target: SelectionTarget::Left,
+            line_index: 0,
+            column: 0,
+        });
+        app.selection.head = Some(SelectionPoint {
+            target: SelectionTarget::Left,
+            line_index: app.chat_lines.len().saturating_sub(1),
+            column: 200,
+        });
+        let copied = app.selection_to_text().expect("selection text");
+        assert!(copied.contains("recall-copy-detail"));
+        assert!(copied.contains("thought-copy-detail"));
+    }
+
+    #[test]
+    fn thought_and_recall_snapshots_update_context_rows() {
+        let thought_raw = r#"{
+            "type": "thought.snapshot",
+            "payload": {
+                "data": {
+                    "thought": {
+                        "id": "thought-1",
+                        "summary": "direct watch",
+                        "status": "running",
+                        "content": "思考详情"
+                    }
+                }
+            }
+        }"#;
+        let recall_raw = r#"{
+            "type": "recall.snapshot",
+            "payload": {
+                "data": {
+                    "recall": {
+                        "id": "recall-1",
+                        "summary": "scope recall",
+                        "items": [{ "summary": "记忆 A", "content": "召回详情" }]
+                    }
+                }
+            }
+        }"#;
+
+        let thought = parse_context_snapshot(thought_raw)
+            .expect("thought parses")
+            .expect("thought event");
+        let recall = parse_context_snapshot(recall_raw)
+            .expect("recall parses")
+            .expect("recall event");
+        let mut app = App::new();
+        app.apply_socket_event(thought);
+        app.apply_socket_event(recall);
+
+        assert!(
+            app.turns
+                .iter()
+                .flat_map(|turn| turn.context_rows.iter())
+                .any(|row| row.kind == ContextRowKind::Thought && row.summary == "direct watch")
+        );
+        assert!(
+            app.turns
+                .iter()
+                .flat_map(|turn| turn.context_rows.iter())
+                .any(|row| row.kind == ContextRowKind::Recall && row.summary == "scope recall")
+        );
+    }
+
+    #[test]
+    fn reanswer_row_sends_structured_continuation() {
+        let mut app = App::new();
+        let mut turn = test_turn("原问题", "需要重答");
+        turn.metadata = Some(json!({
+            "continuation": {
+                "mode": "continue",
+                "snapshotId": "ask-ghost-1"
+            }
+        }));
+        turn.context_rows = context_rows_from_metadata(&turn.metadata);
+        let row_index = turn
+            .context_rows
+            .iter()
+            .position(|row| row.kind == ContextRowKind::AskResume)
+            .expect("ask resume row");
+        app.turns = vec![turn];
+        app.context_row_hitboxes = vec![ContextRowHitbox {
+            turn_index: 0,
+            row_index,
+            rect: Rect::new(0, 0, 20, 1),
+        }];
+
+        assert!(app.toggle_context_row_at(1, 0));
+        let sent = app.turns.last().expect("sent reanswer turn");
+        assert_eq!(sent.user, "原问题");
+        assert_eq!(
+            sent.metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get("continuation"))
+                .and_then(|continuation| continuation.get("snapshotId"))
+                .and_then(Value::as_str),
+            Some("ask-ghost-1")
+        );
+    }
+
+    #[test]
+    fn running_context_row_uses_shimmer_style() {
+        let theme = Theme::default();
+        let row = ContextRow {
+            kind: ContextRowKind::Thought,
+            summary: "运行中".to_string(),
+            detail: "状态：running".to_string(),
+            expanded: false,
+        };
+        let line_a = render_context_row_header_with_phase(&row, 96, &theme, 0);
+        let line_b = render_context_row_header_with_phase(&row, 96, &theme, 1);
+        let colors_a = line_a
+            .spans
+            .iter()
+            .filter_map(|span| span.style.fg)
+            .collect::<Vec<_>>();
+        let colors_b = line_b
+            .spans
+            .iter()
+            .filter_map(|span| span.style.fg)
+            .collect::<Vec<_>>();
+        assert_ne!(colors_a, colors_b);
+    }
+
+    #[test]
     fn expanded_blackboard_discussion_is_available_to_selection_copy() {
         let theme = Theme::default();
         let mut turn = Turn {
@@ -7046,7 +7514,7 @@ mod tests {
                     "summary": "复制黑板讨论",
                     "status": "done",
                     "mode": "act",
-                    "content": [{ "role": "agent", "content": "可复制的展开内容" }]
+                    "content": [{ "role": "worker", "content": "可复制的展开内容" }]
                 }
             })),
             context_rows: Vec::new(),
@@ -7070,8 +7538,16 @@ mod tests {
         let end = app
             .chat_lines
             .iter()
-            .position(|line| line_plain_text(line).contains("可复制"))
-            .expect("discussion content");
+            .position(|line| line_plain_text(line).contains("可复制的展开内容"))
+            .expect("discussion detail");
+        let rendered_discussion = app
+            .chat_lines
+            .iter()
+            .map(line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered_discussion.contains("Round 1 · worker"));
+        assert!(rendered_discussion.contains("可复制的展开内容"));
         app.selection.anchor = Some(SelectionPoint {
             target: SelectionTarget::Left,
             line_index: start,
@@ -7085,6 +7561,8 @@ mod tests {
 
         let copied = app.selection_to_text().expect("selection text");
         assert!(copied.contains("Blackboard discussion"));
+        assert!(copied.contains("Round 1 · worker"));
+        assert!(copied.contains("可复制的展开内容"));
     }
 
     #[test]
@@ -7454,7 +7932,7 @@ mod tests {
         assert!(app.turns.iter().any(|turn| {
             turn.context_rows
                 .iter()
-                .any(|row| row.kind == ContextRowKind::Recall)
+                .any(|row| row.kind == ContextRowKind::Thought)
         }));
         assert!(app.turns.iter().any(|turn| {
             turn.context_rows
@@ -7772,16 +8250,32 @@ mod tests {
             area.width as usize,
             true,
         ));
-        let todo_body = app.right_sections[0]
+        assert_eq!(todo_title.matches("TODO List").count(), 1);
+        let todo_body_lines = app.right_sections[0]
             .lines
             .iter()
             .map(line_plain_text)
-            .collect::<Vec<_>>()
-            .join("\n");
-        let todo_rendered_text = format!("{todo_title}\n{todo_body}");
-        assert_eq!(todo_rendered_text.matches("TODO List").count(), 1);
-        assert!(!todo_rendered_text.contains("状态：暂无计划"));
-        assert_eq!(todo_rendered_text.matches("暂无计划 [-]").count(), 1);
+            .collect::<Vec<_>>();
+        let todo_body = todo_body_lines.join("\n");
+        assert!(
+            todo_body_lines
+                .iter()
+                .all(|line| !line.contains("TODO List"))
+        );
+        assert!(!todo_body.contains("状态：暂无计划"));
+        assert_eq!(todo_body.matches("暂无计划 [-]").count(), 1);
+        assert_eq!(
+            app.right_sections[0].copy_text.matches("TODO List").count(),
+            1
+        );
+        assert!(!app.right_sections[0].copy_text.contains("状态：暂无计划"));
+        assert_eq!(
+            app.right_sections[0]
+                .copy_text
+                .matches("暂无计划 [-]")
+                .count(),
+            1
+        );
         let scroll_text = app
             .right_lines
             .iter()
@@ -9015,6 +9509,11 @@ mod tests {
                         "summary": "Keep the implementation context.",
                         "continuitySummary": "Keep socket docs and tests in view.",
                         "maxContextTokens": 12000
+                    },
+                    "session": {
+                        "activeForkId": "fork-1",
+                        "parentId": "parent-1",
+                        "rootId": "root-1"
                     }
                 }
             }
@@ -9025,8 +9524,15 @@ mod tests {
             .expect("fork snapshot should emit event");
 
         match event {
-            SocketEvent::ForkCreated { fork_id, summary } => {
+            SocketEvent::ForkCreated {
+                fork_id,
+                parent_id,
+                root_id,
+                summary,
+            } => {
                 assert_eq!(fork_id, "fork-1");
+                assert_eq!(parent_id.as_deref(), Some("parent-1"));
+                assert_eq!(root_id.as_deref(), Some("root-1"));
                 assert_eq!(summary.as_deref(), Some("Keep the implementation context."));
             }
             _ => panic!("expected fork created event"),
@@ -9036,16 +9542,127 @@ mod tests {
     #[test]
     fn fork_created_event_updates_active_context_fork_id() {
         let mut app = App::new();
+        app.turns.push(test_turn("root", "root answer"));
         app.pending_fork_create = true;
 
         app.apply_socket_event(SocketEvent::ForkCreated {
             fork_id: "fork-created".to_string(),
+            parent_id: Some("parent-created".to_string()),
+            root_id: Some("root-created".to_string()),
             summary: Some("created summary".to_string()),
         });
 
         assert_eq!(app.active_context_fork_id.as_deref(), Some("fork-created"));
+        assert_eq!(
+            app.active_fork.as_ref().map(|fork| fork.fork_id.as_str()),
+            Some("fork-created")
+        );
+        assert_eq!(
+            app.active_fork
+                .as_ref()
+                .and_then(|fork| fork.parent_fork_id.as_deref()),
+            Some("parent-created")
+        );
+        assert_eq!(
+            app.active_fork
+                .as_ref()
+                .and_then(|fork| fork.root_id.as_deref()),
+            Some("root-created")
+        );
+        assert_eq!(app.root_turns.len(), 1);
+        assert!(app.turns.is_empty());
         assert!(!app.pending_fork_create);
-        assert!(app.right_source.blackboard_status.contains("fork-created"));
+        assert!(app.right_source.blackboard_status.contains("已进入 fork"));
+    }
+
+    #[test]
+    fn fork_session_messages_and_history_use_active_fork_id() {
+        let message = message_send_envelope(
+            "message-fork",
+            "fork 内继续",
+            Some("fork-active"),
+            None,
+            InteractionMode::Act,
+            false,
+        );
+        assert_eq!(
+            message
+                .get("payload")
+                .and_then(|payload| payload.get("context"))
+                .and_then(|context| context.get("contextForkId"))
+                .and_then(Value::as_str),
+            Some("fork-active")
+        );
+
+        let history = history_list_envelope(1, Some("fork-active"));
+        assert_eq!(
+            history
+                .get("payload")
+                .and_then(|payload| payload.get("contextForkId"))
+                .and_then(Value::as_str),
+            Some("fork-active")
+        );
+        assert!(
+            history
+                .get("payload")
+                .and_then(|payload| payload.get("context"))
+                .is_none()
+        );
+        let root_history = history_list_envelope(1, None);
+        assert!(
+            root_history
+                .get("payload")
+                .and_then(|payload| payload.get("contextForkId"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn exit_fork_command_is_only_available_inside_fork_and_restores_root() {
+        let mut app = App::new();
+        app.input = "/exit f".to_string();
+        app.refresh_command_palette();
+        assert!(
+            app.command_palette.as_ref().is_none_or(|menu| {
+                menu.items.iter().all(|command| command.name != "exit fork")
+            })
+        );
+
+        app.turns = vec![test_turn("root", "root answer")];
+        app.apply_socket_event(SocketEvent::ForkCreated {
+            fork_id: "fork-session".to_string(),
+            parent_id: None,
+            root_id: Some("root-session".to_string()),
+            summary: Some("分支会话".to_string()),
+        });
+        app.turns = vec![test_turn("fork", "fork answer")];
+        app.input = "/exit f".to_string();
+        app.refresh_command_palette();
+        assert_eq!(
+            app.command_palette
+                .as_ref()
+                .and_then(|menu| menu.items.first())
+                .map(|command| command.name),
+            Some("exit fork")
+        );
+
+        app.confirm_command_palette_selection();
+        assert!(app.active_fork.is_none());
+        assert!(app.active_context_fork_id.is_none());
+        assert_eq!(app.turns.len(), 1);
+        assert_eq!(app.turns[0].user, "root");
+        assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn slash_exit_still_quits_tui_at_root() {
+        let mut app = App::new();
+        app.input = "/exit".to_string();
+        app.refresh_command_palette();
+        app.confirm_command_palette_selection();
+
+        assert!(app.should_quit);
+        assert!(app.active_fork.is_none());
     }
 
     #[test]
