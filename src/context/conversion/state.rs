@@ -10,8 +10,8 @@ use ratatui_interact::{
 };
 
 use crate::{
-    ScrollState, Theme, ThoughtHitbox, Turn, apply_scroll_delta, drag_scroll, in_rect, render_turns,
-    update_scroll_state_from_rendered,
+    ScrollState, Theme, ThoughtHitbox, Turn, apply_scroll_delta, drag_scroll, render_turns,
+    shared::in_rect, update_scroll_state_from_rendered,
 };
 
 #[derive(Default)]
@@ -61,11 +61,7 @@ impl ConversionState {
         self.content_area = area;
         let render = render_turns(&self.turns, area.width.max(1) as usize, theme);
         self.chat_lines = render.lines;
-        self.plain_lines = self
-            .chat_lines
-            .iter()
-            .map(line_to_plain_text)
-            .collect();
+        self.plain_lines = self.chat_lines.iter().map(line_to_plain_text).collect();
         update_scroll_state_from_rendered(&self.chat_lines, &mut self.scroll, area);
         self.thought_hitboxes = render
             .thought_regions
@@ -81,7 +77,8 @@ impl ConversionState {
                 })
             })
             .collect();
-        self.block_hitboxes = build_block_hitboxes(&self.turns, &render.block_regions, &self.scroll, area);
+        self.block_hitboxes =
+            build_block_hitboxes(&self.turns, &render.block_regions, &self.scroll, area);
     }
 
     pub fn selection_point_at(&self, x: u16, y: u16) -> Option<SelectionPoint> {
@@ -275,7 +272,11 @@ impl ConversionState {
         }
 
         match key.code {
-            KeyCode::Char('c') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+            KeyCode::Char('c')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
                 let _ = self.copy_selection();
             }
             KeyCode::Left => self.input.move_left(),

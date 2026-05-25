@@ -9,8 +9,10 @@ use ratatui_interact::components::{Input, InputStyle};
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    Theme, draw_scrollbar,
+    Theme,
     context::conversion::state::{ConversionState, slice_by_char},
+    draw_scrollbar,
+    shared::draw_separator,
 };
 
 pub fn render(frame: &mut Frame, area: Rect, state: &mut ConversionState, theme: &Theme) {
@@ -78,7 +80,11 @@ fn apply_selection_styles(state: &ConversionState) -> Vec<Line<'static>> {
                 }
             }
             if let Some((start, end)) = state.selected_line_bounds(line_index) {
-                let text = state.plain_lines.get(line_index).cloned().unwrap_or_default();
+                let text = state
+                    .plain_lines
+                    .get(line_index)
+                    .cloned()
+                    .unwrap_or_default();
                 let before = slice_by_char(&text, 0, start);
                 let middle = slice_by_char(&text, start, end);
                 let after = slice_by_char(&text, end, text.chars().count());
@@ -95,17 +101,19 @@ fn apply_selection_styles(state: &ConversionState) -> Vec<Line<'static>> {
 
 fn render_input(frame: &mut Frame, area: Rect, state: &mut ConversionState, theme: &Theme) {
     draw_separator(frame, Rect::new(area.x, area.y, area.width, 1), theme);
-    let input_inner = Rect::new(area.x, area.y + 1, area.width, area.height.saturating_sub(1));
+    let input_inner = Rect::new(
+        area.x,
+        area.y + 1,
+        area.width,
+        area.height.saturating_sub(1),
+    );
     if input_inner.height == 0 {
         return;
     }
 
     let input_rows = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
         .split(input_inner);
 
     let input_style = InputStyle::default()
@@ -151,11 +159,4 @@ fn render_input(frame: &mut Frame, area: Rect, state: &mut ConversionState, them
         ])
     };
     frame.render_widget(Paragraph::new(help), input_rows[1]);
-}
-
-fn draw_separator(frame: &mut Frame, area: Rect, theme: &Theme) {
-    frame.render_widget(
-        Paragraph::new("─".repeat(area.width as usize)).style(Style::default().fg(theme.dim)),
-        area,
-    );
 }

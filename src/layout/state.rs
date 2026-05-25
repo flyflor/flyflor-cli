@@ -1,6 +1,8 @@
 use ratatui::layout::Rect;
 
-use crate::context::{bulletin_board::state::BulletinBoardState, conversion::state::ConversionState};
+use crate::context::{
+    bulletin_board::state::BulletinBoardState, conversion::state::ConversionState,
+};
 
 #[derive(Default)]
 pub struct HeaderState {
@@ -26,19 +28,7 @@ impl Default for ContextLayoutState {
             right_area: Rect::default(),
             conversion: ConversionState::default(),
             bulletin_board: BulletinBoardState::new(
-                crate::RightPanelData {
-                    thinking_label: String::new(),
-                    blackboard_status: String::new(),
-                    questions: Vec::new(),
-                    goal_lines: Vec::new(),
-                    model_stats: Vec::new(),
-                    token_stats: Vec::new(),
-                    context_total: String::new(),
-                    context_percent: String::new(),
-                    context_bar: String::new(),
-                    context_usage: String::new(),
-                    footer: String::new(),
-                },
+                crate::RightPanelData::default_live(),
                 crate::context::bulletin_board::todo::state::TodoState::new(Vec::new()),
             ),
         }

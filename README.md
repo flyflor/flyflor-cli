@@ -58,6 +58,6 @@ The dev runner and Rust TUI both append diagnostics to `.flyflor-cli/logs/dev.lo
 
 ## Dev mode
 
-- Shows layout rectangles, viewport size, and scroll state in an overlay
-- Keeps product UI intact and layers debug information on top
-- Intended for spacing, sizing, and scroll-behavior iteration while rebuilding the design
+- Enables the internal dev flag with `--dev`, `FLYFLOR_DEV=1`, `F2`, or `Ctrl+D`
+- Keeps diagnostics in `.flyflor-cli/logs/dev.log`
+- Does not render the old floating diagnostics overlay

@@ -4,6 +4,7 @@ pub mod content;
 pub mod layout;
 pub mod service;
 pub mod state;
+pub mod terminal;
 pub mod ws;
 
 pub const DEMO_ENV: &str = "FLYFLOR_DEMO";

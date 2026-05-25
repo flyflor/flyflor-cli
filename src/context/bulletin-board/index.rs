@@ -6,13 +6,14 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-use crate::{Theme, draw_scrollbar, update_scroll_state};
 use crate::context::conversion::state::slice_by_char;
-
-use super::{
-    state::BulletinBoardState,
-    todo,
+use crate::{
+    Theme, draw_scrollbar,
+    shared::{draw_separator, metric_line},
+    update_scroll_state,
 };
+
+use super::{state::BulletinBoardState, todo};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &mut BulletinBoardState, theme: &Theme) {
     state.panel_area = area;
@@ -39,12 +40,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut BulletinBoardState, the
     todo::index::render(frame, rows[0], &state.todo, theme);
     draw_separator(frame, rows[1], theme);
 
-    let scroll_text = Rect::new(
-        rows[2].x,
-        rows[2].y,
-        rows[2].width,
-        rows[2].height,
-    );
+    let scroll_text = Rect::new(rows[2].x, rows[2].y, rows[2].width, rows[2].height);
     state.content_area = scroll_text;
     state.refresh_lines(theme, scroll_text.width.max(1) as usize);
     update_scroll_state(&state.lines, &mut state.scroll, scroll_text);
@@ -75,19 +71,12 @@ fn render_compact(frame: &mut Frame, area: Rect, theme: &Theme) {
         ratatui::text::Line::styled("› 设计协议核心架构", Style::default().fg(theme.pink)),
         ratatui::text::Line::raw(""),
         ratatui::text::Line::styled("MODEL", Style::default().fg(theme.blue)),
-        crate::metric_line("model", "flyflor-pro", theme),
-        crate::metric_line("provider", "OpenTUI", theme),
+        metric_line("model", "flyflor-pro", theme),
+        metric_line("provider", "OpenTUI", theme),
         ratatui::text::Line::raw(""),
         ratatui::text::Line::styled("● healthy", Style::default().fg(theme.green)),
     ]);
     frame.render_widget(compact, area);
-}
-
-fn draw_separator(frame: &mut Frame, area: Rect, theme: &Theme) {
-    frame.render_widget(
-        Paragraph::new("─".repeat(area.width as usize)).style(Style::default().fg(theme.dim)),
-        area,
-    );
 }
 
 fn apply_selection_styles(state: &BulletinBoardState) -> Vec<Line<'static>> {
@@ -98,7 +87,11 @@ fn apply_selection_styles(state: &BulletinBoardState) -> Vec<Line<'static>> {
         .map(|(line_index, line)| {
             let actual_index = state.scroll.scroll + line_index;
             if let Some((start, end)) = state.selected_line_bounds(actual_index) {
-                let text = state.plain_lines.get(actual_index).cloned().unwrap_or_default();
+                let text = state
+                    .plain_lines
+                    .get(actual_index)
+                    .cloned()
+                    .unwrap_or_default();
                 let before = slice_by_char(&text, 0, start);
                 let middle = slice_by_char(&text, start, end);
                 let after = slice_by_char(&text, end, text.chars().count());

@@ -321,8 +321,9 @@ impl RuntimeBridge {
         self.right_panel = RightPanelData {
             thinking_label: mode.to_string(),
             blackboard_status: format!("connection: {phase}"),
-            questions: vec![format!("› {ask_prompt}"), loop_text],
-            goal_lines: vec![
+            blackboard_stream: vec![
+                format!("ASK: {ask_prompt}"),
+                format!("Loop: {loop_text}"),
                 format!("binary: {binary}"),
                 format!("endpoint: {endpoint}"),
                 format!("active request: {active}"),
@@ -351,6 +352,12 @@ impl RuntimeBridge {
             context_percent: format!("{}", self.todos.len()),
             context_bar: build_bar(self.todos.len()),
             context_usage: format!("{} todo items", self.todos.len()),
+            context_ratio: 0.0,
+            context_used_tokens: self.todos.len(),
+            context_max_tokens: None,
+            context_used: self.todos.len().to_string(),
+            context_max: String::from("未知"),
+            fork_memory: Default::default(),
             footer: format!("{} · {}", mode, phase),
         };
     }

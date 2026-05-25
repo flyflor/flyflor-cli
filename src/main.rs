@@ -20,19 +20,17 @@ use arboard::Clipboard;
 use base64::Engine as _;
 use crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+        self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
         MouseEventKind,
     },
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
     DefaultTerminal, Frame,
     layout::{Alignment, Constraint, Direction, Layout, Margin, Position, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, Paragraph, Wrap},
+    widgets::{Clear, Paragraph, Wrap},
 };
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -40,33 +38,37 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 use unicode_width::UnicodeWidthStr;
 
+mod context;
+mod layout;
+mod shared;
 mod tui;
+
+use shared::{
+    center_text, draw_separator, in_rect, metric_line, top_bar_title, working_light_bar,
+    working_light_phase, working_light_style, working_shimmer_style, ws_url,
+};
+use tui::terminal::{
+    TerminalMode, enter_terminal, leave_terminal, mouse_capture_enabled_from_env_args,
+};
 
 const CLIPBOARD_INIT_TIMEOUT: Duration = Duration::from_millis(500);
 const OSC52_MAX_BYTES: usize = 100 * 1024;
-const DEFAULT_WS_URL: &str = "ws://127.0.0.1:8788/ws";
+const DEFAULT_WS_URL: &str = "ws://127.0.0.1:8787/ws";
 const DEFAULT_CONTEXT_BAR_WIDTH: usize = 32;
 
 fn main() -> io::Result<()> {
     install_panic_logger();
     log_event("main start");
+    let terminal_mode = TerminalMode {
+        use_mouse_capture: mouse_capture_enabled_from_env_args(),
+    };
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(
-        stdout,
-        EnterAlternateScreen,
-        EnableMouseCapture,
-        EnableBracketedPaste
-    )?;
+    enter_terminal(&mut stdout, terminal_mode)?;
     let terminal = ratatui::Terminal::new(ratatui::backend::CrosstermBackend::new(stdout))?;
-    let result = run(terminal);
+    let result = run(terminal, terminal_mode);
     disable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        DisableBracketedPaste,
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
+    leave_terminal(&mut io::stdout(), terminal_mode)?;
     if let Err(error) = &result {
         log_event(format!("main error {error}"));
     }
@@ -104,7 +106,7 @@ fn log_path() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from(".flyflor-cli/logs/dev.log"))
 }
 
-fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
+fn run(mut terminal: DefaultTerminal, terminal_mode: TerminalMode) -> io::Result<()> {
     let mut app = App::new();
     loop {
         app.drain_socket_events();
@@ -121,7 +123,7 @@ fn run(mut terminal: DefaultTerminal) -> io::Result<()> {
         match event::read()? {
             Event::Key(key) if key.kind == KeyEventKind::Press => handle_key(&mut app, key),
             Event::Paste(text) => app.insert_paste_text(&text),
-            Event::Mouse(mouse) => handle_mouse(&mut app, mouse),
+            Event::Mouse(mouse) if terminal_mode.use_mouse_capture => handle_mouse(&mut app, mouse),
             _ => {}
         }
 
@@ -157,29 +159,28 @@ fn handle_key(app: &mut App, key: KeyEvent) {
                 || key.modifiers.contains(KeyModifiers::CONTROL)
                 || key.modifiers.contains(KeyModifiers::SHIFT) =>
         {
-            app.input.push('\n')
+            app.insert_input_text("\n")
         }
-        KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => app.input.push('\n'),
+        KeyCode::Char('j') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            app.insert_input_text("\n")
+        }
         KeyCode::Up if app.move_active_menu(-1) => {}
         KeyCode::Down if app.move_active_menu(1) => {}
-        KeyCode::Up => app.scroll_left_by(-3),
-        KeyCode::Down => app.scroll_left_by(3),
+        KeyCode::Up => app.move_input_cursor_vertical(-1),
+        KeyCode::Down => app.move_input_cursor_vertical(1),
         KeyCode::Char('y') if app.should_copy_with_y() => app.copy_selection_to_clipboard(),
-        KeyCode::Char('y') if app.should_copy_right_section_with_y() => {
-            app.copy_focused_right_section_to_clipboard()
-        }
-        KeyCode::Right => app.focus_right_section(1),
-        KeyCode::Left => app.focus_right_section(-1),
+        KeyCode::Right => app.move_input_cursor_right(),
+        KeyCode::Left => app.move_input_cursor_left(),
         KeyCode::PageUp => app.scroll_left_by(-(app.left.viewport_height as isize - 2)),
         KeyCode::PageDown => app.scroll_left_by(app.left.viewport_height as isize - 2),
         KeyCode::Backspace => {
-            app.input.pop();
+            app.backspace_input();
             app.refresh_command_palette();
         }
         KeyCode::Enter if app.handle_menu_confirm_or_next(true) => {}
         KeyCode::Enter => app.submit_input(),
         KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.input.push(ch);
+            app.insert_input_char(ch);
             app.refresh_command_palette();
         }
         _ => {}
@@ -246,34 +247,23 @@ fn draw(frame: &mut Frame, app: &mut App) {
     let theme = Theme::default();
     app.cursor = None;
     frame.render_widget(Clear, frame.area());
-    frame.render_widget(
-        Block::default().style(Style::default().bg(theme.bg)),
-        frame.area(),
-    );
-
-    let root = content_root(frame.area());
+    let root = layout::shell::content_root(frame.area());
     let header_height = if app.is_working() { 2 } else { 1 };
-    let layout = app_layout(root, header_height, &app.input);
+    let layout = layout::shell::app_layout(root, header_height, &app.input);
 
     app.layout = LayoutSnapshot {
-        frame: frame.area(),
-        content: root,
-        top_bar: layout.header,
         left_panel: layout.left_main,
         right_panel: layout.right_main,
     };
 
+    layout::shell::draw_shell(frame, &layout, &theme);
     draw_top_bar(frame, layout.header, app, &theme);
     draw_left_panel(frame, layout.left_main, app, &theme);
-    draw_vertical_divider(frame, layout.extended_divider, &theme);
     draw_right_panel(frame, layout.right_main, app, &theme);
     draw_left_composer(frame, layout.left_composer, app, &theme);
-    draw_separator(frame, layout.footer_border, &theme);
     draw_footer(frame, layout.footer_text, app, &theme);
 
-    if app.dev_mode {
-        draw_dev_overlay(frame, app, &theme);
-    }
+    let _ = app.dev_mode;
 }
 
 fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
@@ -315,7 +305,7 @@ fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         let phase = working_light_phase(now_millis());
         let pattern = working_light_bar(area.width as usize, phase);
         frame.render_widget(
-            Paragraph::new(Line::styled(pattern, Style::default().fg(theme.pink))),
+            Paragraph::new(Line::styled(pattern, working_light_style(phase, &theme))),
             Rect::new(area.x, area.y + 1, area.width, 1),
         );
     }
@@ -369,7 +359,8 @@ fn draw_left_composer(frame: &mut Frame, area: Rect, app: &mut App, theme: &Them
             Paragraph::new(input_lines).scroll((scroll as u16, 0)),
             input_inner,
         );
-        app.cursor = input_cursor_position(&app.input, input_inner, scroll);
+        app.cursor =
+            input_cursor_position(&app.input, app.input_cursor_index(), input_inner, scroll);
 
         draw_composer_menu(frame, input_inner, app, theme);
     }
@@ -413,18 +404,6 @@ fn composer_menu_area(input_inner: Rect, menu_len: usize) -> Option<Rect> {
     ))
 }
 
-fn draw_vertical_divider(frame: &mut Frame, area: Rect, theme: &Theme) {
-    if area.width == 0 || area.height == 0 {
-        return;
-    }
-    let line = Paragraph::new(
-        (0..area.height)
-            .map(|_| Line::styled("│", Style::default().fg(theme.dim)))
-            .collect::<Vec<_>>(),
-    );
-    frame.render_widget(line, area);
-}
-
 fn draw_right_panel(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
     let inner = area.inner(Margin {
         vertical: 1,
@@ -441,8 +420,7 @@ fn draw_right_panel(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme)
     let layout = right_panel_layout(inner, bottom_height);
     app.update_right_viewport(right_todo_body_area(layout.todo));
     if let Some(todo) = app.right_sections.first() {
-        let title =
-            render_right_section_title(todo, text_width as usize, app.focused_right_section == 0);
+        let title = render_right_section_title(todo, text_width as usize, false);
         let title_area = Rect::new(
             layout.todo.x,
             layout.todo.y,
@@ -458,7 +436,6 @@ fn draw_right_panel(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme)
         frame.render_widget(todo_content, body_area);
     }
     draw_scrollbar(frame, app.right.scrollbar, theme);
-    draw_separator(frame, layout.separator, theme);
     let content =
         Paragraph::new(app.visible_right_lines(theme, layout.bottom_text.height as usize))
             .style(Style::default().fg(theme.text))
@@ -660,12 +637,9 @@ fn draw_scrollbar(frame: &mut Frame, scrollbar: ScrollbarGeometry, theme: &Theme
     }
     for offset in 0..scrollbar.track_height {
         let y = scrollbar.track_top + offset;
-        let symbol = if y == scrollbar.thumb_top {
-            "●"
-        } else {
-            "○"
-        };
-        let color = if symbol == "●" {
+        let active = y >= scrollbar.thumb_top && y < scrollbar.thumb_top + scrollbar.thumb_height;
+        let symbol = if active { "●" } else { "○" };
+        let color = if active {
             theme.scroll_thumb
         } else {
             theme.scroll_track
@@ -675,236 +649,6 @@ fn draw_scrollbar(frame: &mut Frame, scrollbar: ScrollbarGeometry, theme: &Theme
             Rect::new(scrollbar.x, y, 1, 1),
         );
     }
-}
-
-fn draw_dev_overlay(frame: &mut Frame, app: &App, theme: &Theme) {
-    let area = Rect::new(
-        app.layout.frame.x + app.layout.frame.width.saturating_sub(38),
-        app.layout.frame.y + 1,
-        36,
-        11,
-    );
-    let panel = Paragraph::new(vec![
-        Line::styled(
-            "Diagnostics",
-            Style::default().fg(theme.dev).add_modifier(Modifier::BOLD),
-        ),
-        Line::raw(""),
-        dev_line("frame", rect_value(app.layout.frame), theme),
-        dev_line("content", rect_value(app.layout.content), theme),
-        dev_line("topbar", rect_value(app.layout.top_bar), theme),
-        dev_line("left", rect_value(app.layout.left_panel), theme),
-        dev_line("right", rect_value(app.layout.right_panel), theme),
-        dev_line(
-            "l.scroll",
-            format!("{}/{}", app.left.scroll, app.left.max_scroll),
-            theme,
-        ),
-        dev_line(
-            "r.scroll",
-            format!("{}/{}", app.right.scroll, app.right.max_scroll),
-            theme,
-        ),
-        dev_line(
-            "l.view",
-            format!("{}x{}", app.left.wrap_width, app.left.viewport_height),
-            theme,
-        ),
-        dev_line(
-            "r.view",
-            format!("{}x{}", app.right.wrap_width, app.right.viewport_height),
-            theme,
-        ),
-        dev_line("context", app.context_row_hitboxes.len().to_string(), theme),
-    ])
-    .block(Block::default().style(Style::default().bg(theme.overlay)));
-    frame.render_widget(Clear, area);
-    frame.render_widget(panel, area);
-}
-
-fn draw_separator(frame: &mut Frame, area: Rect, theme: &Theme) {
-    frame.render_widget(
-        Paragraph::new(separator_text(area.width)).style(Style::default().fg(theme.dim)),
-        area,
-    );
-}
-
-fn separator_text(width: u16) -> String {
-    "─".repeat(width as usize)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct AppLayout {
-    header: Rect,
-    left_main: Rect,
-    divider: Rect,
-    extended_divider: Rect,
-    right_main: Rect,
-    left_composer: Rect,
-    right_composer_gap: Rect,
-    footer_border: Rect,
-    footer_text: Rect,
-    footer_padding_bottom: Rect,
-    footer: Rect,
-}
-
-fn app_layout(root: Rect, header_height: u16, input: &str) -> AppLayout {
-    let footer_border_height = u16::from(root.height > header_height + 2);
-    let footer_text_height = u16::from(root.height > header_height + footer_border_height + 1);
-    let footer_padding_bottom_height =
-        u16::from(root.height > header_height + footer_border_height + footer_text_height + 2);
-    let footer_height = footer_text_height + footer_padding_bottom_height;
-    let composer_height = composer_height(input, root.width as usize, root.height).min(
-        root.height
-            .saturating_sub(header_height)
-            .saturating_sub(footer_border_height)
-            .saturating_sub(footer_height),
-    );
-    let main_height = root
-        .height
-        .saturating_sub(header_height)
-        .saturating_sub(composer_height)
-        .saturating_sub(footer_border_height)
-        .saturating_sub(footer_height);
-    let header = Rect::new(root.x, root.y, root.width, header_height.min(root.height));
-    let main = Rect::new(root.x, header.bottom(), root.width, main_height);
-    let composer = Rect::new(root.x, main.bottom(), root.width, composer_height);
-    let footer_border = Rect::new(root.x, composer.bottom(), root.width, footer_border_height);
-    let footer = Rect::new(root.x, footer_border.bottom(), root.width, footer_height);
-    let footer_text_host = Rect::new(root.x, footer.y, root.width, footer_text_height);
-    let footer_text = if footer_text_host.height == 0 {
-        footer_text_host
-    } else {
-        Rect::new(
-            footer_text_host.x + u16::from(footer_text_host.width > 2),
-            footer_text_host.y,
-            footer_text_host
-                .width
-                .saturating_sub(2 * u16::from(footer_text_host.width > 2)),
-            footer_text_host.height,
-        )
-    };
-    let footer_padding_bottom = Rect::new(
-        root.x,
-        footer_text_host.bottom(),
-        root.width,
-        footer_padding_bottom_height,
-    );
-    let main_cols = split_main_columns(main);
-    let composer_cols = split_main_columns(composer);
-    AppLayout {
-        header,
-        left_main: main_cols.0,
-        divider: main_cols.1,
-        extended_divider: Rect::new(
-            main_cols.1.x,
-            main_cols.1.y,
-            main_cols.1.width,
-            footer_border.y.saturating_sub(main_cols.1.y),
-        ),
-        right_main: main_cols.2,
-        left_composer: composer_cols.0,
-        right_composer_gap: Rect::new(
-            composer_cols.1.x,
-            composer_cols.1.y,
-            composer_cols.1.width + composer_cols.2.width,
-            composer_cols.1.height,
-        ),
-        footer_border,
-        footer_text,
-        footer_padding_bottom,
-        footer,
-    }
-}
-
-fn split_main_columns(area: Rect) -> (Rect, Rect, Rect) {
-    let right_width = if area.width >= 150 {
-        58
-    } else if area.width >= 120 {
-        46
-    } else {
-        34
-    }
-    .min(area.width.saturating_sub(45));
-    let divider_width = u16::from(area.width > right_width);
-    let left_width = area
-        .width
-        .saturating_sub(divider_width)
-        .saturating_sub(right_width);
-    let left = Rect::new(area.x, area.y, left_width, area.height);
-    let divider = Rect::new(left.right(), area.y, divider_width, area.height);
-    let right = Rect::new(divider.right(), area.y, right_width, area.height);
-    (left, divider, right)
-}
-
-fn ws_url() -> String {
-    env::var("FLYFLOR_WS_URL").unwrap_or_else(|_| DEFAULT_WS_URL.to_string())
-}
-
-fn top_bar_title() -> String {
-    top_bar_title_for_url(&ws_url())
-}
-
-fn top_bar_title_for_url(url: &str) -> String {
-    format!("FlyFlor · Powered By {url}")
-}
-
-fn working_light_bar(width: usize, phase: usize) -> String {
-    if width == 0 {
-        return String::new();
-    }
-    (0..width)
-        .map(|index| {
-            if (index + phase) % 8 < 3 {
-                '╴'
-            } else {
-                '─'
-            }
-        })
-        .collect()
-}
-
-fn working_shimmer_style(index: usize, phase: usize, theme: &Theme) -> Style {
-    let colors = [theme.pink, theme.purple, theme.blue, theme.purple];
-    Style::default().fg(colors[(index + phase) % colors.len()])
-}
-
-fn working_light_phase(now_ms: u64) -> usize {
-    (now_ms / 360 % 8) as usize
-}
-
-fn content_root(area: Rect) -> Rect {
-    let horizontal = if area.width > 2 { 1 } else { 0 };
-    let top = if area.height > 1 { 1 } else { 0 };
-    let bottom = if area.height > 3 { 0 } else { top };
-    Rect::new(
-        area.x + horizontal,
-        area.y + top,
-        area.width.saturating_sub(horizontal * 2),
-        area.height.saturating_sub(top + bottom),
-    )
-}
-
-fn metric_line<'a>(key: &'a str, value: &'a str, theme: &Theme) -> Line<'a> {
-    Line::from(vec![
-        Span::styled(format!("{key:<12}"), Style::default().fg(theme.muted)),
-        Span::styled(value.to_string(), Style::default().fg(theme.text)),
-    ])
-}
-
-fn dev_line(label: &str, value: String, theme: &Theme) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(format!("{label:<8}"), Style::default().fg(theme.muted)),
-        Span::styled(value, Style::default().fg(theme.text)),
-    ])
-}
-
-fn rect_value(rect: Rect) -> String {
-    format!("x{} y{} w{} h{}", rect.x, rect.y, rect.width, rect.height)
-}
-
-fn in_rect(x: u16, y: u16, rect: Rect) -> bool {
-    x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
 }
 
 #[derive(Clone, Copy, Default)]
@@ -955,9 +699,36 @@ struct ContextRowRegion {
     line_index: usize,
 }
 
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+struct ThoughtHitbox {
+    turn_index: usize,
+    rect: Rect,
+}
+
+#[derive(Clone, Copy)]
+enum BlockKind {
+    User,
+    Thought,
+    Answer,
+    Footer,
+}
+
+#[allow(dead_code)]
+#[derive(Clone, Copy)]
+struct BlockRegion {
+    kind: BlockKind,
+    turn_index: usize,
+    start_line: usize,
+    end_line: usize,
+}
+
+#[allow(dead_code)]
 struct LeftRender {
     lines: Vec<Line<'static>>,
     context_row_regions: Vec<ContextRowRegion>,
+    thought_regions: Vec<ContextRowRegion>,
+    block_regions: Vec<BlockRegion>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1016,7 +787,6 @@ struct App {
     context_row_hitboxes: Vec<ContextRowHitbox>,
     right_lines: Vec<Line<'static>>,
     right_sections: Vec<RightPanelSection>,
-    focused_right_section: usize,
     right_source: RightPanelData,
     fork_memory: ForkMemorySnapshot,
     todos: Vec<TodoItem>,
@@ -1025,10 +795,12 @@ struct App {
     dev_mode: bool,
     should_quit: bool,
     input: String,
+    input_cursor: Option<usize>,
     cursor: Option<Position>,
     drag: Option<DragState>,
     layout: LayoutSnapshot,
     history_status: HistoryStatus,
+    socket_connected: bool,
     socket_tx: Sender<SocketCommand>,
     socket_rx: Receiver<SocketEvent>,
     clipboard_tx: Sender<Result<String, String>>,
@@ -1225,7 +997,6 @@ impl PlanState {
 struct RightPanelSection {
     title: String,
     lines: Vec<Line<'static>>,
-    copy_text: String,
 }
 
 #[derive(Clone, Copy)]
@@ -1260,7 +1031,6 @@ impl App {
             context_row_hitboxes: Vec::new(),
             right_lines: Vec::new(),
             right_sections: Vec::new(),
-            focused_right_section: 0,
             right_source: mock.right_panel,
             fork_memory: mock.fork_memory,
             todos: mock.todos.clone(),
@@ -1269,10 +1039,12 @@ impl App {
             dev_mode: dev_mode_enabled(),
             should_quit: false,
             input: String::new(),
+            input_cursor: None,
             cursor: None,
             drag: None,
             layout: LayoutSnapshot::default(),
             history_status,
+            socket_connected: false,
             socket_tx,
             socket_rx,
             clipboard_tx,
@@ -1346,7 +1118,7 @@ impl App {
     }
 
     fn insert_paste_text(&mut self, text: &str) {
-        self.input.push_str(&normalize_paste_text(text));
+        self.insert_input_text(&normalize_paste_text(text));
         self.refresh_command_palette();
     }
 
@@ -1359,12 +1131,14 @@ impl App {
     fn apply_socket_event(&mut self, event: SocketEvent) {
         match event {
             SocketEvent::HistoryLoaded(turns) if !turns.is_empty() => {
+                self.socket_connected = true;
                 self.turns = turns;
                 self.history_status = HistoryStatus::Live;
                 self.left.initial_scroll_applied = false;
                 self.left.stick_to_bottom = true;
             }
             SocketEvent::HistoryLoaded(_) | SocketEvent::Connected => {
+                self.socket_connected = true;
                 self.history_status = HistoryStatus::Live;
             }
             SocketEvent::TaskListLoaded(todos) => {
@@ -1500,11 +1274,26 @@ impl App {
             }
             SocketEvent::Disconnected(message) => {
                 log_event(format!("socket disconnected {message}"));
+                self.socket_connected = false;
                 self.history_status = HistoryStatus::Error;
                 self.right_source.blackboard_status = format!("socket unavailable · {message}");
                 self.pending_fork_create = false;
+                self.fail_pending_turns(&format!("socket unavailable: {message}"));
             }
         }
+    }
+
+    fn fail_pending_turns(&mut self, message: &str) {
+        let pending = mem::take(&mut self.pending_turns);
+        for (_, turn_index) in pending {
+            if let Some(turn) = self.turns.get_mut(turn_index)
+                && turn.answer.trim().is_empty()
+            {
+                turn.answer = format!("请求失败：{message}");
+                turn.footer = "flyflor · send error".to_string();
+            }
+        }
+        self.left.stick_to_bottom = true;
     }
 
     fn pending_turn_mut(&mut self, message_id: &str) -> Option<&mut Turn> {
@@ -1541,6 +1330,109 @@ impl App {
         self.command_palette = None;
         self.ask_menu = None;
         self.plan_menu = None;
+    }
+
+    fn input_cursor_index(&self) -> usize {
+        self.input_cursor.unwrap_or_else(|| self.input.len())
+    }
+
+    fn set_input_cursor(&mut self, index: usize) {
+        self.input_cursor = Some(index.min(self.input.len()));
+    }
+
+    fn insert_input_char(&mut self, ch: char) {
+        let index = self.input_cursor_index().min(self.input.len());
+        self.input.insert(index, ch);
+        self.set_input_cursor(index + ch.len_utf8());
+    }
+
+    fn insert_input_text(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        let index = self.input_cursor_index().min(self.input.len());
+        self.input.insert_str(index, text);
+        self.set_input_cursor(index + text.len());
+    }
+
+    fn backspace_input(&mut self) {
+        let index = self.input_cursor_index().min(self.input.len());
+        let Some(previous) = self.input[..index]
+            .char_indices()
+            .last()
+            .map(|(index, _)| index)
+        else {
+            self.set_input_cursor(0);
+            return;
+        };
+        self.input.drain(previous..index);
+        self.set_input_cursor(previous);
+    }
+
+    fn move_input_cursor_left(&mut self) {
+        let index = self.input_cursor_index().min(self.input.len());
+        let previous = self.input[..index]
+            .char_indices()
+            .last()
+            .map(|(index, _)| index)
+            .unwrap_or(0);
+        self.set_input_cursor(previous);
+    }
+
+    fn move_input_cursor_right(&mut self) {
+        let index = self.input_cursor_index().min(self.input.len());
+        if index >= self.input.len() {
+            self.set_input_cursor(self.input.len());
+            return;
+        }
+        let next = self.input[index..]
+            .chars()
+            .next()
+            .map(|ch| index + ch.len_utf8())
+            .unwrap_or(self.input.len());
+        self.set_input_cursor(next);
+    }
+
+    fn move_input_cursor_vertical(&mut self, delta: isize) {
+        let index = self.input_cursor_index().min(self.input.len());
+        let (line_start, column) = input_line_start_and_column(&self.input, index);
+        if delta < 0 {
+            if line_start == 0 {
+                self.set_input_cursor(index);
+                return;
+            }
+            let previous_end = line_start.saturating_sub(1);
+            let previous_start = self.input[..previous_end]
+                .rfind('\n')
+                .map(|position| position + 1)
+                .unwrap_or(0);
+            self.set_input_cursor(input_index_for_column(
+                &self.input,
+                previous_start,
+                previous_end,
+                column,
+            ));
+        } else {
+            let line_end = self.input[index..]
+                .find('\n')
+                .map(|offset| index + offset)
+                .unwrap_or(self.input.len());
+            if line_end >= self.input.len() {
+                self.set_input_cursor(index);
+                return;
+            }
+            let next_start = line_end + 1;
+            let next_end = self.input[next_start..]
+                .find('\n')
+                .map(|offset| next_start + offset)
+                .unwrap_or(self.input.len());
+            self.set_input_cursor(input_index_for_column(
+                &self.input,
+                next_start,
+                next_end,
+                column,
+            ));
+        }
     }
 
     fn refresh_command_palette(&mut self) {
@@ -1631,6 +1523,7 @@ impl App {
             return;
         };
         self.input = format!("/{}", command.name);
+        self.input_cursor = None;
         self.refresh_command_palette();
     }
 
@@ -1648,6 +1541,7 @@ impl App {
         };
         self.command_palette = None;
         self.input.clear();
+        self.input_cursor = None;
         self.execute_slash_command(command.kind);
     }
 
@@ -1807,6 +1701,7 @@ impl App {
         if item.is_other {
             self.pending_ask_continuation = Some(menu.continuation);
             self.input.clear();
+            self.input_cursor = None;
             self.right_source.blackboard_status = "请输入自定义 ASK 回答后发送".to_string();
             return;
         }
@@ -1846,6 +1741,7 @@ impl App {
             PlanAction::Revise => {
                 self.pending_plan_action = Some(PlanPendingAction::Revise);
                 self.input.clear();
+                self.input_cursor = None;
                 self.right_source.blackboard_status = "请输入计划补充后发送".to_string();
             }
         }
@@ -1876,6 +1772,7 @@ impl App {
     fn send_ask_answer(&mut self, turn_index: usize, answer: String, continuation: Value) {
         let message_id = format!("flyflor-cli-message-{}", now_millis());
         let new_turn_index = self.turns.len();
+        let socket_connected = self.socket_connected;
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
@@ -1885,8 +1782,20 @@ impl App {
             metadata: None,
             context_rows: context_rows_from_metadata(&None),
             pending_continuation: None,
-            footer: format!("flyflor · ask answer · source turn {turn_index}"),
+            footer: if socket_connected {
+                format!("flyflor · ask answer · source turn {turn_index}")
+            } else {
+                "flyflor · send error".to_string()
+            },
         });
+        if !socket_connected {
+            if let Some(turn) = self.turns.get_mut(new_turn_index) {
+                turn.answer = format!("请求失败：socket unavailable · {}", ws_url());
+            }
+            self.right_source.blackboard_status = format!("socket unavailable · {}", ws_url());
+            self.left.stick_to_bottom = true;
+            return;
+        }
         self.pending_turns
             .insert(message_id.clone(), new_turn_index);
         if self
@@ -1926,15 +1835,8 @@ impl App {
     fn update_right_viewport(&mut self, todo_area: Rect) {
         let data = self.current_right_panel_data();
         let todos = self.visible_todos();
-        self.right_sections = render_right_panel_sections(
-            &data,
-            &todos,
-            todo_area.width.max(1) as usize,
-            self.focused_right_section,
-        );
-        if self.focused_right_section >= self.right_sections.len() {
-            self.focused_right_section = self.right_sections.len().saturating_sub(1);
-        }
+        self.right_sections =
+            render_right_panel_sections(&data, &todos, todo_area.width.max(1) as usize);
         self.right_lines =
             flatten_right_panel_sections(scrollable_right_sections(&self.right_sections));
         if let Some(todo) = self.right_sections.first() {
@@ -2050,18 +1952,8 @@ impl App {
         data
     }
 
-    fn focus_right_section(&mut self, delta: isize) {
-        let len = self.right_sections.len().max(1);
-        self.focused_right_section = move_index(self.focused_right_section, len, delta);
-        self.right.stick_to_bottom = false;
-    }
-
     fn should_copy_with_y(&self) -> bool {
         !self.input_context_active() && self.selection_has_content()
-    }
-
-    fn should_copy_right_section_with_y(&self) -> bool {
-        !self.input_context_active() && !self.selection_has_content()
     }
 
     fn scroll_left_by(&mut self, delta: isize) {
@@ -2170,6 +2062,7 @@ impl App {
 
         let message_id = format!("flyflor-cli-message-{}", now_millis());
         let new_turn_index = self.turns.len();
+        let socket_connected = self.socket_connected;
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
@@ -2179,8 +2072,20 @@ impl App {
             metadata: None,
             context_rows: context_rows_from_metadata(&None),
             pending_continuation: None,
-            footer: "flyflor · resending".to_string(),
+            footer: if socket_connected {
+                "flyflor · resending".to_string()
+            } else {
+                "flyflor · send error".to_string()
+            },
         });
+        if !socket_connected {
+            if let Some(turn) = self.turns.get_mut(new_turn_index) {
+                turn.answer = format!("请求失败：socket unavailable · {}", ws_url());
+            }
+            self.right_source.blackboard_status = format!("socket unavailable · {}", ws_url());
+            self.left.stick_to_bottom = true;
+            return;
+        }
         self.pending_turns
             .insert(message_id.clone(), new_turn_index);
         if self
@@ -2218,6 +2123,7 @@ impl App {
         }
         if !self.input.is_empty() {
             self.input.clear();
+            self.input_cursor = None;
         }
         self.composer_notice = Some(ComposerNotice::ExitHint);
     }
@@ -2329,32 +2235,6 @@ impl App {
         }
     }
 
-    fn copy_focused_right_section_to_clipboard(&mut self) {
-        let Some(section) = self.right_sections.get(self.focused_right_section) else {
-            self.right_source.blackboard_status = "暂无可复制分区".to_string();
-            return;
-        };
-        let text = section.copy_text.clone();
-        if text.trim().is_empty() {
-            self.right_source.blackboard_status = "当前分区暂无内容".to_string();
-            return;
-        }
-        match write_text_to_clipboard(&text) {
-            Ok(()) => {
-                self.right_source.blackboard_status = format!("已复制：{}", section.title);
-                log_event(format!(
-                    "right section copied section={} chars={}",
-                    section.title,
-                    text.chars().count()
-                ));
-            }
-            Err(error) => {
-                self.right_source.blackboard_status = format!("copy failed · {error}");
-                log_event(format!("right section copy failed {error}"));
-            }
-        }
-    }
-
     fn selection_to_text(&self) -> Option<String> {
         let (start, end) = self.selection.ordered_endpoints()?;
         if !self.selection_has_content() {
@@ -2392,8 +2272,18 @@ impl App {
     }
 
     fn selected_chat_lines(&self, theme: &Theme) -> Vec<Line<'static>> {
-        let mut lines = self.chat_lines.clone();
-        apply_selection_to_lines(&mut lines, 0, self.selection, SelectionTarget::Left, theme);
+        let mut lines = visible_line_slice(
+            &self.chat_lines,
+            self.left.scroll,
+            self.left.viewport_height,
+        );
+        apply_selection_to_lines(
+            &mut lines,
+            self.left.scroll,
+            self.selection,
+            SelectionTarget::Left,
+            theme,
+        );
         lines
     }
 
@@ -2409,7 +2299,7 @@ impl App {
     }
 
     fn selected_right_lines(&self, theme: &Theme) -> Vec<Line<'static>> {
-        let mut lines = self.right_lines.clone();
+        let mut lines = visible_line_slice(&self.right_lines, 0, self.right.viewport_height);
         apply_selection_to_lines(&mut lines, 0, self.selection, SelectionTarget::Right, theme);
         lines
     }
@@ -2430,6 +2320,7 @@ impl App {
             self.pending_plan_action = None;
             self.send_plan_command(PlanAction::Revise, Some(text));
             self.input.clear();
+            self.input_cursor = None;
             return;
         }
         if text == "/exit" {
@@ -2443,6 +2334,7 @@ impl App {
                 self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
             }
             self.input.clear();
+            self.input_cursor = None;
             return;
         }
         if text.starts_with('/') {
@@ -2452,12 +2344,19 @@ impl App {
             } else {
                 self.right_source.blackboard_status = format!("未知命令：{text}");
                 self.input.clear();
+                self.input_cursor = None;
             }
             return;
         }
         self.composer_notice = None;
 
         let message_id = format!("flyflor-cli-message-{}", now_millis());
+        if !self.socket_connected {
+            log_event(format!("send blocked: socket unavailable url={}", ws_url()));
+            self.history_status = HistoryStatus::Error;
+            self.right_source.blackboard_status = format!("socket unavailable · {}", ws_url());
+            return;
+        }
         let turn_index = self.turns.len();
         let metadata = self
             .pending_ask_continuation
@@ -2500,6 +2399,7 @@ impl App {
             }
         }
         self.input.clear();
+        self.input_cursor = None;
         self.left.stick_to_bottom = true;
     }
 }
@@ -2535,6 +2435,7 @@ fn visible_context_hitboxes(
     scroll: usize,
     area: Rect,
 ) -> Vec<ContextRowHitbox> {
+    let hit_width = area.width.min(8).max(1);
     regions
         .iter()
         .filter_map(|region| {
@@ -2545,7 +2446,7 @@ fn visible_context_hitboxes(
             Some(ContextRowHitbox {
                 turn_index: region.turn_index,
                 row_index: region.row_index,
-                rect: Rect::new(area.x, area.y + visible_index as u16, area.width, 1),
+                rect: Rect::new(area.x, area.y + visible_index as u16, hit_width, 1),
             })
         })
         .collect()
@@ -2671,17 +2572,28 @@ fn wrapped_line_count(line: &Line<'_>, width: usize) -> usize {
 fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
     let mut lines = Vec::new();
     let mut context_row_regions = Vec::new();
+    let mut thought_regions = Vec::new();
+    let mut block_regions = Vec::new();
 
     for (turn_index, turn) in turns.iter().enumerate() {
         if turn_index > 0 {
             lines.push(empty_content_line(width, theme));
         }
 
+        let user_start = lines.len();
         lines.extend(render_user_block(&turn.user, width, theme));
+        let user_end = lines.len().saturating_sub(1);
+        block_regions.push(BlockRegion {
+            kind: BlockKind::User,
+            turn_index,
+            start_line: user_start,
+            end_line: user_end,
+        });
         lines.push(thread_line(Line::raw(""), width, theme, ThreadTone::Rail));
 
         for (row_index, row) in turn.context_rows.iter().enumerate() {
             let line_index = lines.len();
+            let block_start = line_index;
             lines.push(render_context_row_header(row, width, theme));
             context_row_regions.push(ContextRowRegion {
                 turn_index,
@@ -2699,6 +2611,12 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
                     lines.push(thread_line(line, width, theme, ThreadTone::Thought));
                 }
             }
+            block_regions.push(BlockRegion {
+                kind: BlockKind::Thought,
+                turn_index,
+                start_line: block_start,
+                end_line: lines.len().saturating_sub(1),
+            });
         }
 
         if let Some(thought) = &turn.thought {
@@ -2708,7 +2626,14 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
                 detail: thought.content.clone(),
                 expanded: thought.expanded,
             };
+            let line_index = lines.len();
+            let block_start = line_index;
             lines.push(render_context_row_header(&row, width, theme));
+            thought_regions.push(ContextRowRegion {
+                turn_index,
+                row_index: 0,
+                line_index,
+            });
             if thought.expanded {
                 lines.push(thread_line(Line::raw(""), width, theme, ThreadTone::Rail));
                 for line in render_markdown_block(
@@ -2720,8 +2645,15 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
                     lines.push(thread_line(line, width, theme, ThreadTone::Thought));
                 }
             }
+            block_regions.push(BlockRegion {
+                kind: BlockKind::Thought,
+                turn_index,
+                start_line: block_start,
+                end_line: lines.len().saturating_sub(1),
+            });
         }
 
+        let answer_start = lines.len();
         for line in render_markdown_block(
             &turn.answer,
             thread_body_width(width, theme, ThreadTone::Rail),
@@ -2730,14 +2662,31 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
         ) {
             lines.push(thread_line(line, width, theme, ThreadTone::Rail));
         }
+        if lines.len() > answer_start {
+            block_regions.push(BlockRegion {
+                kind: BlockKind::Answer,
+                turn_index,
+                start_line: answer_start,
+                end_line: lines.len().saturating_sub(1),
+            });
+        }
         if !turn.footer.trim().is_empty() {
+            let footer_start = lines.len();
             lines.push(render_footer_line(&turn.footer, width, theme));
+            block_regions.push(BlockRegion {
+                kind: BlockKind::Footer,
+                turn_index,
+                start_line: footer_start,
+                end_line: lines.len().saturating_sub(1),
+            });
         }
     }
 
     LeftRender {
         lines,
         context_row_regions,
+        thought_regions,
+        block_regions,
     }
 }
 
@@ -2887,8 +2836,13 @@ fn context_row_marker(row: &ContextRow) -> &'static str {
     match row.kind {
         ContextRowKind::AskResume => "◎",
         ContextRowKind::CreateFork => "⊕",
-        ContextRowKind::Blackboard => "▼",
-        ContextRowKind::Thought => "▼",
+        ContextRowKind::Blackboard | ContextRowKind::Thought => {
+            if row.expanded {
+                "▼"
+            } else {
+                "▶"
+            }
+        }
         _ if row.expanded => "▼",
         _ => "▶",
     }
@@ -3810,7 +3764,6 @@ fn render_right_panel_sections(
     data: &RightPanelData,
     todos: &[TodoItem],
     width: usize,
-    focused_index: usize,
 ) -> Vec<RightPanelSection> {
     let mut sections = vec![
         right_section("TODO List", todo_section_rows(todos)),
@@ -3829,12 +3782,11 @@ fn render_right_panel_sections(
         ),
     ];
 
-    for (index, section) in sections.iter_mut().enumerate() {
+    for section in sections.iter_mut() {
         if section.title == "TODO List" {
             continue;
         }
-        let selected = index == focused_index;
-        section.lines = render_right_section_lines(section, width, selected);
+        section.lines = render_right_section_lines(section, width, false);
     }
     sections
 }
@@ -3892,7 +3844,7 @@ fn right_todo_body_area(todo: Rect) -> Rect {
 }
 
 fn right_bottom_height(data: &RightPanelData, width: usize, max_height: u16) -> u16 {
-    let sections = render_right_panel_sections(data, &[TodoItem::empty_plan()], width, 1);
+    let sections = render_right_panel_sections(data, &[TodoItem::empty_plan()], width);
     let bottom_lines = flatten_right_panel_sections(scrollable_right_sections(&sections));
     let desired = count_visual_lines(&bottom_lines, width.max(1)) as u16;
     desired
@@ -4026,14 +3978,9 @@ fn todo_section_rows(todos: &[TodoItem]) -> Vec<String> {
 }
 
 fn right_section(title: &str, rows: Vec<String>) -> RightPanelSection {
-    let copy_text = std::iter::once(title.to_string())
-        .chain(rows.iter().cloned())
-        .collect::<Vec<_>>()
-        .join("\n");
     RightPanelSection {
         title: title.to_string(),
         lines: rows.into_iter().map(Line::raw).collect(),
-        copy_text,
     }
 }
 
@@ -4389,57 +4336,21 @@ fn composer_footer_line(app: &App, theme: &Theme) -> Line<'static> {
         Span::styled("Shift + Tab", Style::default().fg(theme.text)),
         Span::styled(" 切换模式  ", Style::default().fg(theme.muted)),
         Span::styled("←/→", Style::default().fg(theme.text)),
-        Span::styled(" 切换右侧分区 · ", Style::default().fg(theme.muted)),
+        Span::styled(" 移动光标", Style::default().fg(theme.muted)),
         Span::styled("y", Style::default().fg(theme.text)),
-        Span::styled(" 复制当前分区  ", Style::default().fg(theme.muted)),
-        Span::styled("回到底部", Style::default().fg(theme.text)),
+        Span::styled(" 复制选择", Style::default().fg(theme.muted)),
     ])
 }
 
-fn composer_height(input: &str, width: usize, available_height: u16) -> u16 {
-    let content_width = width.saturating_sub(2).max(1);
-    let visual_lines = input_visual_line_count(input, content_width);
-    let desired = (visual_lines + 1) as u16;
-    let max_height = (available_height / 2).max(2);
-    desired.clamp(2, max_height)
-}
-
-fn input_visual_line_count(input: &str, content_width: usize) -> usize {
-    if input.is_empty() {
-        return 1;
-    }
-
-    let mut total = 0usize;
-    for line in input.split('\n') {
-        let width = UnicodeWidthStr::width(line);
-        total += width.div_ceil(content_width).max(1);
-    }
-    if input.ends_with('\n') {
-        total += 1;
-    }
-    total.max(1)
-}
-
-fn input_cursor_position(input: &str, area: Rect, scroll: usize) -> Option<Position> {
+fn input_cursor_position(
+    input: &str,
+    cursor_index: usize,
+    area: Rect,
+    scroll: usize,
+) -> Option<Position> {
     let content_width = area.width.saturating_sub(2).max(1) as usize;
-    let mut visual_line = 0usize;
-    let mut visual_col = 0usize;
-
-    if !input.is_empty() {
-        for source_line in input.split('\n') {
-            let line_width = UnicodeWidthStr::width(source_line);
-            let line_visual_lines = line_width.div_ceil(content_width).max(1);
-            visual_line += line_visual_lines - 1;
-            visual_col = line_width % content_width;
-            if visual_col == 0 && line_width > 0 {
-                visual_col = content_width;
-            }
-        }
-        if input.ends_with('\n') {
-            visual_line += 1;
-            visual_col = 0;
-        }
-    }
+    let (visual_line, visual_col) =
+        input_visual_cursor(input, cursor_index.min(input.len()), content_width);
 
     let visible_line = visual_line.saturating_sub(scroll);
     if visible_line >= area.height as usize {
@@ -4449,6 +4360,53 @@ fn input_cursor_position(input: &str, area: Rect, scroll: usize) -> Option<Posit
         area.x + visual_col.min(area.width.saturating_sub(1) as usize) as u16,
         area.y + visible_line as u16,
     ))
+}
+
+fn input_visual_cursor(input: &str, cursor_index: usize, content_width: usize) -> (usize, usize) {
+    let mut visual_line = 0usize;
+    let mut current_line_start = 0usize;
+    for line in input.split_inclusive('\n') {
+        let has_newline = line.ends_with('\n');
+        let line_end = current_line_start + line.len() - usize::from(has_newline);
+        if cursor_index <= line_end {
+            let prefix = &input[current_line_start..cursor_index];
+            let width = UnicodeWidthStr::width(prefix);
+            return (visual_line + width / content_width, width % content_width);
+        }
+        let width = UnicodeWidthStr::width(&input[current_line_start..line_end]);
+        visual_line += width.div_ceil(content_width).max(1);
+        if has_newline {
+            current_line_start += line.len();
+        }
+    }
+    if current_line_start <= input.len() {
+        let prefix = &input[current_line_start..cursor_index.min(input.len())];
+        let width = UnicodeWidthStr::width(prefix);
+        return (visual_line + width / content_width, width % content_width);
+    }
+    (visual_line, 0)
+}
+
+fn input_line_start_and_column(input: &str, index: usize) -> (usize, usize) {
+    let index = index.min(input.len());
+    let line_start = input[..index]
+        .rfind('\n')
+        .map(|position| position + 1)
+        .unwrap_or(0);
+    let column = UnicodeWidthStr::width(&input[line_start..index]);
+    (line_start, column)
+}
+
+fn input_index_for_column(input: &str, start: usize, end: usize, target_column: usize) -> usize {
+    let mut width = 0usize;
+    for (offset, ch) in input[start..end].char_indices() {
+        let next = width + string_width_char(ch);
+        if next > target_column {
+            return start + offset;
+        }
+        width = next;
+    }
+    end
 }
 
 fn normalize_paste_text(text: &str) -> String {
@@ -5077,11 +5035,7 @@ fn event_subscribe_envelope(now: u64) -> Value {
         "requestId": request_id,
         "payload": {
             "types": [
-                "memory.task_plan.written",
-            "blackboard.message.appended",
-                "blackboard.turn.end",
-                "fork.memory.written",
-                "fork.memory.updated"
+                "memory.task_plan.written"
             ]
         }
     })
@@ -5887,7 +5841,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
             kind: ContextRowKind::Blackboard,
             summary: blackboard_summary(blackboard),
             detail: format_blackboard_discussion(blackboard),
-            expanded: false,
+            expanded: true,
         });
     }
 
@@ -6487,7 +6441,6 @@ struct Theme {
     pink: Color,
     danger: Color,
     green: Color,
-    dev: Color,
     overlay: Color,
     scroll_thumb: Color,
     scroll_track: Color,
@@ -6630,6 +6583,29 @@ struct RightPanelData {
     footer: String,
 }
 
+impl RightPanelData {
+    fn default_live() -> Self {
+        Self {
+            thinking_label: "Socket".to_string(),
+            blackboard_status: "waiting for flyflor socket".to_string(),
+            blackboard_stream: Vec::new(),
+            model_stats: Vec::new(),
+            token_stats: Vec::new(),
+            context_total: "未收到上下文窗口".to_string(),
+            context_percent: "未知".to_string(),
+            context_bar: String::new(),
+            context_usage: "暂无数据".to_string(),
+            context_ratio: 0.0,
+            context_used_tokens: 0,
+            context_max_tokens: None,
+            context_used: "0".to_string(),
+            context_max: "未知".to_string(),
+            fork_memory: ForkMemorySnapshot::default(),
+            footer: "flyflor-cli".to_string(),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct SocketEnvelope {
     #[serde(rename = "type")]
@@ -6725,7 +6701,6 @@ impl Default for Theme {
             pink: Color::Rgb(255, 120, 170),
             danger: Color::Rgb(255, 72, 72),
             green: Color::Rgb(91, 228, 155),
-            dev: Color::Rgb(96, 165, 250),
             overlay: Color::Rgb(10, 14, 28),
             scroll_thumb: Color::Rgb(218, 220, 228),
             scroll_track: Color::Rgb(107, 116, 144),
@@ -6742,9 +6717,9 @@ impl Default for Theme {
             code_label: Color::Rgb(175, 180, 196),
             mermaid_label: Color::Rgb(175, 180, 196),
             mermaid_text: Color::Rgb(214, 218, 228),
-            rail_char: '│',
-            thought_bar_char: '│',
-            user_leading_bar: '│',
+            rail_char: '┃',
+            thought_bar_char: '┃',
+            user_leading_bar: '┃',
             footer_icon: '◻',
             thread_gutter: 1,
             user_pad: 1,
@@ -6758,6 +6733,11 @@ impl Default for Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::layout::shell::{app_layout, content_root};
+
+    fn separator_text(width: u16) -> String {
+        "─".repeat(width as usize)
+    }
 
     #[test]
     fn parses_mermaid_edges_with_labels() {
@@ -7811,6 +7791,7 @@ mod tests {
         app.ask_menu.as_mut().expect("ask menu").selected = 1;
         app.confirm_ask_menu_selection();
         app.input = "我的自定义回答".to_string();
+        app.socket_connected = true;
         app.submit_input();
 
         let sent = app.turns.last().expect("sent turn");
@@ -7821,6 +7802,7 @@ mod tests {
     #[test]
     fn pasted_newlines_insert_without_submitting_until_real_enter() {
         let mut app = App::new();
+        app.socket_connected = true;
         let initial_turns = app.turns.len();
 
         app.insert_paste_text("第一行\r\n第二行");
@@ -7834,6 +7816,69 @@ mod tests {
         assert_eq!(app.turns.len(), initial_turns + 1);
         assert_eq!(app.turns.last().expect("sent turn").user, "第一行\n第二行");
         assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn submit_without_socket_keeps_draft_editable_and_does_not_create_sending_turn() {
+        let mut app = App::new();
+        app.socket_connected = false;
+        let initial_turns = app.turns.len();
+        app.input = "hello gateway".to_string();
+
+        app.submit_input();
+
+        assert_eq!(app.turns.len(), initial_turns);
+        assert_eq!(app.input, "hello gateway");
+        assert!(app.pending_turns.is_empty());
+        assert!(matches!(app.history_status, HistoryStatus::Error));
+        assert!(
+            app.right_source
+                .blackboard_status
+                .contains("socket unavailable")
+        );
+    }
+
+    #[test]
+    fn disconnect_marks_pending_turns_as_send_error() {
+        let mut app = App::new();
+        app.socket_connected = true;
+        let turn_index = app.turns.len();
+        app.turns.push(Turn {
+            message_id: Some("message-1".to_string()),
+            event_id: None,
+            user: "hello".to_string(),
+            thought: None,
+            answer: String::new(),
+            metadata: None,
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: "flyflor · sending".to_string(),
+        });
+        app.pending_turns
+            .insert("message-1".to_string(), turn_index);
+
+        app.apply_socket_event(SocketEvent::Disconnected("connection refused".to_string()));
+
+        assert!(app.pending_turns.is_empty());
+        let turn = &app.turns[turn_index];
+        assert!(turn.answer.contains("connection refused"));
+        assert_eq!(turn.footer, "flyflor · send error");
+        assert!(matches!(app.history_status, HistoryStatus::Error));
+    }
+
+    #[test]
+    fn arrow_keys_move_input_cursor_without_right_panel_focus() {
+        let mut app = App::new();
+        app.input = "ab\ncd".to_string();
+        app.input_cursor = Some(app.input.len());
+
+        handle_key(&mut app, KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+        app.insert_input_char('X');
+        assert_eq!(app.input, "ab\ncXd");
+
+        handle_key(&mut app, KeyEvent::new(KeyCode::Up, KeyModifiers::NONE));
+        app.insert_input_char('Y');
+        assert_eq!(app.input, "abY\ncXd");
     }
 
     #[test]
@@ -8139,7 +8184,8 @@ mod tests {
 
         let visible = app.visible_chat_lines(&theme);
 
-        assert_eq!(visible.len(), app.chat_lines.len());
+        assert_eq!(visible.len(), 1);
+        assert_eq!(line_plain_text(&visible[0]), "gamma");
         assert_eq!(app.selection_to_text().as_deref(), Some("lpha\nbe"));
     }
 
@@ -8214,20 +8260,21 @@ mod tests {
     }
 
     #[test]
-    fn right_panel_sections_are_focusable_and_copy_buffered() {
+    fn right_panel_sections_render_without_focus() {
         let mut app = App::new();
         let area = Rect::new(0, 0, 48, 20);
         app.update_right_viewport(area);
 
         assert!(app.right_sections.len() >= 4);
         assert_eq!(app.right_sections[0].title, "TODO List");
-        app.focus_right_section(1);
-        assert_eq!(app.focused_right_section, 1);
-        let copied = app.right_sections[app.focused_right_section]
-            .copy_text
-            .clone();
-        assert!(copied.contains("Model / Status"));
-        assert!(!copied.contains('{'));
+        let model = app.right_sections[1]
+            .lines
+            .iter()
+            .map(line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(model.contains("Model / Status"));
+        assert!(!model.contains('{'));
     }
 
     #[test]
@@ -8264,18 +8311,6 @@ mod tests {
         );
         assert!(!todo_body.contains("状态：暂无计划"));
         assert_eq!(todo_body.matches("暂无计划 [-]").count(), 1);
-        assert_eq!(
-            app.right_sections[0].copy_text.matches("TODO List").count(),
-            1
-        );
-        assert!(!app.right_sections[0].copy_text.contains("状态：暂无计划"));
-        assert_eq!(
-            app.right_sections[0]
-                .copy_text
-                .matches("暂无计划 [-]")
-                .count(),
-            1
-        );
         let scroll_text = app
             .right_lines
             .iter()
@@ -8320,15 +8355,12 @@ mod tests {
         let mut app = App::new();
         app.right_source.blackboard_status = "blackboard should not render".to_string();
         app.right_source.blackboard_stream = vec!["blackboard event".to_string()];
-        let sections = render_right_panel_sections(
-            &app.current_right_panel_data(),
-            &app.visible_todos(),
-            60,
-            0,
-        );
+        let sections =
+            render_right_panel_sections(&app.current_right_panel_data(), &app.visible_todos(), 60);
         let text = sections
             .iter()
-            .map(|section| section.copy_text.clone())
+            .flat_map(|section| section.lines.iter())
+            .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
 
@@ -8351,12 +8383,8 @@ mod tests {
     #[test]
     fn right_sections_keep_todo_model_context_order() {
         let app = App::new();
-        let sections = render_right_panel_sections(
-            &app.current_right_panel_data(),
-            &app.visible_todos(),
-            60,
-            0,
-        );
+        let sections =
+            render_right_panel_sections(&app.current_right_panel_data(), &app.visible_todos(), 60);
         let titles = sections
             .iter()
             .map(|section| section.title.as_str())
@@ -8401,7 +8429,7 @@ mod tests {
             },
         ];
         let sections =
-            render_right_panel_sections(&App::new().current_right_panel_data(), &todos, 48, 0);
+            render_right_panel_sections(&App::new().current_right_panel_data(), &todos, 48);
 
         assert_eq!(sections[0].title, "TODO List");
         let title = line_plain_text(&render_right_section_title(&sections[0], 48, true));
@@ -8430,7 +8458,7 @@ mod tests {
             brain_db_status: Some("available".to_string()),
         };
         let width = 26;
-        let sections = render_right_panel_sections(&data, &[TodoItem::empty_plan()], width, 0);
+        let sections = render_right_panel_sections(&data, &[TodoItem::empty_plan()], width);
         let fork = sections
             .iter()
             .find(|section| section.title == "Fork / Memory")
@@ -8461,18 +8489,17 @@ mod tests {
     #[test]
     fn model_status_omits_idle_fork_and_unknown_model_is_not_idle() {
         let app = App::new();
-        let sections = render_right_panel_sections(
-            &app.current_right_panel_data(),
-            &app.visible_todos(),
-            60,
-            0,
-        );
+        let sections =
+            render_right_panel_sections(&app.current_right_panel_data(), &app.visible_todos(), 60);
         let model = sections
             .iter()
             .find(|section| section.title == "Model / Status")
             .expect("model section")
-            .copy_text
-            .clone();
+            .lines
+            .iter()
+            .map(line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
 
         assert!(!model.contains("fork"));
         assert!(!model.contains("空闲"));
@@ -8637,7 +8664,6 @@ mod tests {
             &app.current_right_panel_data(),
             &[TodoItem::empty_plan()],
             text_width,
-            0,
         );
         let bottom_text = flatten_right_panel_sections(scrollable_right_sections(&sections))
             .iter()
@@ -8977,13 +9003,12 @@ mod tests {
         }]);
 
         assert_eq!(app.plan_state(), PlanState::AwaitingConfirmation);
-        let sections = render_right_panel_sections(
-            &app.current_right_panel_data(),
-            &app.visible_todos(),
-            60,
-            0,
-        );
-        let text = sections[0].copy_text.clone();
+        let sections =
+            render_right_panel_sections(&app.current_right_panel_data(), &app.visible_todos(), 60);
+        let text = std::iter::once(sections[0].title.clone())
+            .chain(sections[0].lines.iter().map(line_plain_text))
+            .collect::<Vec<_>>()
+            .join("\n");
         assert!(text.contains("状态：等待确认"));
         assert!(text.contains("确认计划"));
         assert!(text.contains("补充计划"));
@@ -9308,8 +9333,8 @@ mod tests {
     #[test]
     fn top_bar_title_uses_default_ws_url() {
         assert_eq!(
-            top_bar_title_for_url(DEFAULT_WS_URL),
-            "FlyFlor · Powered By ws://127.0.0.1:8788/ws"
+            shared::top_bar_title_for_url(DEFAULT_WS_URL),
+            "FlyFlor · Powered By ws://127.0.0.1:8787/ws"
         );
     }
 
@@ -9359,7 +9384,7 @@ mod tests {
         assert_eq!(input_inner.bottom(), layout.footer_border.y);
         assert_eq!(layout.footer_border.y - input_inner.bottom(), 0);
         assert_eq!(
-            input_cursor_position("hello", input_inner, 0),
+            input_cursor_position("hello", "hello".len(), input_inner, 0),
             Some(Position::new(input_inner.x + 5, input_inner.y))
         );
     }
@@ -9385,21 +9410,18 @@ mod tests {
     }
 
     #[test]
-    fn content_root_reduces_bottom_margin() {
+    fn content_root_uses_full_terminal_area() {
         let root = content_root(Rect::new(0, 0, 100, 40));
 
-        assert_eq!(root.y, 1);
-        assert_eq!(root.height, 39);
+        assert_eq!(root, Rect::new(0, 0, 100, 40));
     }
 
     #[test]
-    fn working_light_bar_uses_subtle_thin_segments() {
+    fn working_light_bar_uses_continuous_heavy_line() {
         let bar = working_light_bar(12, 0);
 
         assert_eq!(bar.chars().count(), 12);
-        assert!(bar.contains('╴'));
-        assert!(bar.contains('─'));
-        assert!(!bar.contains('━'));
+        assert!(bar.chars().all(|ch| ch == '━'));
     }
 
     #[test]
@@ -9490,6 +9512,37 @@ mod tests {
                 .get("payload")
                 .and_then(|payload| payload.get("context"))
                 .and_then(|context| context.get("mode"))
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn event_subscribe_envelope_uses_known_runtime_event_types_only() {
+        let envelope = event_subscribe_envelope(42);
+        let types = envelope
+            .get("payload")
+            .and_then(|payload| payload.get("types"))
+            .and_then(Value::as_array)
+            .expect("types array")
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>();
+
+        assert_eq!(types, vec!["memory.task_plan.written"]);
+        assert!(
+            !types
+                .iter()
+                .any(|event_type| event_type.starts_with("fork.memory."))
+        );
+        assert!(
+            !types
+                .iter()
+                .any(|event_type| event_type.starts_with("blackboard."))
+        );
+        assert!(
+            envelope
+                .get("payload")
+                .and_then(|payload| payload.get("classes"))
                 .is_none()
         );
     }
@@ -9974,9 +10027,6 @@ fn demo_mock_data() -> MockData {
 
 #[derive(Clone, Copy, Default)]
 struct LayoutSnapshot {
-    frame: Rect,
-    content: Rect,
-    top_bar: Rect,
     left_panel: Rect,
     right_panel: Rect,
 }
