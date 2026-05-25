@@ -20,6 +20,24 @@ or
 FLYFLOR_DEV=1 cargo run
 ```
 
+Hot-reload dev mode:
+
+```bash
+cargo install cargo-watch
+npm install
+npm run dev
+```
+
+The default dev script uses Rust's `cargo-watch` to restart `cargo run -- --dev` when Rust files or Cargo config change.
+
+Logs:
+
+```bash
+npm run logs
+```
+
+The dev runner and Rust TUI both append diagnostics to `.flyflor-cli/logs/dev.log`.
+
 ## Current scope
 
 - Static mock UI based on the design draft
@@ -28,7 +46,8 @@ FLYFLOR_DEV=1 cargo run
 
 ## Controls
 
-- `q` or `Ctrl+C`: quit
+- `/exit`: quit
+- `Ctrl+C` / `Ctrl+V` / `Cmd+V`: paste from clipboard in the composer
 - `F2` or `Ctrl+D`: toggle dev mode
 - `Up` / `k`: scroll up
 - `Down` / `j`: scroll down
