@@ -1447,26 +1447,31 @@ impl App {
         else {
             return;
         };
-        let summary = execution_context_summary(&self.run_timeline);
-        let detail = execution_context_detail(&self.run_timeline);
+        let mut rows = execution_context_rows(&self.run_timeline);
+        if rows.is_empty() {
+            return;
+        }
         let Some(turn) = self.turns.get_mut(turn_index) else {
             return;
         };
-        if let Some(row) = turn
+        let previous = turn
             .context_rows
-            .iter_mut()
-            .find(|row| row.kind == ContextRowKind::Execution)
-        {
-            row.summary = summary;
-            row.detail = detail;
-            return;
+            .iter()
+            .filter(|row| row.kind == ContextRowKind::Execution)
+            .filter_map(|row| execution_row_identity(row).map(|key| (key, row.expanded)))
+            .collect::<Vec<_>>();
+        for row in &mut rows {
+            if let Some(key) = execution_row_identity(row)
+                && let Some((_, expanded)) = previous
+                    .iter()
+                    .find(|(previous_key, _)| previous_key == &key)
+            {
+                row.expanded = *expanded;
+            }
         }
-        turn.context_rows.push(ContextRow {
-            kind: ContextRowKind::Execution,
-            summary,
-            detail,
-            expanded: false,
-        });
+        turn.context_rows
+            .retain(|row| row.kind != ContextRowKind::Execution);
+        turn.context_rows.extend(rows);
     }
 
     fn fail_pending_turns(&mut self, message: &str) {
@@ -6299,6 +6304,175 @@ fn compact_tool_execution_label(value: &Value, width: usize) -> String {
     truncate_to_width(&format!("{label} · {status}"), width)
 }
 
+fn execution_context_rows(timeline: &RunTimeline) -> Vec<ContextRow> {
+    let mut children = Vec::new();
+    for batch in &timeline.subagents.batches {
+        for child in &batch.children {
+            children.push((Some(batch.name.as_str()), child));
+        }
+    }
+    for child in &timeline.subagents.loose_children {
+        children.push((None, child));
+    }
+
+    let total = children.len();
+    if total == 0 {
+        if timeline.items.is_empty() {
+            return Vec::new();
+        }
+        return vec![ContextRow {
+            kind: ContextRowKind::Execution,
+            summary: execution_context_summary(timeline),
+            detail: execution_context_detail(timeline),
+            expanded: false,
+        }];
+    }
+
+    children
+        .into_iter()
+        .enumerate()
+        .map(|(index, (batch_name, child))| ContextRow {
+            kind: ContextRowKind::Execution,
+            summary: subagent_execution_summary(index + 1, total, child),
+            detail: subagent_execution_detail(batch_name, child),
+            expanded: false,
+        })
+        .collect()
+}
+
+fn subagent_execution_summary(
+    index: usize,
+    total: usize,
+    child: &tui::subagent::state::SubagentChild,
+) -> String {
+    let task = child
+        .task
+        .as_deref()
+        .filter(|task| !task.trim().is_empty())
+        .unwrap_or(child.name.as_str());
+    let tool_count = child.tool_calls.len();
+    let process_count = child.processes.len()
+        + child
+            .tool_calls
+            .iter()
+            .map(|tool| tool.processes.len())
+            .sum::<usize>();
+    format!(
+        "({index}/{total}) {} | {} · {} · 工具 {tool_count} · 子进程 {process_count}",
+        truncate_to_width(&child.name, 24),
+        truncate_to_width(task, 42),
+        child.status.as_str()
+    )
+}
+
+fn subagent_execution_detail(
+    batch_name: Option<&str>,
+    child: &tui::subagent::state::SubagentChild,
+) -> String {
+    let mut lines = vec![format!("子代理ID: {}", child.id)];
+    if let Some(batch_name) = batch_name {
+        lines.push(format!("batch: {batch_name}"));
+    }
+    lines.push(format!("状态: {}", child.status.as_str()));
+    if let Some(job_id) = &child.job_id {
+        lines.push(format!("jobId: {job_id}"));
+    }
+    if let Some(task) = &child.task {
+        lines.push(format!("任务: {task}"));
+    }
+    if let Some(model) = &child.model {
+        lines.push(format!("模型: {}", model_allocation_label(model)));
+        if let Some(reason) = &model.reason {
+            lines.push(format!("模型分配: {reason}"));
+        }
+    }
+    if !child.allowed_tools.is_empty() {
+        lines.push(format!("allowed tools: {}", child.allowed_tools.join(", ")));
+    }
+    if child.tool_calls.is_empty() && child.processes.is_empty() {
+        lines.push("执行过程: 暂无工具/子进程事件".to_string());
+    }
+    for tool in &child.tool_calls {
+        lines.push(format!(
+            "- tool {} · {}",
+            subagent_tool_label(tool),
+            tool.status.as_str()
+        ));
+        if let Some(args) = &tool.args_preview {
+            lines.push(format!("  args: {}", truncate_to_width(args, 120)));
+        }
+        if let Some(output_path) = &tool.output_path {
+            lines.push(format!("  output: {output_path}"));
+        }
+        if let Some(error) = &tool.error {
+            lines.push(format!("  error: {}", truncate_to_width(error, 120)));
+        }
+        for process in &tool.processes {
+            lines.push(format!(
+                "  - process {} · {}",
+                subagent_process_label(process),
+                process.status.as_str()
+            ));
+        }
+    }
+    for process in &child.processes {
+        lines.push(format!(
+            "- process {} · {}",
+            subagent_process_label(process),
+            process.status.as_str()
+        ));
+    }
+    if let Some(ask) = &child.ask {
+        lines.push(format!("ASK: {} · {}", ask.id, ask.status.as_str()));
+        if let Some(reason) = &ask.reason {
+            lines.push(format!("ASK reason: {reason}"));
+        }
+        if let Some(crystal) = &ask.crystal_candidate {
+            lines.push(format!("crystal candidate: {crystal}"));
+        }
+    }
+    if let Some(crystal) = &child.crystal {
+        lines.push(format!("crystal: {crystal}"));
+    }
+    lines.join("\n")
+}
+
+fn model_allocation_label(model: &tui::subagent::state::ModelAllocation) -> String {
+    match (&model.provider_id, &model.model_id) {
+        (Some(provider), Some(model_id)) => format!("{provider}/{model_id}"),
+        (None, Some(model_id)) => model_id.clone(),
+        (Some(provider), None) => provider.clone(),
+        (None, None) => model.id.clone(),
+    }
+}
+
+fn subagent_tool_label(tool: &tui::subagent::state::SubagentToolCall) -> String {
+    let name = tool
+        .tool
+        .clone()
+        .or_else(|| tool.command.clone())
+        .unwrap_or_else(|| tool.name.clone());
+    tool.server
+        .as_ref()
+        .map(|server| format!("{server}/{name}"))
+        .unwrap_or(name)
+}
+
+fn subagent_process_label(process: &tui::subagent::state::SubagentProcess) -> String {
+    process
+        .command
+        .clone()
+        .or_else(|| process.output_path.clone())
+        .unwrap_or_else(|| process.id.clone())
+}
+
+fn execution_row_identity(row: &ContextRow) -> Option<String> {
+    row.detail
+        .lines()
+        .find_map(|line| line.strip_prefix("子代理ID: ").map(str::to_string))
+        .or_else(|| Some(row.summary.clone()))
+}
+
 fn execution_context_summary(timeline: &RunTimeline) -> String {
     let model_count = timeline.subagents.models.len();
     let batch_count = timeline.subagents.batches.len();
@@ -8633,6 +8807,92 @@ mod tests {
             .expect("execution row should render");
 
         assert!(exo_index > answer_index);
+    }
+
+    #[test]
+    fn execution_context_renders_one_expandable_row_per_subagent() {
+        let mut app = App::new();
+        app.turns.push(test_turn("任务", "智能体回答正文"));
+        app.apply_socket_event(SocketEvent::ExecutionJobSnapshot(json!({
+            "data": {
+                "children": [
+                    {
+                        "id": "child-a",
+                        "name": "文件系统代理",
+                        "status": "running",
+                        "task": "扫描目录",
+                        "toolCalls": [{
+                            "id": "tool-a",
+                            "tool": "Glob",
+                            "status": "completed",
+                            "argsPreview": "**/*"
+                        }]
+                    },
+                    {
+                        "id": "child-b",
+                        "name": "代码分析代理",
+                        "status": "pending",
+                        "task": "分析代码"
+                    }
+                ]
+            }
+        })));
+
+        let turn = app.turns.last().expect("turn");
+        let rows = turn
+            .context_rows
+            .iter()
+            .filter(|row| row.kind == ContextRowKind::Execution)
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].summary.contains("(1/2) 文件系统代理"));
+        assert!(rows[0].detail.contains("子代理ID: child-a"));
+        assert!(rows[0].detail.contains("tool Glob"));
+        assert!(rows[1].summary.contains("(2/2) 代码分析代理"));
+    }
+
+    #[test]
+    fn execution_context_preserves_expanded_subagent_by_child_id() {
+        let mut app = App::new();
+        app.turns.push(test_turn("任务", "智能体回答正文"));
+        app.apply_socket_event(SocketEvent::ExecutionJobSnapshot(json!({
+            "data": {
+                "children": [
+                    { "id": "child-a", "name": "文件系统代理", "status": "running" },
+                    { "id": "child-b", "name": "代码分析代理", "status": "pending" }
+                ]
+            }
+        })));
+        let turn = app.turns.last_mut().expect("turn");
+        let first = turn
+            .context_rows
+            .iter_mut()
+            .find(|row| row.detail.contains("子代理ID: child-a"))
+            .expect("first execution row");
+        first.expanded = true;
+
+        app.apply_socket_event(SocketEvent::RuntimeEvent(json!({
+            "type": "subagent.child.end",
+            "payload": {
+                "childId": "child-a",
+                "status": "completed",
+                "task": "扫描目录完成"
+            }
+        })));
+
+        let turn = app.turns.last().expect("turn");
+        let first = turn
+            .context_rows
+            .iter()
+            .find(|row| row.detail.contains("子代理ID: child-a"))
+            .expect("first execution row");
+        let second = turn
+            .context_rows
+            .iter()
+            .find(|row| row.detail.contains("子代理ID: child-b"))
+            .expect("second execution row");
+        assert!(first.expanded);
+        assert!(!second.expanded);
     }
 
     #[test]
