@@ -697,7 +697,7 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                         }),
                     ),
                     Span::styled(
-                        if item.recommended { " [推荐]" } else { "" },
+                        if item.recommended { " [Recommend]" } else { "" },
                         Style::default()
                             .fg(theme.green)
                             .add_modifier(Modifier::BOLD),
@@ -729,7 +729,11 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                     }),
                 ),
                 Span::styled(
-                    if choice.recommended { " [推荐]" } else { "" },
+                    if choice.recommended {
+                        " [Recommend]"
+                    } else {
+                        ""
+                    },
                     Style::default().fg(theme.green),
                 ),
             ]));
