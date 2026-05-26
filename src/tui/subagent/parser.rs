@@ -2,7 +2,8 @@ use serde_json::Value;
 
 use crate::tui::{
     run_timeline::parser::{
-        arrays_at, compact_json, event_value, first_string, value_string, value_u64,
+        arrays_at, compact_json, event_value, first_string, first_string_nested, first_text_nested,
+        value_at, value_string, value_text_at, value_u64,
     },
     subagent::state::{
         ModelAllocation, SubagentAskPause, SubagentBatch, SubagentChild, SubagentProcess,
@@ -33,11 +34,15 @@ pub fn merge_event_publish(tree: &mut SubagentTree, event_type: &str, value: &Va
                 SubagentStatus::from_event_type(event_type),
             ));
         }
-        "mcp.tool.call.executed" | "tool.call.executed" => merge_tool_call(tree, payload),
+        "mcp.tool.call.executed" | "tool.call.executed" => {
+            merge_tool_call_with_status(tree, payload, SubagentStatus::Completed);
+        }
         event_type if event_type.starts_with("sandbox.tool.") => {
             merge_tool_call_with_status(tree, payload, SubagentStatus::from_event_type(event_type));
         }
-        event_type if event_type.starts_with("tool.") => merge_tool_call(tree, payload),
+        event_type if event_type.starts_with("tool.") => {
+            merge_tool_call_with_status(tree, payload, SubagentStatus::from_event_type(event_type));
+        }
         event_type if event_type.starts_with("process.") => {
             merge_process(tree, payload, SubagentStatus::from_event_type(event_type));
         }
@@ -149,19 +154,62 @@ fn tool_call_from_value(value: &Value) -> SubagentToolCall {
     let id = value_string(value, "id")
         .or_else(|| value_string(value, "callId"))
         .or_else(|| value_string(value, "toolCallId"))
+        .or_else(|| value_text_at(value, &["call", "id"]))
+        .or_else(|| value_text_at(value, &["call", "callId"]))
         .unwrap_or_else(|| compact_json(value));
-    let server = first_string(value, &["server", "serverName", "server_name"]);
-    let tool = first_string(value, &["tool", "toolName", "name"]);
+    let server = first_string_nested(
+        value,
+        &[
+            &["call", "server"],
+            &["server"],
+            &["serverName"],
+            &["server_name"],
+        ],
+    );
+    let tool = first_string_nested(
+        value,
+        &[
+            &["call", "tool"],
+            &["tool", "key"],
+            &["tool"],
+            &["toolName"],
+            &["name"],
+        ],
+    );
     let name = tool
         .clone()
         .or_else(|| server.clone())
         .or_else(|| first_string(value, &["command", "cmd"]))
         .unwrap_or_else(|| id.clone());
+    let input_preview = first_string_nested(
+        value,
+        &[
+            &["metadata", "preview"],
+            &["call", "inputPreview"],
+            &["call", "argsPreview"],
+            &["argsPreview"],
+            &["args_preview"],
+            &["argumentsPreview"],
+        ],
+    )
+    .or_else(|| first_text_nested(value, &[&["call", "input"], &["input"], &["args"]]));
+    let result_preview = first_string_nested(
+        value,
+        &[
+            &["result", "preview"],
+            &["result", "summary"],
+            &["result", "outputPath"],
+        ],
+    )
+    .or_else(|| first_text_nested(value, &[&["result", "raw"], &["result"]]));
     SubagentToolCall {
         name,
         id,
         status: SubagentStatus::from_value(value),
-        call_id: value_string(value, "callId").or_else(|| value_string(value, "toolCallId")),
+        call_id: value_string(value, "callId")
+            .or_else(|| value_string(value, "toolCallId"))
+            .or_else(|| value_text_at(value, &["call", "id"]))
+            .or_else(|| value_text_at(value, &["call", "callId"])),
         job_id: value_string(value, "jobId")
             .or_else(|| value_string(value, "job_id"))
             .or_else(|| value_string(value, "childJobId")),
@@ -171,31 +219,37 @@ fn tool_call_from_value(value: &Value) -> SubagentToolCall {
         server,
         tool,
         command: first_string(value, &["command", "cmd"]),
-        args_preview: first_string(value, &["argsPreview", "args_preview", "argumentsPreview"]),
-        output_path: first_string(value, &["outputPath", "output_path", "path"]),
-        error: first_string(value, &["error", "errorMessage", "message"]),
-        duration_ms: value_u64(value, "durationMs").or_else(|| value_u64(value, "duration_ms")),
-        detail: first_string(
+        args_preview: input_preview,
+        output_path: first_string_nested(
             value,
             &[
-                "summary",
-                "argsPreview",
-                "args_preview",
-                "command",
-                "result",
-                "error",
+                &["outputPath"],
+                &["output_path"],
+                &["path"],
+                &["result", "outputPath"],
+                &["result", "path"],
             ],
         ),
+        error: first_string_nested(
+            value,
+            &[
+                &["error"],
+                &["errorMessage"],
+                &["message"],
+                &["result", "error"],
+                &["state", "error"],
+            ],
+        ),
+        duration_ms: value_u64(value, "durationMs").or_else(|| value_u64(value, "duration_ms")),
+        detail: first_string(value, &["summary", "command", "error"])
+            .or_else(|| first_string_nested(value, &[&["state", "title"]]))
+            .or(result_preview),
         processes: arrays_at(value, &["processes", "subprocesses"])
             .into_iter()
             .flat_map(|processes| processes.iter())
             .map(|process| process_from_value(process, SubagentStatus::from_value(process)))
             .collect(),
     }
-}
-
-fn merge_tool_call(tree: &mut SubagentTree, value: &Value) {
-    tree.upsert_tool_call(tool_call_from_value(value));
 }
 
 fn merge_tool_call_with_status(tree: &mut SubagentTree, value: &Value, status: SubagentStatus) {
@@ -319,15 +373,57 @@ fn process_from_value(value: &Value, status: SubagentStatus) -> SubagentProcess 
         },
         call_id: value_string(value, "callId")
             .or_else(|| value_string(value, "toolCallId"))
-            .or_else(|| value_string(value, "tool_call_id")),
-        job_id: value_string(value, "jobId").or_else(|| value_string(value, "job_id")),
+            .or_else(|| value_string(value, "tool_call_id"))
+            .or_else(|| value_text_at(value, &["call", "id"]))
+            .or_else(|| value_text_at(value, &["call", "callId"])),
+        job_id: value_string(value, "jobId")
+            .or_else(|| value_string(value, "job_id"))
+            .or_else(|| value_string(value, "childJobId")),
         child_id: value_string(value, "childId")
             .or_else(|| value_string(value, "agentId"))
             .or_else(|| value_string(value, "subagentId")),
-        command: first_string(value, &["command", "cmd"]),
-        output_preview: first_string(value, &["outputPreview", "output", "stdout", "stderr"]),
-        output_path: first_string(value, &["outputPath", "output_path", "path"]),
-        error: first_string(value, &["error", "errorMessage", "message"]),
+        command: first_string_nested(
+            value,
+            &[
+                &["command"],
+                &["cmd"],
+                &["call", "tool"],
+                &["tool", "key"],
+                &["tool"],
+            ],
+        ),
+        output_preview: first_string_nested(
+            value,
+            &[
+                &["outputPreview"],
+                &["output"],
+                &["stdout"],
+                &["stderr"],
+                &["metadata", "preview"],
+                &["result", "preview"],
+            ],
+        )
+        .or_else(|| first_text_nested(value, &[&["result", "raw"]])),
+        output_path: first_string_nested(
+            value,
+            &[
+                &["outputPath"],
+                &["output_path"],
+                &["path"],
+                &["result", "outputPath"],
+                &["result", "path"],
+            ],
+        ),
+        error: first_string_nested(
+            value,
+            &[
+                &["error"],
+                &["errorMessage"],
+                &["message"],
+                &["result", "error"],
+                &["state", "error"],
+            ],
+        ),
         duration_ms: value_u64(value, "durationMs").or_else(|| value_u64(value, "duration_ms")),
     }
 }
@@ -400,7 +496,10 @@ fn string_list(value: &Value, keys: &[&str]) -> Vec<String> {
 }
 
 fn value_bool(value: &Value, key: &str) -> bool {
-    value.get(key).and_then(Value::as_bool).unwrap_or(false)
+    value_at(value, &[key])
+        .and_then(Value::as_bool)
+        .or_else(|| value_at(value, &["metadata", key]).and_then(Value::as_bool))
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -622,5 +721,53 @@ mod tests {
         assert!(child.limited);
         assert!(child.suppressed_ask_required);
         assert_eq!(child.limit_reason.as_deref(), Some("tool-budget-exhausted"));
+    }
+
+    #[test]
+    fn parses_nested_tool_call_shape_and_links_by_child_job_id() {
+        let mut tree = SubagentTree::default();
+        merge_event_publish(
+            &mut tree,
+            "tool.call.executed",
+            &json!({
+                "type": "tool.call.executed",
+                "payload": {
+                    "id": "part-1",
+                    "childJobId": "job-child-1",
+                    "tool": { "key": "read" },
+                    "call": {
+                        "id": "call-1",
+                        "server": "workspace",
+                        "tool": "read",
+                        "input": { "filePath": "src/main.rs" }
+                    },
+                    "result": { "raw": "fn main() {}" },
+                    "metadata": { "preview": "src/main.rs" }
+                }
+            }),
+        );
+        merge_event_publish(
+            &mut tree,
+            "subagent.child.start",
+            &json!({
+                "type": "subagent.child.start",
+                "payload": {
+                    "childId": "child-1",
+                    "childJobId": "job-child-1",
+                    "task": "Read file"
+                }
+            }),
+        );
+
+        assert!(tree.loose_tool_calls.is_empty());
+        let child = &tree.loose_children[0];
+        assert_eq!(child.job_id.as_deref(), Some("job-child-1"));
+        assert_eq!(child.tool_calls.len(), 1);
+        let call = &child.tool_calls[0];
+        assert_eq!(call.server.as_deref(), Some("workspace"));
+        assert_eq!(call.tool.as_deref(), Some("read"));
+        assert_eq!(call.args_preview.as_deref(), Some("src/main.rs"));
+        assert_eq!(call.detail.as_deref(), Some("fn main() {}"));
+        assert_eq!(call.status, SubagentStatus::Completed);
     }
 }

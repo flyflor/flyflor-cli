@@ -270,8 +270,7 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
 }
 
 fn tool_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
-    let name = first_string(payload, &["toolName", "name", "tool", "server", "command"])
-        .unwrap_or_else(|| event_type.replace('.', " "));
+    let name = tool_display_name(payload).unwrap_or_else(|| event_type.replace('.', " "));
     let status = match status_from_value(payload) {
         RunTimelineItemStatus::Info => status_from_event_type(event_type),
         other => other,
@@ -283,20 +282,78 @@ fn tool_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
         format!("tool {name}"),
     )
     .with_detail(
-        first_string(
+        tool_detail(payload)
+            .or_else(|| {
+                first_string(
+                    payload,
+                    &[
+                        "summary",
+                        "argsPreview",
+                        "args_preview",
+                        "command",
+                        "outputPath",
+                        "error",
+                        "result",
+                    ],
+                )
+            })
+            .unwrap_or_default(),
+    )
+}
+
+fn tool_display_name(payload: &Value) -> Option<String> {
+    let server = first_string_nested(
+        payload,
+        &[
+            &["call", "server"],
+            &["server"],
+            &["serverName"],
+            &["server_name"],
+        ],
+    );
+    let tool = first_string_nested(
+        payload,
+        &[
+            &["call", "tool"],
+            &["tool", "key"],
+            &["tool"],
+            &["toolName"],
+            &["name"],
+        ],
+    )
+    .or_else(|| first_string(payload, &["command", "cmd"]));
+
+    match (server, tool) {
+        (Some(server), Some(tool)) => Some(format!("{server}/{tool}")),
+        (None, Some(tool)) => Some(tool),
+        (Some(server), None) => Some(server),
+        (None, None) => None,
+    }
+}
+
+fn tool_detail(payload: &Value) -> Option<String> {
+    first_string_nested(
+        payload,
+        &[
+            &["metadata", "preview"],
+            &["call", "inputPreview"],
+            &["call", "argsPreview"],
+            &["result", "preview"],
+        ],
+    )
+    .or_else(|| {
+        first_text_nested(
             payload,
             &[
-                "summary",
-                "argsPreview",
-                "args_preview",
-                "command",
-                "outputPath",
-                "error",
-                "result",
+                &["call", "input"],
+                &["input"],
+                &["args"],
+                &["arguments"],
+                &["result", "raw"],
             ],
         )
-        .unwrap_or_default(),
-    )
+    })
+    .or_else(|| first_string_nested(payload, &[&["state", "title"], &["state", "error"]]))
 }
 
 fn model_item(id: String, payload: &Value) -> RunTimelineItem {
@@ -373,6 +430,34 @@ pub(crate) fn value_string(value: &Value, key: &str) -> Option<String> {
     })
 }
 
+pub(crate) fn value_at<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
+    if path.len() > 1 {
+        let dotted = path.join(".");
+        if let Some(value) = value.get(dotted.as_str()) {
+            return Some(value);
+        }
+    }
+    let mut current = value;
+    for key in path {
+        current = current.get(key)?;
+    }
+    Some(current)
+}
+
+pub(crate) fn value_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) if !text.is_empty() => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Bool(flag) => Some(flag.to_string()),
+        Value::Array(_) | Value::Object(_) => Some(compact_json(value)),
+        _ => None,
+    }
+}
+
+pub(crate) fn value_text_at(value: &Value, path: &[&str]) -> Option<String> {
+    value_at(value, path).and_then(value_text)
+}
+
 pub(crate) fn value_u64(value: &Value, key: &str) -> Option<u64> {
     value.get(key).and_then(|value| match value {
         Value::Number(number) => number.as_u64(),
@@ -390,6 +475,28 @@ pub(crate) fn first_string(value: &Value, keys: &[&str]) -> Option<String> {
     None
 }
 
+pub(crate) fn first_string_nested(value: &Value, paths: &[&[&str]]) -> Option<String> {
+    for path in paths {
+        if path.len() == 1 {
+            if let Some(text) = value_string(value, path[0]) {
+                return Some(text);
+            }
+        } else if let Some(text) = value_text_at(value, path).filter(|text| !text.is_empty()) {
+            return Some(text);
+        }
+    }
+    None
+}
+
+pub(crate) fn first_text_nested(value: &Value, paths: &[&[&str]]) -> Option<String> {
+    for path in paths {
+        if let Some(text) = value_text_at(value, path).filter(|text| !text.is_empty()) {
+            return Some(text);
+        }
+    }
+    None
+}
+
 pub(crate) fn status_from_event_type(event_type: &str) -> RunTimelineItemStatus {
     if event_type.ends_with(".start")
         || event_type.ends_with(".started")
@@ -399,6 +506,7 @@ pub(crate) fn status_from_event_type(event_type: &str) -> RunTimelineItemStatus 
     } else if event_type.ends_with(".end")
         || event_type.ends_with(".ended")
         || event_type.ends_with(".completed")
+        || event_type.ends_with(".executed")
         || event_type.ends_with(".written")
         || event_type.ends_with(".succeeded")
         || event_type.ends_with(".persisted")
@@ -431,6 +539,10 @@ pub(crate) fn status_from_value(value: &Value) -> RunTimelineItemStatus {
     let status = value
         .get("status")
         .or_else(|| value.get("state"))
+        .and_then(|state| match state {
+            Value::Object(_) => state.get("status").or_else(|| state.get("state")),
+            other => Some(other),
+        })
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_ascii_lowercase();
@@ -574,5 +686,28 @@ mod tests {
         assert_eq!(process.kind, RunTimelineItemKind::Process);
         assert_eq!(process.status, RunTimelineItemStatus::Completed);
         assert_eq!(process.detail.as_deref(), Some("/tmp/out"));
+    }
+
+    #[test]
+    fn parses_nested_tool_shape_without_unknown_title() {
+        let item = parse_event_publish(&json!({
+            "type": "tool.call.executed",
+            "payload": {
+                "tool": { "key": "read" },
+                "call": {
+                    "server": "workspace",
+                    "tool": "read",
+                    "input": { "filePath": "src/main.rs" }
+                },
+                "result": { "raw": "fn main() {}" },
+                "metadata": { "preview": "src/main.rs" }
+            }
+        }))
+        .expect("tool event");
+
+        assert_eq!(item.kind, RunTimelineItemKind::Tool);
+        assert_eq!(item.title, "tool workspace/read");
+        assert_eq!(item.detail.as_deref(), Some("src/main.rs"));
+        assert_eq!(item.status, RunTimelineItemStatus::Completed);
     }
 }
