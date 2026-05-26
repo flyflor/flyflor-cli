@@ -1,6 +1,8 @@
 # flyflor-cli
 
-Rust TUI prototype for the Flyflor chat client.
+Rust TUI for the Flyflor chat client. The CLI is a thin interactive shell over
+the Flyflor WebSocket gateway: it sends user intent through `flyflor.ws.v1`
+commands and renders kernel snapshots/events without owning kernel state.
 
 ## Run
 
@@ -38,15 +40,28 @@ npm run logs
 
 The dev runner and Rust TUI both append diagnostics to `.flyflor-cli/logs/dev.log`.
 
-## Current scope
+## Current Scope
 
-- Static mock UI based on the design draft
-- Full-history chat viewport with keyboard scrolling
-- Right-side status panel and bottom composer shell
+- WebSocket bootstrap with fixed runtime event subscription
+- Streaming transcript, history snapshots, and fork-scoped history refresh
+- ASK menu with fixed choices and `Other` free input continuation replies
+- Plan confirmation/revision/abandon commands
+- Context fork creation and active fork session display
+- Run timeline for route, recall, blackboard, tool, ASK, plan, fork, loop, and
+  subagent events
+- Right-side TODO, Run, model/status, context-window, and fork-memory sections
 
 ## Controls
 
 - `/exit`: quit
+- `/help`: show command help
+- `/status`: refresh gateway status
+- `/history`: refresh history
+- `/todo`: refresh TODO or answer pending plan confirmation
+- `/ask`: open the latest pending ASK menu
+- `/fork`: create a context fork from the latest structured assistant turn
+- `/blackboard`: surface the latest blackboard summary
+- `/memory`: refresh fork memory
 - `Ctrl+C` / `Ctrl+V` / `Cmd+V`: paste from clipboard in the composer
 - `F2` or `Ctrl+D`: toggle dev mode
 - `Up` / `k`: scroll up

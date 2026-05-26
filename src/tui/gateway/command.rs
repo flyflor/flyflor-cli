@@ -30,15 +30,6 @@ impl GatewayCommandBuilder {
         )
     }
 
-    pub fn history_list(
-        &self,
-        sequence: u64,
-        limit: u64,
-        context_fork_id: Option<&str>,
-    ) -> GatewayEnvelope {
-        self.history_list_with_before(sequence, limit, context_fork_id, None)
-    }
-
     pub fn history_list_with_before(
         &self,
         sequence: u64,
@@ -279,7 +270,9 @@ mod tests {
     #[test]
     fn builds_snapshot_commands() {
         let commands = vec![
-            builder().history_list(1, 20, Some("fork-1")).into_value(),
+            builder()
+                .history_list_with_before(1, 20, Some("fork-1"), None)
+                .into_value(),
             builder().task_list(2).into_value(),
             builder().gateway_status_get(3).into_value(),
             builder().fork_memory_get(4, 5).into_value(),

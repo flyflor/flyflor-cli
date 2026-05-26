@@ -50,7 +50,7 @@ use shared::{
 use tui::ask::{
     command::AskAnswer,
     parser::{ask_menu_from_turn_metadata, continuation_from_metadata, continuation_from_value},
-    state::{AskChoice, AskMenu},
+    state::AskMenu,
     view::visible_item_count,
 };
 use tui::fork::{
@@ -6563,7 +6563,10 @@ impl Default for Theme {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::shell::{app_layout, content_root};
+    use crate::{
+        layout::shell::{app_layout, content_root},
+        tui::ask::state::AskChoice,
+    };
 
     fn separator_text(width: u16) -> String {
         "─".repeat(width as usize)

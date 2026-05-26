@@ -32,6 +32,7 @@ pub const SUBSCRIPTION_EVENT_TYPES: &[&str] = &[
     "subagent.batch.end",
 ];
 
+#[cfg(test)]
 pub const BOOTSTRAP_COMMAND_TYPES: &[&str] = &[
     "client.hello",
     "history.list",

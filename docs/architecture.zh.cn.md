@@ -37,24 +37,25 @@ Kernel 响应以快照或事件形式到达。CLI 将它们解析为本地 `Sock
 - 事件循环：socket drain、clipboard drain、draw pass、cursor update、键盘事件、粘贴事件和鼠标事件。
 - App 状态：transcript turns、滚动状态、右侧面板数据、fork session、pending turns、菜单、status snapshots 和 interaction mode。
 - 渲染：header、body layout、左侧 transcript、右侧面板、composer、command/ASK/plan 菜单、类 Markdown answer 渲染和 mermaid ASCII 渲染。
-- 协议接线：socket worker、command channel、envelope 构造器和 envelope 解析器。
+- 协议接线：socket worker、command channel、gateway command builders 和 envelope 解析器。
 - 数据整形：history snapshots、context rows、task/todo rows、status snapshots、fork memory rows、ASK options 和 plan state。
 - 测试：parser、envelope、render、selection、right-panel 和状态行为。
 
 这种聚合让当前行为容易在一个文件里审查，但也让无关改动变得更危险，因为终端、协议、渲染和状态逻辑彼此相邻。
 
-## 未来拆分目标
+## 约定目录
 
-未来重构应在保持行为稳定的前提下拆分所有权：
+当前拆分把 feature ownership 放在显式目录中：
 
-- `terminal`：raw mode、alternate screen、mouse capture、bracketed paste、clipboard fallback 和 panic/log setup。
-- `app`：`App`、`SocketCommand`、`SocketEvent`、交互状态、key/mouse dispatch 和顶层状态流转。
-- `protocol`：`flyflor.ws.v1` envelope 构造器和解析器。
-- `render`：layout、transcript 渲染、右侧面板、composer、菜单、Markdown 渲染和 scrollbar。
-- `domain`：turn metadata、context rows、ASK options、plan state、todo shaping、status snapshots 和 fork memory shaping。
-- `fixtures` 或 `mock`：demo/offline 数据。
+- `src/tui/terminal`：raw mode、alternate screen、mouse capture、clipboard fallback 和 panic/log setup。
+- `src/tui/gateway`：`flyflor.ws.v1` envelope factory、固定 subscription list、启动 bootstrap 和 command builders。
+- `src/tui/ask`：ASK menu state、parser、view helpers 和 continuation answer metadata。
+- `src/tui/plan`：plan menu state 与 `task.plan.decide` payload。
+- `src/tui/fork`：active fork state、fork command payload 和 labels。
+- `src/tui/run_timeline`：event timeline parsing/state/view。
+- `src/tui/subagent`：subagent batch/child parsing/state/view。
 
-拆分目标不是改变协议或 UI 行为，而是把 kernel-facing protocol 代码从视觉 layout 代码旁边移开，让后续修改更安全。
+`src/main.rs` 仍负责 app loop、顶层状态流转、snapshot parsers 和绘制 glue。新能力应该先进入上述约定目录，再 composition 到 `App`；不要新增并行的根级 runtime 或 WebSocket 实现。
 
 ## CLI 非目标
 

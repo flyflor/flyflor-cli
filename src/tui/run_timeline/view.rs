@@ -1,7 +1,6 @@
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
 };
 
 use crate::tui::{
@@ -38,12 +37,6 @@ pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
     }
 
     lines
-}
-
-pub fn run_panel<'a>(timeline: &RunTimeline) -> Paragraph<'a> {
-    Paragraph::new(run_panel_lines(timeline))
-        .block(Block::default().title(" Run ").borders(Borders::ALL))
-        .wrap(Wrap { trim: true })
 }
 
 fn item_lines(item: &RunTimelineItem) -> Vec<Line<'static>> {
@@ -151,11 +144,5 @@ mod tests {
 
         assert!(rendered.contains("needs_user"));
         assert!(rendered.contains("Need approval"));
-    }
-
-    #[test]
-    fn run_panel_widget_is_constructible() {
-        let timeline = RunTimeline::new();
-        let _widget = run_panel(&timeline);
     }
 }

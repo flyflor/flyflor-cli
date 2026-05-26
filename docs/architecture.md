@@ -54,7 +54,7 @@ concerns in one file:
 - Rendering: header, body layout, left transcript, right panel, composer,
   command/ASK/plan menus, Markdown-ish answer rendering, and
   mermaid ASCII rendering.
-- Protocol wiring: socket worker, command channel, envelope constructors, and
+- Protocol wiring: socket worker, command channel, gateway command builders, and
   envelope parsers.
 - Data shaping: history snapshots, context rows, task/todo rows, status
   snapshots, fork memory rows, ASK options, and plan state.
@@ -64,23 +64,25 @@ This aggregation makes the current behavior easy to inspect in one place, but
 it also makes unrelated edits risky because terminal, protocol, render, and
 state logic are adjacent.
 
-## Future Split Target
+## Convention Directories
 
-Future refactors should keep behavior stable while separating ownership:
+The current split keeps feature ownership in explicit directories:
 
-- `terminal`: raw mode, alternate screen, mouse capture, bracketed paste,
+- `src/tui/terminal`: raw mode, alternate screen, mouse capture,
   clipboard fallback, and panic/log setup.
-- `app`: `App`, `SocketCommand`, `SocketEvent`, interaction state, key/mouse
-  dispatch, and top-level state transitions.
-- `protocol`: `flyflor.ws.v1` envelope constructors and parsers.
-- `render`: layout, transcript rendering, right panel, composer, menus,
-  Markdown rendering, and scrollbars.
-- `domain`: turn metadata, context rows, ASK options, plan state, todo shaping,
-  status snapshots, and fork memory shaping.
-- `fixtures` or `mock`: demo/offline data.
+- `src/tui/gateway`: `flyflor.ws.v1` envelope factory, fixed subscription list,
+  startup bootstrap, and command builders.
+- `src/tui/ask`: ASK menu state, parser, view helpers, and continuation answer
+  metadata.
+- `src/tui/plan`: plan menu state and `task.plan.decide` payloads.
+- `src/tui/fork`: active fork state, fork command payloads, and labels.
+- `src/tui/run_timeline`: event timeline parsing/state/view.
+- `src/tui/subagent`: subagent batch/child parsing/state/view.
 
-The split goal is not to change protocol or UI behavior. It is to make future
-changes safer by moving kernel-facing protocol code away from visual layout code.
+`src/main.rs` still owns the app loop, high-level state transitions, snapshot
+parsers, and drawing glue. New features should enter the convention directories
+above and then compose into `App`; do not add parallel root-level runtime or
+WebSocket implementations.
 
 ## Non-Goals for the CLI
 

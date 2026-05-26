@@ -9,10 +9,6 @@ pub struct GatewayEnvelope {
 }
 
 impl GatewayEnvelope {
-    pub fn value(&self) -> &Value {
-        &self.value
-    }
-
     pub fn into_value(self) -> Value {
         self.value
     }
@@ -91,7 +87,7 @@ mod tests {
             1_770_000_000_123,
             serde_json::json!({}),
         );
-        let value = envelope.value();
+        let value = envelope.into_value();
 
         assert_eq!(
             value.get("protocol").and_then(Value::as_str),

@@ -26,19 +26,6 @@ pub enum RunTimelineItemStatus {
     Info,
 }
 
-impl RunTimelineItemStatus {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Running => "running",
-            Self::NeedsUser => "needs_user",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-            Self::Info => "info",
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunTimelineSource {
     EventPublish,
@@ -132,28 +119,6 @@ impl RunTimeline {
         }
         parsed
     }
-
-    pub fn apply_json(&mut self, value: &Value) -> Vec<RunTimelineItem> {
-        let parsed = crate::tui::run_timeline::parser::parse_timeline_input(value);
-        for item in &parsed {
-            if item.source == RunTimelineSource::ExecutionJobSnapshot {
-                crate::tui::subagent::parser::merge_execution_job_snapshot(
-                    &mut self.subagents,
-                    value,
-                );
-            } else if let Some(event_type) = item.raw.as_ref().and_then(event_type_from_raw) {
-                crate::tui::subagent::parser::merge_event_publish(
-                    &mut self.subagents,
-                    event_type,
-                    value,
-                );
-            }
-        }
-        for item in &parsed {
-            upsert_item(&mut self.items, item.clone());
-        }
-        parsed
-    }
 }
 
 fn upsert_item(items: &mut Vec<RunTimelineItem>, item: RunTimelineItem) {
@@ -195,7 +160,7 @@ mod tests {
         });
 
         let item = timeline.apply_event_publish(&event).expect("event item");
-        assert_eq!(item.status.as_str(), "running");
+        assert_eq!(item.status, RunTimelineItemStatus::Running);
         assert_eq!(timeline.items.len(), 1);
         assert_eq!(timeline.subagents.loose_children[0].id, "child-1");
 
@@ -207,23 +172,8 @@ mod tests {
         }));
         assert!(snapshot_items.iter().any(|item| item.id == "batch:batch-1"));
         assert_eq!(
-            timeline.subagents.batches[0].children[0].status.as_str(),
-            "completed"
-        );
-    }
-
-    #[test]
-    fn timeline_apply_json_routes_by_message_type() {
-        let mut timeline = RunTimeline::new();
-        let items = timeline.apply_json(&json!({
-            "type": "execution.job.snapshot",
-            "data": { "jobId": "job-1", "status": "running" }
-        }));
-
-        assert_eq!(items[0].id, "job:job-1");
-        assert_eq!(
-            timeline.items[0].source,
-            RunTimelineSource::ExecutionJobSnapshot
+            timeline.subagents.batches[0].children[0].status,
+            crate::tui::subagent::state::SubagentStatus::Completed
         );
     }
 
@@ -238,7 +188,7 @@ mod tests {
         }));
 
         assert_eq!(timeline.items.len(), 1);
-        assert_eq!(timeline.items[0].status.as_str(), "completed");
+        assert_eq!(timeline.items[0].status, RunTimelineItemStatus::Completed);
         assert_eq!(timeline.items[0].detail.as_deref(), Some("done"));
     }
 }

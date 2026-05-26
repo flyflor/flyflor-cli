@@ -4,31 +4,6 @@ use crate::tui::run_timeline::state::{
     RunTimelineItem, RunTimelineItemKind, RunTimelineItemStatus, RunTimelineSource,
 };
 
-pub fn parse_timeline_input(value: &Value) -> Vec<RunTimelineItem> {
-    let message_type = value
-        .get("type")
-        .or_else(|| value.get("messageType"))
-        .and_then(Value::as_str);
-
-    if message_type == Some("execution.job.snapshot") {
-        return parse_execution_job_snapshot(value);
-    }
-
-    if let Some(payload) = value.get("payload") {
-        let payload_type = payload
-            .get("type")
-            .or_else(|| payload.get("messageType"))
-            .and_then(Value::as_str);
-        if payload_type == Some("execution.job.snapshot")
-            || message_type == Some("execution.job.snapshot")
-        {
-            return parse_execution_job_snapshot(payload);
-        }
-    }
-
-    parse_event_publish(value).into_iter().collect()
-}
-
 pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
     let event = event_value(value)?;
     let event_type = event_type(event)?;

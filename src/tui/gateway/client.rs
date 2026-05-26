@@ -1,9 +1,6 @@
-use serde_json::Value;
-
 use super::{
     command::GatewayCommandBuilder,
     envelope::{EnvelopeFactory, GatewayEnvelope},
-    subscription::BOOTSTRAP_COMMAND_TYPES,
 };
 
 #[derive(Clone, Debug)]
@@ -55,6 +52,10 @@ impl GatewayClientBootstrap {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::Value;
+
+    use crate::tui::gateway::subscription::BOOTSTRAP_COMMAND_TYPES;
+
     use super::*;
 
     #[test]
@@ -65,13 +66,21 @@ mod tests {
         let envelopes = bootstrap.build(42, "0.1.0");
         let types = envelopes
             .iter()
-            .filter_map(|envelope| envelope.value().get("type").and_then(Value::as_str))
+            .filter_map(|envelope| {
+                envelope
+                    .clone()
+                    .into_value()
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
             .collect::<Vec<_>>();
 
         assert_eq!(types, BOOTSTRAP_COMMAND_TYPES);
         assert_eq!(
             envelopes[1]
-                .value()
+                .clone()
+                .into_value()
                 .get("payload")
                 .and_then(|payload| payload.get("limit"))
                 .and_then(Value::as_u64),
@@ -79,7 +88,8 @@ mod tests {
         );
         assert_eq!(
             envelopes[1]
-                .value()
+                .clone()
+                .into_value()
                 .get("payload")
                 .and_then(|payload| payload.get("beforeTs"))
                 .and_then(Value::as_u64),
@@ -87,7 +97,8 @@ mod tests {
         );
         assert_eq!(
             envelopes[4]
-                .value()
+                .clone()
+                .into_value()
                 .get("payload")
                 .and_then(|payload| payload.get("limit"))
                 .and_then(Value::as_u64),
