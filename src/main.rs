@@ -1277,7 +1277,7 @@ impl App {
             } => {
                 if let Some(turn_index) = self.pending_turns.remove(&message_id) {
                     if let Some(turn) = self.turns.get_mut(turn_index) {
-                        turn.answer = text;
+                        turn.answer = turn_final_visible_text(&text, metadata.as_ref());
                         turn.metadata = metadata;
                         turn.context_rows = context_rows_from_metadata(&turn.metadata);
                         turn.footer =
@@ -1286,6 +1286,13 @@ impl App {
                             self.active_context_fork_id = Some(fork_id);
                         }
                         self.left.stick_to_bottom = true;
+                    }
+                    if let Some((_, menu)) = self
+                        .turns
+                        .get(turn_index)
+                        .and_then(|turn| ask_menu_from_turn(turn_index, turn))
+                    {
+                        self.ask_menu = Some(menu);
                     }
                 }
                 let _ = self.socket_tx.send(SocketCommand::ForkMemoryGet);
@@ -5501,6 +5508,7 @@ fn parse_context_snapshot(raw: &str) -> Result<Option<SocketEvent>, String> {
 
 fn history_turn_snapshot_to_turn(snapshot: HistoryTurnSnapshot) -> Turn {
     let metadata = history_snapshot_metadata(&snapshot);
+    let answer = turn_final_visible_text(&snapshot.assistant_text, metadata.as_ref());
     Turn {
         message_id: metadata
             .as_ref()
@@ -5508,7 +5516,7 @@ fn history_turn_snapshot_to_turn(snapshot: HistoryTurnSnapshot) -> Turn {
         event_id: Some(snapshot.event_id.clone()),
         user: snapshot.user_text,
         thought: None,
-        answer: snapshot.assistant_text,
+        answer,
         context_rows: context_rows_from_metadata(&metadata),
         metadata,
         pending_continuation: None,
@@ -5518,6 +5526,27 @@ fn history_turn_snapshot_to_turn(snapshot: HistoryTurnSnapshot) -> Turn {
             iso8601_from_millis(snapshot.ts)
         ),
     }
+}
+
+fn turn_final_visible_text(text: &str, metadata: Option<&Value>) -> String {
+    ask_prompt_from_metadata(metadata)
+        .map(|prompt| prompt.to_string())
+        .unwrap_or_else(|| text.to_string())
+}
+
+fn ask_prompt_from_metadata(metadata: Option<&Value>) -> Option<&str> {
+    let metadata = metadata?;
+    if metadata.get("kind").and_then(Value::as_str) != Some("ask") && metadata.get("ask").is_none()
+    {
+        return None;
+    }
+    metadata
+        .get("ask")
+        .and_then(|ask| ask.get("prompt"))
+        .or_else(|| metadata.get("prompt"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|prompt| !prompt.is_empty())
 }
 
 fn turn_from_context_snapshot(snapshot: &Value) -> Option<Turn> {
@@ -7181,6 +7210,54 @@ mod tests {
             }
             _ => panic!("expected turn final event"),
         }
+    }
+
+    #[test]
+    fn turn_final_ask_metadata_opens_menu_and_compacts_transcript_text() {
+        let mut app = App::new();
+        let message_id = "message-ask-1".to_string();
+        app.pending_turns.insert(message_id.clone(), 0);
+        app.turns.push(Turn {
+            message_id: Some(message_id.clone()),
+            event_id: None,
+            user: "read project".to_string(),
+            thought: None,
+            answer: String::new(),
+            metadata: None,
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+
+        app.apply_socket_event(SocketEvent::TurnFinal {
+            message_id,
+            text: "执行层连续遇到工具阻断。\n\n1. 继续执行\n2. 缩小范围".to_string(),
+            metadata: Some(json!({
+                "kind": "ask",
+                "ask": {
+                    "prompt": "执行层连续遇到工具阻断。请补充下一步执行策略或调整约束后再继续。",
+                    "snapshotId": "ask-snapshot-1",
+                    "questions": [{
+                        "id": "strategy",
+                        "prompt": "下一步执行策略是什么？",
+                        "choices": [
+                            { "id": "continue", "label": "继续执行", "value": "continue" },
+                            { "id": "narrow", "label": "缩小范围", "value": "narrow" }
+                        ]
+                    }]
+                }
+            })),
+        });
+
+        let turn = app.turns.first().expect("turn");
+        assert_eq!(
+            turn.answer,
+            "执行层连续遇到工具阻断。请补充下一步执行策略或调整约束后再继续。"
+        );
+        assert!(!turn.answer.contains("1. 继续执行"));
+        let menu = app.ask_menu.as_ref().expect("ASK menu should open");
+        assert_eq!(menu.questions[0].id, "strategy");
+        assert_eq!(menu.questions[0].choices[0].id, "continue");
     }
 
     #[test]
@@ -9772,6 +9849,19 @@ mod tests {
             input_cursor_position("hello", "hello".len(), input_inner, 0),
             Some(Position::new(input_inner.x + 5, input_inner.y))
         );
+    }
+
+    #[test]
+    fn app_layout_expands_composer_for_soft_wrapped_input() {
+        let root = Rect::new(0, 0, 120, 32);
+        let input = "x".repeat(90);
+        let layout = app_layout(root, 1, &input);
+        let input_inner_width = layout.left_composer.width.saturating_sub(2) as usize;
+
+        assert!(input_inner_width < input.len());
+        assert!(layout.left_composer.height > 2);
+        let rendered = render_input_lines(&input, input_inner_width, &Theme::default());
+        assert!(rendered.len() > 1);
     }
 
     #[test]

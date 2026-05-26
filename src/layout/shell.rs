@@ -34,7 +34,9 @@ pub fn app_layout(root: Rect, header_height: u16, input: &str) -> ShellLayout {
     let footer_padding_bottom_height =
         u16::from(root.height > header_height + footer_border_height + footer_text_height + 2);
     let footer_height = footer_text_height + footer_padding_bottom_height;
-    let composer_height = composer_height(input, root.width as usize, root.height).min(
+    let composer_probe = Rect::new(root.x, root.y, root.width, 1);
+    let left_composer_width = split_main_columns(composer_probe).0.width as usize;
+    let composer_height = composer_height(input, left_composer_width, root.height).min(
         root.height
             .saturating_sub(header_height)
             .saturating_sub(footer_border_height)
