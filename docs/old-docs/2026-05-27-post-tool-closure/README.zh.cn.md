@@ -7,7 +7,7 @@
 ## 文档地图
 
 - [架构](architecture.zh.cn.md)：CLI 职责边界、当前源码布局，以及 kernel/CLI ownership 分离。
-- [协议](protocol.zh.cn.md)：WebSocket envelope 接线、启动消息、快照、订阅、事件解析和当前闭环状态。
+- [协议](protocol.zh.cn.md)：WebSocket envelope 接线、启动消息、快照、订阅、事件解析和当前闭环缺口。
 - [TUI 模型](tui-model.zh.cn.md)：ASK、plan、fork、blackboard、Run timeline、status、右侧面板、热记忆、fork memory 和 tool visibility。
 - [开发](development.zh.cn.md)：运行命令、`cargo check`、dev 模式、日志与 tmux 友好的查看方式。
 
@@ -26,9 +26,6 @@
 - Kernel socket 文档用 `ws://127.0.0.1:8788/ws` 作为本地 smoke 示例；CLI 默认值仍是 `ws://127.0.0.1:8787/ws`，除非设置 `FLYFLOR_WS_URL`。
 - Kernel 暴露 `server.hello` 和 `capability.catalog.get`；CLI startup 会请求 visible capability catalog。
 - Kernel context input 支持 `toolApprovals.mcpToolCalls` 和 `toolApprovals.userToolCalls`；CLI 通过 `/approve` 提供非 YOLO 的单轮 approval，同时保留 YOLO mode 与 tool/run 可见性。
-- ASK typed-answer continuation 已对普通 composer 回复闭合。
-- `/undo` 发送 `gateway.message.undo`；rollback authority 和 memory abandonment 仍由 kernel 负责。
-- Context-window 最大值优先渲染 kernel snapshot；本地 `FLYFLOR_CONTEXT_WINDOW` 只作为 display fallback。
 
 ## 同步规则
 

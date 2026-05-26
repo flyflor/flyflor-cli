@@ -23,9 +23,6 @@ The compiled binary name is `flyflor`.
 - `FLYFLOR_WS_URL`: overrides the default `ws://127.0.0.1:8787/ws`.
 - `FLYFLOR_HISTORY=0|false|FALSE|off|OFF`: disables socket/history usage.
 - `FLYFLOR_CONTEXT_WINDOW`: optional local fallback for context-window display when the kernel does not provide a maximum.
-- `FLYFLOR_LANG`: selects the bundled JSON i18n catalog, such as `zh-CN`, `zh`, `en-US`, or `en`.
-- `FLYFLOR_I18N_DIR`: loads `<lang>.json` from a user-provided catalog directory.
-- `FLYFLOR_I18N_FILE`: loads a single user-provided JSON catalog file.
 
 ## Debugging
 

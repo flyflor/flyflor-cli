@@ -47,7 +47,6 @@ It deliberately does not subscribe to nonexistent or provisional event names, su
 The UI can send these socket commands:
 
 - `gateway.message.send`: normal user message or ASK continuation answer.
-- `gateway.message.undo`: rollback command for a selected user-message anchor.
 - `gateway.message.interrupt`: interrupt an active turn by public message id.
 - `history.list`: history refresh, optionally scoped by active context fork.
 - `task.list`: todo/task refresh.
@@ -60,10 +59,6 @@ The UI can send these socket commands:
 `gateway.message.send` includes conversation, thread, user identity, optional `context.contextForkId`, optional continuation metadata, optional one-turn `context.toolApprovals`, and TUI mode metadata: `act`, `plan`, or `act` with `yolo: true`.
 
 `/approve` submits `context.toolApprovals.mcpToolCalls=true` and `context.toolApprovals.userToolCalls=true` for the next send only. YOLO also submits these approvals, but carries separate high-privilege metadata. The CLI must not execute approved tools locally.
-
-Plain composer answers to a pending ASK also use `gateway.message.send`; the CLI attaches the latest continuation metadata so the kernel resumes the original ASK/task context.
-
-`/undo` sends `gateway.message.undo` with the selected anchor. The kernel records undo audit and abandons affected hot memory / ASK / continuation state without deleting `brain.db`; the CLI only updates presentation state after sending the command.
 
 ## Localization
 
@@ -96,10 +91,6 @@ The CLI parses turn and subscription events:
 - `error`: becomes `SocketEvent::Disconnected`.
 
 Socket read errors and close frames are logged and cause the worker to retry after a short delay.
-
-## Context Window Authority
-
-`gateway.status.snapshot.model.contextWindowTokens` is authoritative when present. The kernel resolves it from explicit config, provider model metadata, and known fallback data. The CLI may estimate current usage locally, but it must not replace a kernel-provided maximum. `FLYFLOR_CONTEXT_WINDOW` is only a display fallback when the kernel omits the maximum.
 
 ## Kernel Authority
 

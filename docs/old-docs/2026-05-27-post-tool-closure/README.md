@@ -4,8 +4,6 @@ Rust TUI for the Flyflor chat client. The CLI is a thin interactive shell over
 the Flyflor WebSocket gateway: it sends user intent through `flyflor.ws.v1`
 commands and renders kernel snapshots/events without owning kernel state.
 
-Chinese companion: [README.zh.cn.md](README.zh.cn.md).
-
 ## Run
 
 ```bash
@@ -47,32 +45,24 @@ The dev runner and Rust TUI both append diagnostics to `.flyflor-cli/logs/dev.lo
 - WebSocket bootstrap with fixed runtime event subscription
 - Streaming transcript, history snapshots, and fork-scoped history refresh
 - ASK menu with fixed choices and `Other` free input continuation replies
-- Plain typed ASK answers reuse the latest pending continuation metadata
 - Plan confirmation/revision/abandon commands
 - Context fork creation and active fork session display
 - Run timeline for route, recall, blackboard, tool, ASK, plan, fork, loop, and
   subagent events
 - Right-side TODO, Run, model/status, context-window, and fork-memory sections
-- JSON-backed i18n catalogs in `i18n/zh-CN.json` and `i18n/en-US.json`
 
 ## Controls
 
 - `/exit`: quit
 - `/help`: show command help
-- `/approve`: approve kernel MCP/user tool calls for the next send only
-- `/undo`: open rollback menu and send `gateway.message.undo`
-- `/yolo`: toggle high-privilege mode metadata
 - `/status`: refresh gateway status
 - `/history`: refresh history
-- `/model`: show provider/model/context-window status
 - `/todo`: refresh TODO or answer pending plan confirmation
 - `/ask`: open the latest pending ASK menu
 - `/fork`: create a context fork from the latest structured assistant turn
 - `/blackboard`: surface the latest blackboard summary
 - `/memory`: refresh fork memory
 - `Ctrl+C` / `Ctrl+V` / `Cmd+V`: paste from clipboard in the composer
-- `Shift+Enter`: insert a newline in the composer
-- `Esc`, then `Esc` again: interrupt the active kernel turn
 - `F2` or `Ctrl+D`: toggle dev mode
 - `Up` / `k`: scroll up
 - `Down` / `j`: scroll down

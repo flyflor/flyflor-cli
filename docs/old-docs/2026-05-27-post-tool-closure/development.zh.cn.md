@@ -23,9 +23,6 @@ FLYFLOR_WS_URL=ws://127.0.0.1:8788/ws cargo run
 - `FLYFLOR_WS_URL`：覆盖默认 `ws://127.0.0.1:8787/ws`。
 - `FLYFLOR_HISTORY=0|false|FALSE|off|OFF`：禁用 socket/history usage。
 - `FLYFLOR_CONTEXT_WINDOW`：当 kernel 没有提供最大窗口时，用作 context-window display 的本地 fallback。
-- `FLYFLOR_LANG`：选择内置 JSON i18n catalog，例如 `zh-CN`、`zh`、`en-US` 或 `en`。
-- `FLYFLOR_I18N_DIR`：从用户提供的目录加载 `<lang>.json` catalog。
-- `FLYFLOR_I18N_FILE`：加载用户提供的单个 JSON catalog 文件。
 
 ## Debugging
 

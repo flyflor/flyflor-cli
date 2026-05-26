@@ -47,7 +47,6 @@ kernel 暴露 `capability.catalog.get` 和 `capability.catalog.snapshot`；CLI s
 UI 可以发送这些 socket commands：
 
 - `gateway.message.send`：普通用户消息或 ASK continuation answer。
-- `gateway.message.undo`：按选中的用户消息 anchor 发送 rollback command。
 - `gateway.message.interrupt`：按 public message id 终断 active turn。
 - `history.list`：history refresh，可按 active context fork 限定范围。
 - `task.list`：todo/task refresh。
@@ -60,10 +59,6 @@ UI 可以发送这些 socket commands：
 `gateway.message.send` 包含 conversation、thread、user identity、可选 `context.contextForkId`、可选 continuation metadata、可选单轮 `context.toolApprovals`，以及 TUI mode metadata：`act`、`plan` 或带 `yolo: true` 的 `act`。
 
 `/approve` 只为下一次发送提交 `context.toolApprovals.mcpToolCalls=true` 和 `context.toolApprovals.userToolCalls=true`。YOLO 也会提交这些 approvals，但它额外携带高权限 metadata。CLI 不得本地执行已批准工具。
-
-对 pending ASK 的普通 composer answer 也使用 `gateway.message.send`；CLI 会附带最新 continuation metadata，让 kernel 恢复原始 ASK/task context。
-
-`/undo` 发送带所选 anchor 的 `gateway.message.undo`。Kernel 会记录 undo audit，并把受影响的热记忆、ASK、continuation state 标记为 abandoned，不删除 `brain.db`；CLI 只在发送命令后更新展示状态。
 
 ## Localization
 
@@ -96,10 +91,6 @@ CLI 解析 turn 和 subscription events：
 - `error`：变成 `SocketEvent::Disconnected`。
 
 Socket read errors 和 close frames 会记录日志，并在短延迟后重试。
-
-## Context Window Authority
-
-`gateway.status.snapshot.model.contextWindowTokens` 存在时是权威值。Kernel 会按显式配置、provider model metadata 和已知 fallback 解析它。CLI 可以本地估算当前 usage，但不能替换 kernel 提供的最大值。`FLYFLOR_CONTEXT_WINDOW` 只在 kernel 没有提供最大值时作为 display fallback。
 
 ## Kernel Authority
 

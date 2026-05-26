@@ -11,8 +11,6 @@ The main screen has:
 - A right panel with TODO, Run timeline, model/status, context window, and fork/memory.
 - A composer footer with interaction mode, active fork label, and local command hints.
 
-The composer sends on `Enter` and inserts a newline on `Shift+Enter`.
-
 ## ASK Display
 
 ASK data is read from turn metadata or ASK snapshots. If the metadata contains a continuation (`snapshotId` or `continuationId`), the transcript gets an `AskResume` context row. Opening it shows an ASK menu.
@@ -64,17 +62,13 @@ Run is the visible execution spine for gateway events. It consumes `event.publis
 
 Subagent events are merged into a batch/child tree. Loose child events are attached to their batch when a later snapshot or batch event arrives, and repeated snapshots update existing rows instead of duplicating them. This keeps subagents visible without making the CLI responsible for runtime scheduling.
 
-## Tool Visibility And Approval Closure
+## Tool Visibility And Approval Gap
 
 Tool events and execution-job snapshots make the Executive exoskeleton visible. The CLI can show tool start/progress/success/failure, MCP tool execution, loop pause/resume, and budget exhaustion.
 
 Normal per-turn approval for kernel `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls` is closed through `/approve`. It marks only the next send and then clears. YOLO mode remains a separate local high-privilege interaction marker sent as metadata.
 
 While a turn is active, the footer shows an animated Working line. Pressing Esc once arms interruption; pressing Esc again within the interrupt window sends `gateway.message.interrupt` for the pending public message id.
-
-The Exo tool/subprocess section uses parsed tool names and lifecycle summaries rather than `unknown` placeholders. Collapsed rows stay single-line; expanded rows show recent output snippets without making the CLI execute tools locally.
-
-`/undo` opens a menu of user-message rollback anchors. Confirming a row sends `gateway.message.undo`; kernel-side memory abandonment and ledger audit are authoritative.
 
 ## Status Model
 
@@ -101,6 +95,6 @@ Left/right arrows move focus across copyable right-panel sections. Pressing `y` 
 
 ## Hot Memory and Fork Memory
 
-The Context Window section shows hot context usage. It prefers kernel-provided context telemetry, falls back to local estimation from recent turns and active fork id, and can use `FLYFLOR_CONTEXT_WINDOW` when the kernel does not provide a maximum. A kernel-provided `contextWindowTokens` value is authoritative and can represent large provider windows such as 1M-token models.
+The Context Window section shows hot context usage. It prefers kernel-provided context telemetry, falls back to local estimation from recent turns and active fork id, and can use `FLYFLOR_CONTEXT_WINDOW` when the kernel does not provide a maximum.
 
 The Fork / Memory section shows up to five recent fork summaries and a `brain.db` label from `fork.memory` data. The `brain.db` label is display-only. `brain.db` is kernel-side ledger/query/replay/audit/detail storage, not a CLI prompt container.

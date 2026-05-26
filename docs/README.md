@@ -7,7 +7,7 @@ This directory is the synchronized English and Chinese documentation set for the
 ## Document Map
 
 - [Architecture](architecture.md): CLI responsibility boundaries, current source layout, and the kernel/CLI ownership split.
-- [Protocol](protocol.md): WebSocket envelope wiring, startup messages, snapshots, subscriptions, event parsing, and current closure gaps.
+- [Protocol](protocol.md): WebSocket envelope wiring, startup messages, snapshots, subscriptions, event parsing, and current closure state.
 - [TUI Model](tui-model.md): ASK, plan, fork, blackboard, Run timeline, status, right-panel, hot memory, fork memory, and tool visibility.
 - [Development](development.md): run commands, `cargo check`, dev mode, logs, and tmux-friendly inspection.
 
@@ -26,6 +26,9 @@ The Chinese document set mirrors this structure:
 - The kernel socket docs use `ws://127.0.0.1:8788/ws` for local smoke examples; the CLI default remains `ws://127.0.0.1:8787/ws` unless `FLYFLOR_WS_URL` is set.
 - The kernel exposes `server.hello` and `capability.catalog.get`; CLI startup requests the visible capability catalog.
 - The kernel context input supports `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls`; the CLI exposes `/approve` for one-turn non-YOLO approval, plus YOLO mode and tool/run visibility.
+- ASK typed-answer continuation is closed for plain composer replies.
+- `/undo` sends `gateway.message.undo`; rollback authority and memory abandonment remain kernel-side.
+- Context-window maximums are rendered from kernel snapshots when present, with local `FLYFLOR_CONTEXT_WINDOW` only as a display fallback.
 
 ## Synchronization Rule
 
