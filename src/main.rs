@@ -651,6 +651,7 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
             .get(question_index)
             .copied()
             .unwrap_or(0);
+        let editing_other = active && menu.is_editing_other();
         lines.push(Line::from(vec![
             Span::styled(
                 if active { "› " } else { "  " },
@@ -675,6 +676,14 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                 .enumerate()
             {
                 let choice_active = choice_index == selected;
+                let freeform = if choice_active && item.is_other {
+                    menu.freeform_by_question
+                        .get(question_index)
+                        .and_then(|value| value.as_deref())
+                        .unwrap_or("")
+                } else {
+                    ""
+                };
                 lines.push(Line::from(vec![
                     Span::styled(
                         if choice_active { "  › " } else { "    " },
@@ -689,7 +698,11 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                         Style::default().fg(theme.muted),
                     ),
                     Span::styled(
-                        item.label.clone(),
+                        if editing_other && choice_active && item.is_other {
+                            format!("{}: {}", item.label, freeform)
+                        } else {
+                            item.label.clone()
+                        },
                         Style::default().fg(if item.is_other {
                             theme.green
                         } else {
@@ -746,25 +759,6 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
         ));
     }
     lines
-}
-
-fn render_ask_freeform_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
-    let prompt = menu
-        .current_question()
-        .map(|question| question.prompt.clone())
-        .unwrap_or_else(|| "ASK".to_string());
-    vec![
-        Line::styled(
-            "ASK 自由输入 · Enter 写入当前问题",
-            Style::default()
-                .fg(theme.green)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Line::from(vec![
-            Span::styled("› ", Style::default().fg(theme.pink)),
-            Span::styled(prompt, Style::default().fg(theme.text)),
-        ]),
-    ]
 }
 
 fn render_plan_menu_lines(menu: &PlanMenu, theme: &Theme) -> Vec<Line<'static>> {
@@ -983,10 +977,6 @@ struct App {
     command_palette: Option<CommandPalette>,
     ask_menu: Option<AskMenu>,
     plan_menu: Option<PlanMenu>,
-    pending_ask_menu: Option<AskMenu>,
-    pending_ask_continuation: Option<Value>,
-    pending_ask_question_id: Option<String>,
-    pending_ask_choice_id: Option<String>,
     pending_plan_action: Option<PlanPendingAction>,
     pending_fork_create: bool,
 }
@@ -1189,10 +1179,6 @@ impl App {
             command_palette: None,
             ask_menu: None,
             plan_menu: None,
-            pending_ask_menu: None,
-            pending_ask_continuation: None,
-            pending_ask_question_id: None,
-            pending_ask_choice_id: None,
             pending_plan_action: None,
             pending_fork_create: false,
         }
@@ -1536,14 +1522,17 @@ impl App {
     }
 
     fn close_menus(&mut self) {
-        if let Some(menu) = self.pending_ask_menu.take() {
-            self.ask_menu = Some(menu);
-            self.input.clear();
-            self.input_cursor = None;
+        if let Some(menu) = &mut self.ask_menu {
+            if menu.is_editing_other() {
+                self.input.clear();
+                self.input_cursor = None;
+            }
+        }
+        if self.ask_menu.is_some() {
+            self.ask_menu = None;
             return;
         }
         self.command_palette = None;
-        self.ask_menu = None;
         self.plan_menu = None;
     }
 
@@ -1651,7 +1640,11 @@ impl App {
     }
 
     fn refresh_command_palette(&mut self) {
-        if self.pending_ask_continuation.is_some() || self.pending_ask_menu.is_some() {
+        if self
+            .ask_menu
+            .as_ref()
+            .is_some_and(|menu| menu.is_editing_other())
+        {
             self.command_palette = None;
             return;
         }
@@ -1678,11 +1671,7 @@ impl App {
 
     fn move_active_menu(&mut self, delta: isize) -> bool {
         if let Some(menu) = &mut self.ask_menu {
-            if !menu.move_choice(delta) {
-                return false;
-            }
-            self.activate_selected_ask_other();
-            return true;
+            return menu.move_choice(delta);
         }
         if let Some(menu) = &mut self.plan_menu {
             menu.selected = move_index(menu.selected, menu.items.len(), delta);
@@ -1706,33 +1695,28 @@ impl App {
             if !menu.select_current_choice(digit as usize - 1) {
                 return false;
             }
-            self.activate_selected_ask_other();
+            if menu.start_current_other_input() {
+                self.input.clear();
+                self.input_cursor = None;
+                self.right_source.blackboard_status = "请输入 ASK Other 回答后发送".to_string();
+            }
             return true;
         }
         false
     }
 
-    fn activate_selected_ask_other(&mut self) -> bool {
-        let is_other = self
-            .ask_menu
-            .as_ref()
-            .and_then(AskMenu::current_choice)
-            .is_some_and(|choice| choice.is_other);
-        if !is_other {
-            return false;
-        }
-        let Some(menu) = self.ask_menu.take() else {
-            return false;
-        };
-        self.pending_ask_menu = Some(menu);
-        self.input.clear();
-        self.input_cursor = None;
-        self.right_source.blackboard_status = "请输入自定义 ASK 回答后发送".to_string();
-        true
-    }
-
     fn handle_menu_confirm_or_next(&mut self, confirm: bool) -> bool {
         if self.ask_menu.is_some() {
+            if self
+                .ask_menu
+                .as_ref()
+                .is_some_and(|menu| menu.is_editing_other())
+            {
+                if confirm {
+                    self.submit_input();
+                }
+                return true;
+            }
             if confirm {
                 self.confirm_ask_menu_selection();
             } else {
@@ -1763,9 +1747,6 @@ impl App {
         if let Some(menu) = &self.ask_menu {
             return Some(render_ask_menu_lines(menu, theme));
         }
-        if let Some(menu) = &self.pending_ask_menu {
-            return Some(render_ask_freeform_lines(menu, theme));
-        }
         if let Some(menu) = &self.plan_menu {
             return Some(render_plan_menu_lines(menu, theme));
         }
@@ -1789,10 +1770,14 @@ impl App {
     }
 
     fn confirm_command_palette_selection(&mut self) {
-        if self.pending_ask_continuation.is_some() || self.pending_ask_menu.is_some() {
+        if self
+            .ask_menu
+            .as_ref()
+            .is_some_and(|menu| menu.is_editing_other())
+        {
             self.command_palette = None;
             self.right_source.blackboard_status =
-                "请先完成当前 ASK 自由输入，Esc 可关闭菜单但不会丢弃待答 ASK".to_string();
+                "请先完成当前 ASK Other 回答，Esc 返回选项".to_string();
             return;
         }
         let Some(command) = self
@@ -1966,19 +1951,18 @@ impl App {
     }
 
     fn confirm_ask_menu_selection(&mut self) {
+        let Some(menu) = self.ask_menu.as_mut() else {
+            return;
+        };
+        if menu.start_current_other_input() {
+            self.input.clear();
+            self.input_cursor = None;
+            self.right_source.blackboard_status = "请输入 ASK Other 回答后发送".to_string();
+            return;
+        }
         let Some(menu) = self.ask_menu.take() else {
             return;
         };
-        let Some(item) = menu.current_choice().cloned() else {
-            return;
-        };
-        if item.is_other {
-            self.pending_ask_menu = Some(menu);
-            self.input.clear();
-            self.input_cursor = None;
-            self.right_source.blackboard_status = "请输入自定义 ASK 回答后发送".to_string();
-            return;
-        }
         self.submit_or_advance_ask_menu(menu);
     }
 
@@ -2058,7 +2042,7 @@ impl App {
         let message_id = format!("flyflor-cli-message-{}", now_millis());
         let new_turn_index = self.turns.len();
         let socket_connected = self.socket_connected;
-        let metadata = tui::ask::ask_message_metadata_many(continuation, &ask_answers);
+        let metadata = tui::ask::command::ask_message_metadata_many(continuation, &ask_answers);
         let user_text = ask_answers
             .iter()
             .map(|answer| answer.text.as_str())
@@ -2457,7 +2441,6 @@ impl App {
         !self.input.is_empty()
             || self.command_palette.is_some()
             || self.ask_menu.is_some()
-            || self.pending_ask_menu.is_some()
             || self.plan_menu.is_some()
     }
 
@@ -2619,14 +2602,19 @@ impl App {
 
     fn submit_input(&mut self) {
         let text = self.input.trim().to_string();
-        if text.is_empty() {
-            return;
-        }
-        if let Some(mut menu) = self.pending_ask_menu.take() {
+        if let Some(mut menu) = self.ask_menu.take_if(|menu| menu.is_editing_other()) {
+            if text.is_empty() {
+                self.ask_menu = Some(menu);
+                return;
+            }
             menu.set_current_freeform(text.clone());
+            menu.editing_other = false;
             self.input.clear();
             self.input_cursor = None;
             self.submit_or_advance_ask_menu(menu);
+            return;
+        }
+        if text.is_empty() {
             return;
         }
         if matches!(self.pending_plan_action, Some(PlanPendingAction::Revise)) {
@@ -2636,32 +2624,30 @@ impl App {
             self.input_cursor = None;
             return;
         }
-        if self.pending_ask_continuation.is_none() && self.pending_ask_menu.is_none() {
-            if text == "/exit" {
-                self.should_quit = true;
-                return;
+        if text == "/exit" {
+            self.should_quit = true;
+            return;
+        }
+        if text == "/exit fork" {
+            if self.active_fork.is_some() {
+                self.exit_fork_session();
+            } else {
+                self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
             }
-            if text == "/exit fork" {
-                if self.active_fork.is_some() {
-                    self.exit_fork_session();
-                } else {
-                    self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
-                }
+            self.input.clear();
+            self.input_cursor = None;
+            return;
+        }
+        if text.starts_with('/') {
+            self.refresh_command_palette();
+            if self.command_palette.is_some() {
+                self.confirm_command_palette_selection();
+            } else {
+                self.right_source.blackboard_status = format!("未知命令：{text}");
                 self.input.clear();
                 self.input_cursor = None;
-                return;
             }
-            if text.starts_with('/') {
-                self.refresh_command_palette();
-                if self.command_palette.is_some() {
-                    self.confirm_command_palette_selection();
-                } else {
-                    self.right_source.blackboard_status = format!("未知命令：{text}");
-                    self.input.clear();
-                    self.input_cursor = None;
-                }
-                return;
-            }
+            return;
         }
         self.composer_notice = None;
 
@@ -2673,31 +2659,6 @@ impl App {
             return;
         }
         let turn_index = self.turns.len();
-        let metadata = self
-            .pending_ask_continuation
-            .take()
-            .map(|continuation| {
-                let question_id = self.pending_ask_question_id.take();
-                let choice_id = self
-                    .pending_ask_choice_id
-                    .take()
-                    .unwrap_or_else(|| "other".to_string());
-                tui::ask::ask_message_metadata(
-                    continuation,
-                    &tui::ask::AskAnswer::other_for_choice(text.clone(), question_id, choice_id),
-                )
-            })
-            .or_else(|| {
-                self.turns
-                    .iter_mut()
-                    .find_map(|turn| turn.pending_continuation.take())
-                    .map(|continuation| {
-                        tui::ask::ask_message_metadata(
-                            continuation,
-                            &tui::ask::AskAnswer::other(text.clone()),
-                        )
-                    })
-            });
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
@@ -2716,7 +2677,7 @@ impl App {
                 message_id,
                 text,
                 context_fork_id: self.active_context_fork_id.clone(),
-                metadata,
+                metadata: None,
                 mode: self.interaction_mode,
                 yolo: self.yolo_mode,
             })
@@ -8553,7 +8514,7 @@ mod tests {
     }
 
     #[test]
-    fn ask_menu_other_defers_continuation_to_free_input() {
+    fn ask_menu_other_enters_inline_input_on_confirm() {
         let mut app = App::new();
         app.turns.push(Turn {
             message_id: Some("message-1".to_string()),
@@ -8584,12 +8545,12 @@ mod tests {
             .selected_by_question[0] = 1;
         app.confirm_ask_menu_selection();
 
-        assert!(app.pending_ask_menu.is_some());
-        assert!(app.right_source.blackboard_status.contains("自定义"));
+        assert!(app.ask_menu.as_ref().expect("ask menu").is_editing_other());
+        assert!(app.right_source.blackboard_status.contains("Other"));
     }
 
     #[test]
-    fn ask_menu_selecting_other_enters_freeform_without_extra_confirm() {
+    fn ask_menu_number_selecting_other_enters_inline_input() {
         let mut app = App::new();
         app.turns.push(Turn {
             message_id: Some("message-1".to_string()),
@@ -8610,15 +8571,15 @@ mod tests {
         });
 
         assert!(app.open_latest_ask_menu());
-        assert!(app.move_active_menu(1));
+        assert!(app.select_active_menu_number('2'));
 
-        assert!(app.ask_menu.is_none());
-        assert!(app.pending_ask_menu.is_some());
+        assert!(app.ask_menu.is_some());
+        assert!(app.ask_menu.as_ref().expect("ask menu").is_editing_other());
         assert!(app.input.is_empty());
     }
 
     #[test]
-    fn ask_menu_escape_from_other_freeform_restores_menu() {
+    fn ask_menu_escape_from_other_inline_input_closes_menu() {
         let mut app = App::new();
         app.turns.push(Turn {
             message_id: Some("message-1".to_string()),
@@ -8639,12 +8600,11 @@ mod tests {
         });
 
         assert!(app.open_latest_ask_menu());
-        assert!(app.move_active_menu(1));
+        assert!(app.select_active_menu_number('2'));
         app.input = "暂存输入".to_string();
         app.close_menus();
 
-        assert!(app.pending_ask_menu.is_none());
-        assert!(app.ask_menu.is_some());
+        assert!(app.ask_menu.is_none());
         assert!(app.input.is_empty());
     }
 
@@ -8681,7 +8641,7 @@ mod tests {
 
         let sent = app.turns.last().expect("sent turn");
         assert_eq!(sent.user, "我的自定义回答");
-        assert!(app.pending_ask_menu.is_none());
+        assert!(app.ask_menu.is_none());
     }
 
     #[test]
@@ -8737,19 +8697,19 @@ mod tests {
                     .expect("answers");
                 assert_eq!(answers.len(), 1);
                 assert_eq!(
-                    ask_answer.get("questionId").and_then(Value::as_str),
+                    answers[0].get("questionId").and_then(Value::as_str),
                     Some("q1")
                 );
                 assert_eq!(
-                    ask_answer.get("choiceId").and_then(Value::as_str),
+                    answers[0].get("choiceId").and_then(Value::as_str),
                     Some("custom")
                 );
                 assert_eq!(
-                    ask_answer.get("text").and_then(Value::as_str),
+                    answers[0].get("text").and_then(Value::as_str),
                     Some("我的自定义回答")
                 );
                 assert_eq!(
-                    ask_answer.get("isOther").and_then(Value::as_bool),
+                    answers[0].get("isOther").and_then(Value::as_bool),
                     Some(true)
                 );
             }
@@ -8758,53 +8718,40 @@ mod tests {
     }
 
     #[test]
-    fn slash_command_does_not_steal_pending_ask_freeform() {
+    fn slash_command_real_enter_path_does_not_submit_while_ask_other_inline_is_active() {
         let mut app = App::new();
-        let (tx, rx) = mpsc::channel();
-        app.socket_tx = tx;
         app.socket_connected = true;
-        app.pending_ask_continuation =
-            Some(json!({ "mode": "continue", "continuationId": "cont-1" }));
-        app.input = "/todo".to_string();
-
-        app.submit_input();
-
-        assert!(app.pending_ask_continuation.is_none());
-        assert!(app.pending_plan_action.is_none());
-        match rx.try_recv().expect("ask send command") {
-            SocketCommand::SendMessage {
-                text,
-                metadata: Some(_),
-                ..
-            } => assert_eq!(text, "/todo"),
-            _ => panic!("expected ask send message"),
-        }
-    }
-
-    #[test]
-    fn slash_command_real_enter_path_does_not_steal_pending_ask_freeform() {
-        let mut app = App::new();
-        let (tx, rx) = mpsc::channel();
-        app.socket_tx = tx;
-        app.socket_connected = true;
-        app.pending_ask_continuation =
-            Some(json!({ "mode": "continue", "continuationId": "cont-1" }));
+        app.ask_menu = Some(AskMenu::new(
+            0,
+            json!({ "mode": "continue", "continuationId": "cont-1" }),
+            vec![AskQuestion {
+                id: "q1".to_string(),
+                prompt: "选择下一步".to_string(),
+                recommended_choice_id: None,
+                choices: vec![AskChoice {
+                    id: "custom".to_string(),
+                    label: "Other".to_string(),
+                    value: None,
+                    description: None,
+                    question_id: Some("q1".to_string()),
+                    recommended: false,
+                    is_other: true,
+                }],
+            }],
+        ));
+        app.ask_menu
+            .as_mut()
+            .expect("ask menu")
+            .start_current_other_input();
         app.input = "/todo".to_string();
         app.refresh_command_palette();
 
         handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-        assert!(app.pending_ask_continuation.is_none());
         assert!(app.command_palette.is_none());
         assert!(app.pending_plan_action.is_none());
-        match rx.try_recv().expect("ask send command") {
-            SocketCommand::SendMessage {
-                text,
-                metadata: Some(_),
-                ..
-            } => assert_eq!(text, "/todo"),
-            _ => panic!("expected ask send message"),
-        }
+        assert!(app.ask_menu.is_none());
+        assert_eq!(app.turns.last().expect("sent turn").user, "/todo");
     }
 
     #[test]
@@ -8933,6 +8880,39 @@ mod tests {
         assert!(text.contains("继续实现"));
         assert!(text.contains("Other 自由输入"));
         assert!(!text.contains('{'));
+    }
+
+    #[test]
+    fn ask_menu_renders_inline_other_text_in_current_choice() {
+        let theme = Theme::default();
+        let mut menu = AskMenu::new(
+            0,
+            json!({ "mode": "continue", "snapshotId": "ask-1" }),
+            vec![AskQuestion {
+                id: "q1".to_string(),
+                prompt: "选择下一步".to_string(),
+                recommended_choice_id: None,
+                choices: vec![AskChoice {
+                    id: "other".to_string(),
+                    label: "Other".to_string(),
+                    value: None,
+                    description: None,
+                    question_id: Some("q1".to_string()),
+                    recommended: false,
+                    is_other: true,
+                }],
+            }],
+        );
+        menu.start_current_other_input();
+        menu.set_current_freeform("自定义策略".to_string());
+
+        let text = render_ask_menu_lines(&menu, &theme)
+            .iter()
+            .map(line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("› 1. Other: 自定义策略"));
     }
 
     #[test]
