@@ -132,6 +132,10 @@ fn child_from_value(value: &Value, status: SubagentStatus) -> SubagentChild {
         task: first_string(value, &["task", "summary", "prompt"]),
         id,
         status,
+        limited: value_bool(value, "limited"),
+        limit_reason: first_string(value, &["limitReason", "limit_reason"]),
+        suppressed_ask_required: value_bool(value, "suppressedAskRequired")
+            || value_bool(value, "suppressed_ask_required"),
         model: model_from_nested(value),
         allowed_tools: string_list(value, &["allowedTools", "allowed_tools", "tools"]),
         tool_calls,
@@ -225,6 +229,9 @@ fn mark_needs_user(tree: &mut SubagentTree, value: &Value) {
             name: first_string(value, &["childName", "agentName"]).unwrap_or_default(),
             task: first_string(value, &["reason", "message", "askId"]),
             status: SubagentStatus::NeedsUser,
+            limited: false,
+            limit_reason: None,
+            suppressed_ask_required: false,
             model: None,
             allowed_tools: Vec::new(),
             tool_calls: Vec::new(),
@@ -390,6 +397,10 @@ fn string_list(value: &Value, keys: &[&str]) -> Vec<String> {
         }
     }
     Vec::new()
+}
+
+fn value_bool(value: &Value, key: &str) -> bool {
+    value.get(key).and_then(Value::as_bool).unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -585,5 +596,31 @@ mod tests {
             ask.crystal_candidate.as_deref(),
             Some("record retry policy")
         );
+    }
+
+    #[test]
+    fn parses_limited_child_without_needs_user() {
+        let mut tree = SubagentTree::default();
+        merge_event_publish(
+            &mut tree,
+            "subagent.child.end",
+            &json!({
+                "type": "subagent.child.end",
+                "payload": {
+                    "childId": "reader",
+                    "status": "completed",
+                    "limited": true,
+                    "limitReason": "tool-budget-exhausted",
+                    "suppressedAskRequired": true,
+                    "toolCalls": [{ "id": "read-1", "name": "workspace.read", "status": "completed" }]
+                }
+            }),
+        );
+
+        let child = &tree.loose_children[0];
+        assert_eq!(child.status, SubagentStatus::Completed);
+        assert!(child.limited);
+        assert!(child.suppressed_ask_required);
+        assert_eq!(child.limit_reason.as_deref(), Some("tool-budget-exhausted"));
     }
 }

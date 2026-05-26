@@ -85,6 +85,10 @@ fn child_lines(child: &SubagentChild, nested: bool) -> Vec<Line<'static>> {
         ),
         Span::raw(" "),
         Span::styled(child.status.as_str(), marker_style(&child.status)),
+        Span::styled(
+            if child.limited { " · partial" } else { "" },
+            Style::default().fg(Color::Rgb(255, 204, 102)),
+        ),
     ])];
     if let Some(task) = &child.task {
         lines.push(Line::from(vec![
@@ -97,6 +101,26 @@ fn child_lines(child: &SubagentChild, nested: bool) -> Vec<Line<'static>> {
     }
     if let Some(model) = &child.model {
         lines.extend(model_lines(model, &format!("{indent}  ")));
+    }
+    if child.limited || child.suppressed_ask_required {
+        lines.push(Line::from(vec![
+            Span::raw(format!("{indent}  limit ")),
+            Span::styled(
+                truncate(
+                    child.limit_reason.as_deref().unwrap_or("partial-result"),
+                    120,
+                ),
+                Style::default().fg(Color::Rgb(255, 204, 102)),
+            ),
+            Span::styled(
+                if child.suppressed_ask_required {
+                    " · ASK suppressed"
+                } else {
+                    ""
+                },
+                Style::default().fg(Color::Rgb(170, 180, 205)),
+            ),
+        ]));
     }
     if !child.allowed_tools.is_empty() {
         lines.push(Line::from(vec![
@@ -373,5 +397,39 @@ mod tests {
         assert!(text.contains("Pick an option"));
         assert!(text.contains("allowed tools read"));
         assert!(text.contains("tool read completed"));
+    }
+
+    #[test]
+    fn renders_limited_partial_child_state() {
+        let mut tree = SubagentTree::default();
+        merge_execution_job_snapshot(
+            &mut tree,
+            &json!({
+                "data": {
+                    "children": [{
+                        "id": "reader",
+                        "status": "completed",
+                        "limited": true,
+                        "limitReason": "tool-budget-exhausted",
+                        "suppressedAskRequired": true
+                    }]
+                }
+            }),
+        );
+
+        let text = subagent_tree_lines(&tree)
+            .into_iter()
+            .map(|line| {
+                line.spans
+                    .into_iter()
+                    .map(|span| span.content.into_owned())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("partial"));
+        assert!(text.contains("tool-budget-exhausted"));
+        assert!(text.contains("ASK suppressed"));
     }
 }
