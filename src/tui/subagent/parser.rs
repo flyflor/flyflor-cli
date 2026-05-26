@@ -89,6 +89,12 @@ pub fn merge_execution_job_snapshot(tree: &mut SubagentTree, value: &Value) {
         }
     }
 
+    for events in arrays_at(data, &["events"]) {
+        for event in events {
+            merge_snapshot_event(tree, event);
+        }
+    }
+
     for processes in arrays_at(data, &["processes", "subprocesses"]) {
         for process in processes {
             tree.upsert_process(process_from_value(
@@ -117,6 +123,8 @@ fn child_from_value(value: &Value, status: SubagentStatus) -> SubagentChild {
     let id = value_string(value, "childId")
         .or_else(|| value_string(value, "id"))
         .or_else(|| value_string(value, "agentId"))
+        .or_else(|| value_string(value, "subagentId"))
+        .or_else(|| value_string(value, "childJobId"))
         .unwrap_or_else(|| compact_json(value));
     let tool_calls = arrays_at(value, &["toolCalls", "tool_calls", "calls"])
         .into_iter()
@@ -151,9 +159,14 @@ fn child_from_value(value: &Value, status: SubagentStatus) -> SubagentChild {
 }
 
 fn tool_call_from_value(value: &Value) -> SubagentToolCall {
+    let envelope = value;
+    let value = tool_payload_value(value);
     let id = value_string(value, "id")
+        .or_else(|| value_string(envelope, "id"))
         .or_else(|| value_string(value, "callId"))
+        .or_else(|| value_string(envelope, "callId"))
         .or_else(|| value_string(value, "toolCallId"))
+        .or_else(|| value_string(envelope, "toolCallId"))
         .or_else(|| value_text_at(value, &["call", "id"]))
         .or_else(|| value_text_at(value, &["call", "callId"]))
         .unwrap_or_else(|| compact_json(value));
@@ -170,8 +183,14 @@ fn tool_call_from_value(value: &Value) -> SubagentToolCall {
         value,
         &[
             &["call", "tool"],
+            &["content", "call", "tool"],
+            &["payload", "call", "tool"],
             &["tool", "key"],
+            &["content", "tool", "key"],
+            &["payload", "tool", "key"],
             &["tool"],
+            &["content", "tool"],
+            &["payload", "tool"],
             &["toolName"],
             &["name"],
         ],
@@ -205,17 +224,28 @@ fn tool_call_from_value(value: &Value) -> SubagentToolCall {
     SubagentToolCall {
         name,
         id,
-        status: SubagentStatus::from_value(value),
+        status: match SubagentStatus::from_value(value) {
+            SubagentStatus::Unknown => SubagentStatus::from_value(envelope),
+            status => status,
+        },
         call_id: value_string(value, "callId")
+            .or_else(|| value_string(envelope, "callId"))
             .or_else(|| value_string(value, "toolCallId"))
+            .or_else(|| value_string(envelope, "toolCallId"))
             .or_else(|| value_text_at(value, &["call", "id"]))
             .or_else(|| value_text_at(value, &["call", "callId"])),
         job_id: value_string(value, "jobId")
             .or_else(|| value_string(value, "job_id"))
-            .or_else(|| value_string(value, "childJobId")),
+            .or_else(|| value_string(value, "childJobId"))
+            .or_else(|| value_string(envelope, "jobId"))
+            .or_else(|| value_string(envelope, "job_id"))
+            .or_else(|| value_string(envelope, "childJobId")),
         child_id: value_string(value, "childId")
             .or_else(|| value_string(value, "agentId"))
-            .or_else(|| value_string(value, "subagentId")),
+            .or_else(|| value_string(value, "subagentId"))
+            .or_else(|| value_string(envelope, "childId"))
+            .or_else(|| value_string(envelope, "agentId"))
+            .or_else(|| value_string(envelope, "subagentId")),
         server,
         tool,
         command: first_string(value, &["command", "cmd"]),
@@ -250,6 +280,44 @@ fn tool_call_from_value(value: &Value) -> SubagentToolCall {
             .map(|process| process_from_value(process, SubagentStatus::from_value(process)))
             .collect(),
     }
+}
+
+fn merge_snapshot_event(tree: &mut SubagentTree, event: &Value) {
+    let event = event_value(event).unwrap_or(event);
+    if let Some(event_type) = crate::tui::run_timeline::parser::event_type(event) {
+        merge_event_publish(tree, event_type, event);
+        if event_type == "mcp.tool.call.executed"
+            || event_type.starts_with("sandbox.tool.")
+            || event_type.starts_with("tool.")
+        {
+            return;
+        }
+    }
+    let payload = event
+        .get("content")
+        .or_else(|| event.get("payload"))
+        .or_else(|| event.get("data"))
+        .unwrap_or(event);
+    if looks_like_tool_call(payload) {
+        tree.upsert_tool_call(tool_call_from_value(event));
+    }
+}
+
+fn tool_payload_value(value: &Value) -> &Value {
+    value
+        .get("content")
+        .or_else(|| value.get("payload"))
+        .or_else(|| value.get("data"))
+        .unwrap_or(value)
+}
+
+fn looks_like_tool_call(value: &Value) -> bool {
+    value.get("tool").is_some()
+        || value.get("toolName").is_some()
+        || value.get("toolCallId").is_some()
+        || value.get("call").is_some()
+        || value.get("content").is_some_and(looks_like_tool_call)
+        || value.get("payload").is_some_and(looks_like_tool_call)
 }
 
 fn merge_tool_call_with_status(tree: &mut SubagentTree, value: &Value, status: SubagentStatus) {
@@ -769,5 +837,83 @@ mod tests {
         assert_eq!(call.args_preview.as_deref(), Some("src/main.rs"));
         assert_eq!(call.detail.as_deref(), Some("fn main() {}"));
         assert_eq!(call.status, SubagentStatus::Completed);
+    }
+
+    #[test]
+    fn child_job_id_only_snapshot_does_not_render_json_child_title() {
+        let mut tree = SubagentTree::default();
+        merge_execution_job_snapshot(
+            &mut tree,
+            &json!({
+                "type": "execution.job.snapshot",
+                "payload": {
+                    "data": {
+                        "children": [{
+                            "childJobId": "job-child-1",
+                            "status": "running"
+                        }]
+                    }
+                }
+            }),
+        );
+
+        let child = &tree.loose_children[0];
+        assert_eq!(child.id, "job-child-1");
+        assert_eq!(child.name, "job-child-1");
+        assert_eq!(child.job_id.as_deref(), Some("job-child-1"));
+        assert!(child.task.is_none());
+        assert!(!child.name.starts_with('{'));
+    }
+
+    #[test]
+    fn parses_tool_executions_and_event_content_tools_from_snapshot() {
+        let mut tree = SubagentTree::default();
+        merge_execution_job_snapshot(
+            &mut tree,
+            &json!({
+                "type": "execution.job.snapshot",
+                "payload": {
+                    "data": {
+                        "children": [{
+                            "childId": "child-1",
+                            "childJobId": "job-child-1",
+                            "task": "inspect workspace"
+                        }],
+                        "toolExecutions": [{
+                            "id": "call-1",
+                            "childJobId": "job-child-1",
+                            "call": {
+                                "server": "workspace",
+                                "tool": "tree",
+                                "input": { "path": "src/tui" }
+                            },
+                            "metadata": { "preview": "src/tui" },
+                            "status": "completed"
+                        }],
+                        "events": [{
+                            "childJobId": "job-child-1",
+                            "content": {
+                                "id": "call-2",
+                                "tool": "glob",
+                                "call": {
+                                    "server": "workspace",
+                                    "tool": "glob",
+                                    "input": { "pattern": "src/**/*.rs" }
+                                },
+                                "metadata": { "preview": "src/**/*.rs" },
+                                "status": "completed"
+                            }
+                        }]
+                    }
+                }
+            }),
+        );
+
+        let child = &tree.loose_children[0];
+        assert_eq!(child.tool_calls.len(), 2);
+        assert_eq!(child.tool_calls[0].server.as_deref(), Some("workspace"));
+        assert_eq!(child.tool_calls[0].tool.as_deref(), Some("tree"));
+        assert_eq!(child.tool_calls[1].server.as_deref(), Some("workspace"));
+        assert_eq!(child.tool_calls[1].tool.as_deref(), Some("glob"));
     }
 }

@@ -251,7 +251,12 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
         for entry in child {
             let child_id = value_string(entry, "childId")
                 .or_else(|| value_string(entry, "id"))
-                .unwrap_or_else(|| stable_id("child", entry));
+                .or_else(|| value_string(entry, "agentId"))
+                .or_else(|| value_string(entry, "subagentId"))
+                .or_else(|| value_string(entry, "childJobId"));
+            let Some(child_id) = child_id else {
+                continue;
+            };
             items.push(
                 RunTimelineItem::new(
                     format!("child:{child_id}"),
@@ -266,7 +271,71 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
         }
     }
 
+    for calls in arrays_at(data, &["toolExecutions", "toolCalls", "tools"]) {
+        for entry in calls {
+            let id = value_string(entry, "id")
+                .or_else(|| value_string(entry, "callId"))
+                .or_else(|| value_string(entry, "toolCallId"))
+                .or_else(|| value_text_at(entry, &["call", "id"]))
+                .or_else(|| {
+                    let payload = tool_payload_value(entry);
+                    value_string(payload, "id")
+                        .or_else(|| value_string(payload, "callId"))
+                        .or_else(|| value_string(payload, "toolCallId"))
+                        .or_else(|| value_text_at(payload, &["call", "id"]))
+                })
+                .unwrap_or_else(|| stable_id("tool", entry));
+            items.push(
+                tool_item(id, "tool.executed", entry)
+                    .with_source(RunTimelineSource::ExecutionJobSnapshot)
+                    .with_raw(Some(entry.clone())),
+            );
+        }
+    }
+
+    for events in arrays_at(data, &["events"]) {
+        for entry in events {
+            if let Some(item) = snapshot_event_item(entry) {
+                items.push(item);
+            }
+        }
+    }
+
     items
+}
+
+fn snapshot_event_item(entry: &Value) -> Option<RunTimelineItem> {
+    let event = event_value(entry).unwrap_or(entry);
+    let event_type = event_type(event).unwrap_or("tool.executed");
+    let payload = event
+        .get("content")
+        .or_else(|| event.get("payload"))
+        .or_else(|| event.get("data"))
+        .unwrap_or(event);
+    if !looks_like_tool(payload) {
+        return None;
+    }
+    let event_type = if event_type == "mcp.tool.call.executed"
+        || event_type.starts_with("sandbox.tool.")
+        || event_type.starts_with("tool.")
+    {
+        event_type
+    } else {
+        "tool.executed"
+    };
+    let id = value_string(event, "id")
+        .or_else(|| value_string(payload, "id"))
+        .or_else(|| value_string(event, "callId"))
+        .or_else(|| value_string(payload, "callId"))
+        .or_else(|| value_string(event, "toolCallId"))
+        .or_else(|| value_string(payload, "toolCallId"))
+        .or_else(|| value_text_at(payload, &["call", "id"]))
+        .unwrap_or_else(|| stable_id("tool", payload));
+    Some(
+        tool_item(id, event_type, payload)
+            .with_source(RunTimelineSource::ExecutionJobSnapshot)
+            .with_raw(Some(event.clone())),
+    )
 }
 
 fn tool_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
@@ -302,10 +371,13 @@ fn tool_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
 }
 
 fn tool_display_name(payload: &Value) -> Option<String> {
+    let payload = tool_payload_value(payload);
     let server = first_string_nested(
         payload,
         &[
             &["call", "server"],
+            &["content", "call", "server"],
+            &["payload", "call", "server"],
             &["server"],
             &["serverName"],
             &["server_name"],
@@ -315,8 +387,14 @@ fn tool_display_name(payload: &Value) -> Option<String> {
         payload,
         &[
             &["call", "tool"],
+            &["content", "call", "tool"],
+            &["payload", "call", "tool"],
             &["tool", "key"],
+            &["content", "tool", "key"],
+            &["payload", "tool", "key"],
             &["tool"],
+            &["content", "tool"],
+            &["payload", "tool"],
             &["toolName"],
             &["name"],
         ],
@@ -332,6 +410,7 @@ fn tool_display_name(payload: &Value) -> Option<String> {
 }
 
 fn tool_detail(payload: &Value) -> Option<String> {
+    let payload = tool_payload_value(payload);
     first_string_nested(
         payload,
         &[
@@ -354,6 +433,23 @@ fn tool_detail(payload: &Value) -> Option<String> {
         )
     })
     .or_else(|| first_string_nested(payload, &[&["state", "title"], &["state", "error"]]))
+}
+
+fn tool_payload_value(value: &Value) -> &Value {
+    value
+        .get("content")
+        .or_else(|| value.get("payload"))
+        .or_else(|| value.get("data"))
+        .unwrap_or(value)
+}
+
+fn looks_like_tool(value: &Value) -> bool {
+    value.get("tool").is_some()
+        || value.get("toolName").is_some()
+        || value.get("toolCallId").is_some()
+        || value.get("call").is_some()
+        || value.get("content").is_some_and(looks_like_tool)
+        || value.get("payload").is_some_and(looks_like_tool)
 }
 
 fn model_item(id: String, payload: &Value) -> RunTimelineItem {
@@ -709,5 +805,72 @@ mod tests {
         assert_eq!(item.title, "tool workspace/read");
         assert_eq!(item.detail.as_deref(), Some("src/main.rs"));
         assert_eq!(item.status, RunTimelineItemStatus::Completed);
+    }
+
+    #[test]
+    fn snapshot_child_job_id_only_child_uses_job_id_not_json() {
+        let items = parse_execution_job_snapshot(&json!({
+            "type": "execution.job.snapshot",
+            "payload": {
+                "data": {
+                    "children": [{
+                        "childJobId": "job-child-1",
+                        "status": "running"
+                    }]
+                }
+            }
+        }));
+
+        let child = items
+            .iter()
+            .find(|item| item.id == "child:job-child-1")
+            .expect("child item");
+        assert_eq!(child.title, "subagent child job-child-1");
+        assert!(!child.title.contains('{'));
+        assert!(child.detail.is_none());
+    }
+
+    #[test]
+    fn parses_snapshot_tool_executions_and_event_content_tools() {
+        let items = parse_execution_job_snapshot(&json!({
+            "type": "execution.job.snapshot",
+            "payload": {
+                "data": {
+                    "toolExecutions": [{
+                        "id": "call-1",
+                        "childJobId": "job-child-1",
+                        "call": {
+                            "server": "workspace",
+                            "tool": "tree",
+                            "input": { "path": "src" }
+                        },
+                        "metadata": { "preview": "src" },
+                        "status": "completed"
+                    }],
+                    "events": [{
+                        "childJobId": "job-child-1",
+                        "content": {
+                            "id": "call-2",
+                            "tool": "glob",
+                            "call": {
+                                "server": "workspace",
+                                "tool": "glob",
+                                "input": { "pattern": "src/**/*.rs" }
+                            },
+                            "metadata": { "preview": "src/**/*.rs" },
+                            "status": "completed"
+                        }
+                    }]
+                }
+            }
+        }));
+
+        let titles = items
+            .iter()
+            .filter(|item| item.kind == RunTimelineItemKind::Tool)
+            .map(|item| item.title.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(titles, vec!["tool workspace/tree", "tool workspace/glob"]);
+        assert!(!titles.iter().any(|title| title.contains("unknown")));
     }
 }
