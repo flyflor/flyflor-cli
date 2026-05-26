@@ -355,15 +355,21 @@ fn tool_title(call: &SubagentToolCall) -> String {
         .or(call.output_path.as_deref())
         .or(call.detail.as_deref())
         .unwrap_or_default();
-    let canonical = canonical_tool_name(name);
+    let canonical = canonical_tool_name(call.server.as_deref(), name);
     if target.is_empty() {
-        return canonical.to_string();
+        return canonical;
     }
     format!("{canonical} {}", truncate(target, 72))
 }
 
-fn canonical_tool_name(name: &str) -> &'static str {
+fn canonical_tool_name(server: Option<&str>, name: &str) -> String {
     let lower = name.to_ascii_lowercase();
+    if server.is_some_and(|server| server.eq_ignore_ascii_case("workspace")) {
+        return match lower.rsplit(['/', '.']).next().unwrap_or(lower.as_str()) {
+            "read" | "glob" | "tree" | "list" => format!("workspace/{name}"),
+            _ => name.to_string(),
+        };
+    }
     match lower.rsplit(['/', '.']).next().unwrap_or(lower.as_str()) {
         "task" => "Task",
         "read" => "Read",
@@ -375,6 +381,7 @@ fn canonical_tool_name(name: &str) -> &'static str {
         "bash" | "shell" | "exec" => "Shell",
         _ => "Tool",
     }
+    .to_string()
 }
 
 fn error_line(indent: &str, error: &str) -> Line<'static> {
@@ -491,5 +498,56 @@ mod tests {
         assert!(summary.contains("partial"));
         assert!(detail.contains("tool-budget-exhausted"));
         assert!(detail.contains("ASK suppressed"));
+    }
+
+    #[test]
+    fn renders_workspace_tool_names_without_unknown_placeholder() {
+        let mut tree = SubagentTree::default();
+        merge_execution_job_snapshot(
+            &mut tree,
+            &json!({
+                "data": {
+                    "children": [{
+                        "childId": "child-1",
+                        "childJobId": "job-child-1",
+                        "task": "inspect files"
+                    }],
+                    "toolExecutions": [{
+                        "id": "call-1",
+                        "childJobId": "job-child-1",
+                        "call": {
+                            "server": "workspace",
+                            "tool": "read",
+                            "input": { "filePath": "src/tui/subagent/parser.rs" }
+                        },
+                        "metadata": { "preview": "src/tui/subagent/parser.rs" },
+                        "status": "completed"
+                    }]
+                }
+            }),
+        );
+
+        let child = &tree.loose_children[0];
+        let summary = child_summary_line(child, None)
+            .spans
+            .into_iter()
+            .map(|span| span.content.into_owned())
+            .collect::<String>();
+        let detail = child_detail_lines(child, None, "")
+            .into_iter()
+            .map(|line| {
+                line.spans
+                    .into_iter()
+                    .map(|span| span.content.into_owned())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(summary.contains("tools 1"));
+        assert!(detail.contains("workspace/read src/tui/subagent/parser.rs"));
+        assert!(!detail.contains("tool · unknown"));
+        assert!(!detail.contains("unknown"));
+        assert!(!detail.contains('{'));
     }
 }
