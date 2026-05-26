@@ -50,6 +50,10 @@ pub fn continuation_from_metadata(metadata: &Value) -> Option<Value> {
                 .get("continuation")
                 .and_then(continuation_from_value)
         })
+        .or_else(|| {
+            value_string(metadata, "behaviorSnapshotId")
+                .map(|snapshot_id| json!({ "mode": "continue", "snapshotId": snapshot_id }))
+        })
 }
 
 pub fn continuation_from_value(value: &Value) -> Option<Value> {
@@ -58,6 +62,12 @@ pub fn continuation_from_value(value: &Value) -> Option<Value> {
     }
     if let Some(continuation_id) = value_string(value, "continuationId") {
         return Some(json!({ "mode": "continue", "continuationId": continuation_id }));
+    }
+    if let Some(resume) = value
+        .get("executiveToolLoop")
+        .and_then(|loop_snapshot| loop_snapshot.get("resume"))
+    {
+        return Some(resume.clone());
     }
     None
 }
@@ -165,8 +175,14 @@ fn choice_from_value(
                 .or_else(|| value.get("is_other"))
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
+            let recommended = recommended_choice_id == Some(id.as_str())
+                || value
+                    .get("recommended")
+                    .or_else(|| value.get("isRecommended"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
             Some(AskChoice {
-                recommended: recommended_choice_id == Some(id.as_str()),
+                recommended,
                 id,
                 label,
                 value: Some(answer),
