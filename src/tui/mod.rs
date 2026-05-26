@@ -1,6 +1,7 @@
 use std::env;
 
 pub mod content;
+pub mod gateway;
 pub mod layout;
 pub mod service;
 pub mod state;
