@@ -3172,6 +3172,9 @@ fn row_is_running(row: &ContextRow) -> bool {
         || row.detail.contains("状态：thinking")
         || row.summary.contains("运行中")
         || row.summary.contains("思考中")
+        || row.summary.contains("回忆中")
+        || row.summary.contains("黑板")
+        || row.summary.contains("讨论")
 }
 
 fn thought_summary(thought: &ThoughtData) -> String {
@@ -3190,20 +3193,30 @@ fn context_row_marker(row: &ContextRow, phase: usize) -> &'static str {
         ContextRowKind::CreateFork => "⊕",
         ContextRowKind::Execution if row.expanded => "◼",
         ContextRowKind::Execution if row_is_running(row) => {
-            const FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
+            const FRAMES: [&str; 8] = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
             FRAMES[phase % FRAMES.len()]
         }
-        ContextRowKind::Execution => "◱",
-        ContextRowKind::Blackboard | ContextRowKind::Thought => {
-            if row.expanded {
-                "▼"
-            } else {
-                "▶"
-            }
+        ContextRowKind::Execution => "⣷",
+        ContextRowKind::Blackboard if row_is_running(row) => {
+            const FRAMES: [&str; 4] = ["◢", "◣", "◤", "◥"];
+            FRAMES[phase % FRAMES.len()]
         }
+        ContextRowKind::Thought if row_is_running(row) => {
+            const FRAMES: [&str; 4] = ["◐", "◑", "◒", "◓"];
+            FRAMES[phase % FRAMES.len()]
+        }
+        ContextRowKind::Recall if row_is_running(row) => {
+            const FRAMES: [&str; 8] = ["▖", "▗", "▘", "▙", "▚", "▛", "▜", "▝"];
+            FRAMES[phase % FRAMES.len()]
+        }
+        ContextRowKind::Blackboard | ContextRowKind::Thought => expanded_marker(row),
         _ if row.expanded => "▼",
         _ => "▶",
     }
+}
+
+fn expanded_marker(row: &ContextRow) -> &'static str {
+    if row.expanded { "▼" } else { "▶" }
 }
 
 fn context_row_label(kind: ContextRowKind) -> &'static str {
@@ -8002,6 +8015,43 @@ mod tests {
     }
 
     #[test]
+    fn running_context_rows_use_distinct_spinner_sets() {
+        let execution = ContextRow {
+            kind: ContextRowKind::Execution,
+            summary: "工具运行中".to_string(),
+            detail: String::new(),
+            expanded: false,
+        };
+        let thought = ContextRow {
+            kind: ContextRowKind::Thought,
+            summary: "思考中 摘要".to_string(),
+            detail: String::new(),
+            expanded: false,
+        };
+        let recall = ContextRow {
+            kind: ContextRowKind::Recall,
+            summary: "回忆中 摘要".to_string(),
+            detail: String::new(),
+            expanded: false,
+        };
+        let blackboard = ContextRow {
+            kind: ContextRowKind::Blackboard,
+            summary: "黑板讨论 摘要".to_string(),
+            detail: String::new(),
+            expanded: false,
+        };
+
+        assert_eq!(context_row_marker(&execution, 0), "⣾");
+        assert_eq!(context_row_marker(&execution, 1), "⣽");
+        assert_eq!(context_row_marker(&thought, 0), "◐");
+        assert_eq!(context_row_marker(&thought, 1), "◑");
+        assert_eq!(context_row_marker(&recall, 0), "▖");
+        assert_eq!(context_row_marker(&recall, 1), "▗");
+        assert_eq!(context_row_marker(&blackboard, 0), "◢");
+        assert_eq!(context_row_marker(&blackboard, 1), "◣");
+    }
+
+    #[test]
     fn recall_and_thought_expand_as_markdown_and_copy() {
         let theme = Theme::default();
         let mut turn = test_turn("u", "answer");
@@ -8165,7 +8215,7 @@ mod tests {
     }
 
     #[test]
-    fn execution_context_row_uses_rotating_square_marker() {
+    fn execution_context_row_uses_braille_marker() {
         let theme = Theme::default();
         let row = ContextRow {
             kind: ContextRowKind::Execution,
@@ -8176,13 +8226,13 @@ mod tests {
         let line_a = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 0));
         let line_b = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 1));
 
-        assert!(line_a.contains("◰"));
-        assert!(line_b.contains("◳"));
+        assert!(line_a.contains("⣾"));
+        assert!(line_b.contains("⣽"));
         assert!(!line_a.contains("▶"));
     }
 
     #[test]
-    fn non_execution_context_rows_keep_triangle_marker() {
+    fn non_execution_context_rows_use_dynamic_marker() {
         let theme = Theme::default();
         let row = ContextRow {
             kind: ContextRowKind::Blackboard,
@@ -8192,7 +8242,7 @@ mod tests {
         };
         let line = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 2));
 
-        assert!(line.contains("▶"));
+        assert!(line.contains("◤"));
     }
 
     #[test]
