@@ -1,5 +1,5 @@
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     text::{Line, Span},
 };
 
@@ -7,30 +7,6 @@ use crate::tui::subagent::state::{
     ModelAllocation, SubagentAskPause, SubagentChild, SubagentProcess, SubagentStatus,
     SubagentToolCall, SubagentTree,
 };
-
-pub fn subagent_tree_lines(tree: &SubagentTree) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    let child_count = subagent_child_count(tree);
-    if child_count == 0 {
-        return lines;
-    }
-
-    lines.push(Line::styled(
-        format!("Subagents {child_count}"),
-        Style::default()
-            .fg(Color::Rgb(230, 236, 255))
-            .add_modifier(Modifier::BOLD),
-    ));
-    for batch in &tree.batches {
-        for child in &batch.children {
-            lines.push(child_summary_line(child, Some(batch.name.as_str())));
-        }
-    }
-    for child in &tree.loose_children {
-        lines.push(child_summary_line(child, None));
-    }
-    lines
-}
 
 pub fn subagent_child_count(tree: &SubagentTree) -> usize {
     tree.batches
@@ -430,7 +406,7 @@ pub fn truncate(text: &str, max_chars: usize) -> String {
 mod tests {
     use serde_json::json;
 
-    use crate::tui::subagent::parser::merge_execution_job_snapshot;
+    use crate::tui::subagent::{parser::merge_execution_job_snapshot, state::SubagentTree};
 
     use super::*;
 
@@ -452,17 +428,12 @@ mod tests {
             }),
         );
 
-        let summary = subagent_tree_lines(&tree)
-            .into_iter()
-            .map(|line| {
-                line.spans
-                    .into_iter()
-                    .map(|span| span.content.into_owned())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
         let child = &tree.loose_children[0];
+        let summary = child_summary_line(child, None)
+            .spans
+            .into_iter()
+            .map(|span| span.content.into_owned())
+            .collect::<String>();
         let detail = child_detail_lines(child, None, "")
             .into_iter()
             .map(|line| {
@@ -474,7 +445,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(summary.contains("Subagents 1"));
+        assert_eq!(subagent_child_count(&tree), 1);
         assert!(summary.contains("Task Pick an option"));
         assert!(summary.contains("needs_user"));
         assert!(detail.contains("allowed tools read"));
@@ -500,17 +471,12 @@ mod tests {
             }),
         );
 
-        let summary = subagent_tree_lines(&tree)
-            .into_iter()
-            .map(|line| {
-                line.spans
-                    .into_iter()
-                    .map(|span| span.content.into_owned())
-                    .collect::<String>()
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
         let child = &tree.loose_children[0];
+        let summary = child_summary_line(child, None)
+            .spans
+            .into_iter()
+            .map(|span| span.content.into_owned())
+            .collect::<String>();
         let detail = child_detail_lines(child, None, "")
             .into_iter()
             .map(|line| {
