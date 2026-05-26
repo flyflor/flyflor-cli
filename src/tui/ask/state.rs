@@ -8,6 +8,7 @@ pub struct AskMenu {
     pub questions: Vec<AskQuestion>,
     pub selected_by_question: Vec<usize>,
     pub freeform_by_question: Vec<Option<String>>,
+    pub editing_other: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,6 +59,7 @@ impl AskMenu {
             questions,
             selected_by_question,
             freeform_by_question,
+            editing_other: false,
         }
     }
 
@@ -76,6 +78,9 @@ impl AskMenu {
     }
 
     pub fn move_choice(&mut self, delta: isize) -> bool {
+        if self.editing_other {
+            return false;
+        }
         let Some(question) = self.questions.get(self.active_question) else {
             return false;
         };
@@ -96,6 +101,9 @@ impl AskMenu {
     }
 
     pub fn select_current_choice(&mut self, index: usize) -> bool {
+        if self.editing_other {
+            return false;
+        }
         let Some(question) = self.questions.get(self.active_question) else {
             return false;
         };
@@ -110,6 +118,7 @@ impl AskMenu {
     }
 
     pub fn advance_question(&mut self) -> bool {
+        self.editing_other = false;
         if self.active_question + 1 < self.questions.len() {
             self.active_question += 1;
             true
@@ -122,6 +131,18 @@ impl AskMenu {
         if let Some(slot) = self.freeform_by_question.get_mut(self.active_question) {
             *slot = Some(text);
         }
+    }
+
+    pub fn start_current_other_input(&mut self) -> bool {
+        if !self.current_choice().is_some_and(|choice| choice.is_other) {
+            return false;
+        }
+        self.editing_other = true;
+        true
+    }
+
+    pub fn is_editing_other(&self) -> bool {
+        self.editing_other
     }
 
     pub fn answers(&self) -> Vec<AskSelection> {
