@@ -697,11 +697,7 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                         }),
                     ),
                     Span::styled(
-                        if item.recommended {
-                            " (Recommended)"
-                        } else {
-                            ""
-                        },
+                        if item.recommended { " [推荐]" } else { "" },
                         Style::default()
                             .fg(theme.green)
                             .add_modifier(Modifier::BOLD),
@@ -733,11 +729,7 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                     }),
                 ),
                 Span::styled(
-                    if choice.recommended {
-                        " (Recommended)"
-                    } else {
-                        ""
-                    },
+                    if choice.recommended { " [推荐]" } else { "" },
                     Style::default().fg(theme.green),
                 ),
             ]));
@@ -6412,8 +6404,9 @@ fn subagent_execution_summary(
             .iter()
             .map(|tool| tool.processes.len())
             .sum::<usize>();
+    let limited = if child.limited { " · partial" } else { "" };
     format!(
-        "({index}/{total}) {} | {} · {} · 工具 {tool_count} · 子进程 {process_count}",
+        "({index}/{total}) {} | {} · {}{limited} · 工具 {tool_count} · 子进程 {process_count}",
         truncate_to_width(&child.name, 24),
         truncate_to_width(task, 42),
         child.status.as_str()
@@ -6429,6 +6422,17 @@ fn subagent_execution_detail(
         lines.push(format!("batch: {batch_name}"));
     }
     lines.push(format!("状态: {}", child.status.as_str()));
+    if child.limited || child.suppressed_ask_required {
+        lines.push(format!(
+            "限制: {}{}",
+            child.limit_reason.as_deref().unwrap_or("partial-result"),
+            if child.suppressed_ask_required {
+                " · ASK suppressed"
+            } else {
+                ""
+            }
+        ));
+    }
     if let Some(job_id) = &child.job_id {
         lines.push(format!("jobId: {job_id}"));
     }

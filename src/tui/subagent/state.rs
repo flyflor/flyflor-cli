@@ -139,6 +139,9 @@ pub struct SubagentChild {
     pub name: String,
     pub task: Option<String>,
     pub status: SubagentStatus,
+    pub limited: bool,
+    pub limit_reason: Option<String>,
+    pub suppressed_ask_required: bool,
     pub model: Option<ModelAllocation>,
     pub allowed_tools: Vec<String>,
     pub tool_calls: Vec<SubagentToolCall>,
@@ -260,6 +263,9 @@ impl SubagentTree {
                 name: child_id.clone(),
                 task: None,
                 status: SubagentStatus::Unknown,
+                limited: false,
+                limit_reason: None,
+                suppressed_ask_required: false,
                 model: None,
                 allowed_tools: Vec::new(),
                 tool_calls: vec![call],
@@ -359,6 +365,11 @@ fn merge_child(existing: &mut SubagentChild, incoming: SubagentChild) {
     }
     if incoming.status != SubagentStatus::Unknown {
         existing.status = incoming.status;
+    }
+    existing.limited |= incoming.limited;
+    existing.suppressed_ask_required |= incoming.suppressed_ask_required;
+    if incoming.limit_reason.is_some() {
+        existing.limit_reason = incoming.limit_reason;
     }
     if incoming.model.is_some() {
         existing.model = incoming.model;
