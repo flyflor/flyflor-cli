@@ -20,19 +20,28 @@ pub fn merge_event_publish(tree: &mut SubagentTree, event_type: &str, value: &Va
         "subagent.batch.start" | "subagent.batch.end" => {
             tree.upsert_batch(batch_from_value(
                 payload,
-                SubagentStatus::from_event_type(event_type),
+                subagent_status(payload, event_type),
             ));
         }
         "subagent.child.start" | "subagent.child.end" => {
             tree.upsert_child(child_from_value(
                 payload,
-                SubagentStatus::from_event_type(event_type),
+                subagent_status(payload, event_type),
             ));
         }
         "mcp.tool.call.executed" | "tool.call.executed" => merge_tool_call(tree, payload),
         event_type if event_type.starts_with("tool.") => merge_tool_call(tree, payload),
         "executive.loop.paused" => mark_needs_user(tree, payload),
         _ => {}
+    }
+}
+
+fn subagent_status(payload: &Value, event_type: &str) -> SubagentStatus {
+    let status = SubagentStatus::from_value(payload);
+    if status == SubagentStatus::Unknown {
+        SubagentStatus::from_event_type(event_type)
+    } else {
+        status
     }
 }
 
@@ -245,5 +254,26 @@ mod tests {
         let child = &tree.batches[0].children[0];
         assert_eq!(child.status, SubagentStatus::NeedsUser);
         assert_eq!(child.task.as_deref(), Some("Need user approval"));
+    }
+
+    #[test]
+    fn child_end_prefers_payload_status() {
+        let mut tree = SubagentTree::default();
+
+        merge_event_publish(
+            &mut tree,
+            "subagent.child.end",
+            &json!({
+                "type": "subagent.child.end",
+                "payload": {
+                    "batchId": "batch-1",
+                    "childId": "child-1",
+                    "status": "needs_user",
+                    "summary": "Pick an option"
+                }
+            }),
+        );
+
+        assert_eq!(tree.loose_children[0].status, SubagentStatus::NeedsUser);
     }
 }

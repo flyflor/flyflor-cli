@@ -28,9 +28,13 @@ impl AskAnswer {
     }
 
     pub fn other_for_question(text: String, question_id: Option<String>) -> Self {
+        Self::other_for_choice(text, question_id, "other".to_string())
+    }
+
+    pub fn other_for_choice(text: String, question_id: Option<String>, choice_id: String) -> Self {
         Self {
             question_id,
-            choice_id: "other".to_string(),
+            choice_id,
             value: Some(text.clone()),
             text,
             is_other: true,
@@ -116,6 +120,26 @@ mod tests {
         assert_eq!(
             metadata.get("choiceId").and_then(Value::as_str),
             Some("other")
+        );
+        assert_eq!(metadata.get("isOther").and_then(Value::as_bool), Some(true));
+    }
+
+    #[test]
+    fn freeform_answer_can_keep_inbound_other_choice_id() {
+        let answer = AskAnswer::other_for_choice(
+            "Custom".to_string(),
+            Some("q1".to_string()),
+            "custom".to_string(),
+        );
+        let metadata = ask_answer_metadata(&answer);
+
+        assert_eq!(
+            metadata.get("questionId").and_then(Value::as_str),
+            Some("q1")
+        );
+        assert_eq!(
+            metadata.get("choiceId").and_then(Value::as_str),
+            Some("custom")
         );
         assert_eq!(metadata.get("isOther").and_then(Value::as_bool), Some(true));
     }

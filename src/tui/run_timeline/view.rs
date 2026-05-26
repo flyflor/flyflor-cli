@@ -19,10 +19,15 @@ pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
     )];
 
     if timeline.items.is_empty() && timeline.subagents.batches.is_empty() {
-        lines.push(Line::styled(
-            "waiting for run events",
-            Style::default().fg(Color::Rgb(126, 139, 170)),
-        ));
+        let tree_lines = subagent_tree_lines(&timeline.subagents);
+        if tree_lines.is_empty() {
+            lines.push(Line::styled(
+                "waiting for run events",
+                Style::default().fg(Color::Rgb(126, 139, 170)),
+            ));
+            return lines;
+        }
+        lines.extend(tree_lines);
         return lines;
     }
 
@@ -144,5 +149,36 @@ mod tests {
 
         assert!(rendered.contains("needs_user"));
         assert!(rendered.contains("Need approval"));
+    }
+
+    #[test]
+    fn run_panel_shows_loose_subagent_child() {
+        let mut timeline = RunTimeline::new();
+        timeline
+            .subagents
+            .loose_children
+            .push(crate::tui::subagent::state::SubagentChild {
+                id: "child-1".to_string(),
+                batch_id: Some("batch-1".to_string()),
+                name: "child-1".to_string(),
+                task: Some("Need approval".to_string()),
+                status: crate::tui::subagent::state::SubagentStatus::NeedsUser,
+                allowed_tools: Vec::new(),
+                tool_calls: Vec::new(),
+            });
+
+        let rendered = run_panel_lines(&timeline)
+            .into_iter()
+            .map(|line| {
+                line.spans
+                    .into_iter()
+                    .map(|span| span.content.into_owned())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("Need approval"));
+        assert!(!rendered.contains("waiting for run events"));
     }
 }

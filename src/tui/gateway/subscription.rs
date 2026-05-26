@@ -20,6 +20,8 @@ pub const SUBSCRIPTION_EVENT_TYPES: &[&str] = &[
     "blackboard.turn.end",
     "blackboard.completed",
     "mcp.tool.call.executed",
+    "tool.call.executed",
+    "tool.shell.completed",
     "tool.started",
     "tool.progress",
     "tool.succeeded",
@@ -69,6 +71,8 @@ mod tests {
         assert!(types.contains(&"executive.loop.paused"));
         assert!(types.contains(&"blackboard.message.appended"));
         assert!(types.contains(&"subagent.child.end"));
+        assert!(types.contains(&"tool.call.executed"));
+        assert!(types.contains(&"tool.shell.completed"));
         assert!(types.contains(&"tool.budget.exhausted"));
         assert!(payload.get("classes").is_none());
         assert!(

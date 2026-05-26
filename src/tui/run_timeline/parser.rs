@@ -58,7 +58,7 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
         "subagent.batch.start" | "subagent.batch.end" => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Subagent,
-            status_from_event_type(event_type),
+            status_from_payload_or_event(payload, event_type),
             format!(
                 "subagent batch {}",
                 if event_type.ends_with(".start") {
@@ -74,7 +74,7 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
         "subagent.child.start" | "subagent.child.end" => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Subagent,
-            status_from_event_type(event_type),
+            status_from_payload_or_event(payload, event_type),
             format!(
                 "subagent child {}",
                 if event_type.ends_with(".start") {
@@ -295,6 +295,15 @@ pub(crate) fn status_from_event_type(event_type: &str) -> RunTimelineItemStatus 
     }
 }
 
+fn status_from_payload_or_event(payload: &Value, event_type: &str) -> RunTimelineItemStatus {
+    let status = status_from_value(payload);
+    if status == RunTimelineItemStatus::Info {
+        status_from_event_type(event_type)
+    } else {
+        status
+    }
+}
+
 pub(crate) fn status_from_value(value: &Value) -> RunTimelineItemStatus {
     if value
         .get("needsUser")
@@ -419,5 +428,20 @@ mod tests {
             .find(|item| item.id == "child:child-1")
             .expect("child item");
         assert_eq!(child.status, RunTimelineItemStatus::NeedsUser);
+    }
+
+    #[test]
+    fn subagent_end_prefers_payload_status() {
+        let item = parse_event_publish(&json!({
+            "type": "subagent.child.end",
+            "payload": {
+                "childId": "child-1",
+                "status": "needs_user",
+                "summary": "Pick an option"
+            }
+        }))
+        .expect("subagent event");
+
+        assert_eq!(item.status, RunTimelineItemStatus::NeedsUser);
     }
 }

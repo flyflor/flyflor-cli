@@ -846,6 +846,7 @@ struct App {
     active_context_fork_id: Option<String>,
     active_fork: Option<ActiveForkSession>,
     root_turns: Vec<Turn>,
+    fork_stack: Vec<(ActiveForkSession, Vec<Turn>)>,
     pending_turns: HashMap<String, usize>,
     interaction_mode: InteractionMode,
     yolo_mode: bool,
@@ -866,6 +867,7 @@ struct App {
     plan_menu: Option<PlanMenu>,
     pending_ask_continuation: Option<Value>,
     pending_ask_question_id: Option<String>,
+    pending_ask_choice_id: Option<String>,
     pending_plan_action: Option<PlanPendingAction>,
     pending_fork_create: bool,
 }
@@ -1040,6 +1042,7 @@ impl App {
                 summary: Some("demo fork".to_string()),
             }),
             root_turns: Vec::new(),
+            fork_stack: Vec::new(),
             pending_turns: HashMap::new(),
             interaction_mode: if demo_mode {
                 InteractionMode::Yolo
@@ -1068,6 +1071,7 @@ impl App {
             plan_menu: None,
             pending_ask_continuation: None,
             pending_ask_question_id: None,
+            pending_ask_choice_id: None,
             pending_plan_action: None,
             pending_fork_create: false,
         }
@@ -1209,7 +1213,9 @@ impl App {
             } => {
                 self.pending_fork_create = false;
                 let parent_fork_id = parent_id.or_else(|| self.active_context_fork_id.clone());
-                if self.active_fork.is_none() {
+                if let Some(active_fork) = self.active_fork.clone() {
+                    self.fork_stack.push((active_fork, self.turns.clone()));
+                } else {
                     self.root_turns = self.turns.clone();
                 }
                 self.active_context_fork_id = Some(fork_id.clone());
@@ -1448,6 +1454,10 @@ impl App {
     }
 
     fn refresh_command_palette(&mut self) {
+        if self.pending_ask_continuation.is_some() {
+            self.command_palette = None;
+            return;
+        }
         if !self.input.starts_with('/') {
             self.command_palette = None;
             return;
@@ -1540,6 +1550,12 @@ impl App {
     }
 
     fn confirm_command_palette_selection(&mut self) {
+        if self.pending_ask_continuation.is_some() {
+            self.command_palette = None;
+            self.right_source.blackboard_status =
+                "请先完成当前 ASK 自由输入，Esc 可关闭菜单但不会丢弃待答 ASK".to_string();
+            return;
+        }
         let Some(command) = self
             .command_palette
             .as_ref()
@@ -1664,14 +1680,21 @@ impl App {
             return;
         };
         self.active_context_fork_id = fork.parent_fork_id;
-        if !self.root_turns.is_empty() {
+        if let Some((parent_fork, parent_turns)) = self.fork_stack.pop() {
+            self.active_context_fork_id = Some(parent_fork.fork_id.clone());
+            self.active_fork = Some(parent_fork);
+            self.turns = parent_turns;
+            self.right_source.blackboard_status = "已退出当前 fork，回到父级 fork 对话".to_string();
+        } else if !self.root_turns.is_empty() {
             self.turns = std::mem::take(&mut self.root_turns);
+            self.right_source.blackboard_status = "已退出 fork，回到父级/root 对话".to_string();
+        } else {
+            self.right_source.blackboard_status = "已退出 fork，回到父级/root 对话".to_string();
         }
         self.pending_turns.clear();
         self.chat_render_key = None;
         self.left.initial_scroll_applied = false;
         self.left.stick_to_bottom = true;
-        self.right_source.blackboard_status = "已退出 fork，回到父级/root 对话".to_string();
     }
 
     fn latest_assistant_turn_index(&self) -> Option<usize> {
@@ -1713,6 +1736,7 @@ impl App {
         if item.is_other {
             self.pending_ask_continuation = Some(menu.continuation);
             self.pending_ask_question_id = item.question_id;
+            self.pending_ask_choice_id = Some(item.id);
             self.input.clear();
             self.input_cursor = None;
             self.right_source.blackboard_status = "请输入自定义 ASK 回答后发送".to_string();
@@ -1861,9 +1885,12 @@ impl App {
     }
 
     fn active_plan_id(&self) -> Option<String> {
-        self.task_todos
-            .as_ref()
-            .and_then(|todos| todos.iter().find_map(|todo| todo.plan_id.clone()))
+        self.active_confirmation_plan_id()
+            .or_else(|| {
+                self.task_todos
+                    .as_ref()
+                    .and_then(|todos| todos.iter().find_map(|todo| todo.plan_id.clone()))
+            })
             .or_else(|| self.todos.iter().find_map(|todo| todo.plan_id.clone()))
             .or_else(|| {
                 self.turns
@@ -1871,6 +1898,13 @@ impl App {
                     .filter_map(|turn| turn.metadata.as_ref())
                     .find_map(plan_id_from_metadata)
             })
+    }
+
+    fn active_confirmation_plan_id(&self) -> Option<String> {
+        self.task_todos
+            .as_ref()
+            .and_then(|todos| plan_id_waiting_for_confirmation(todos))
+            .or_else(|| plan_id_waiting_for_confirmation(&self.todos))
     }
 
     fn plan_state(&self) -> PlanState {
@@ -2367,9 +2401,13 @@ impl App {
             .take()
             .map(|continuation| {
                 let question_id = self.pending_ask_question_id.take();
+                let choice_id = self
+                    .pending_ask_choice_id
+                    .take()
+                    .unwrap_or_else(|| "other".to_string());
                 tui::ask::ask_message_metadata(
                     continuation,
-                    &tui::ask::AskAnswer::other_for_question(text.clone(), question_id),
+                    &tui::ask::AskAnswer::other_for_choice(text.clone(), question_id, choice_id),
                 )
             })
             .or_else(|| {
@@ -5142,9 +5180,7 @@ fn parse_fork_snapshot(raw: &str) -> Result<Option<SocketEvent>, String> {
     let Some(payload) = envelope.payload else {
         return Ok(None);
     };
-    let Some(data) = payload.get("data") else {
-        return Ok(None);
-    };
+    let data = payload.get("data").unwrap_or(&payload);
     let fork = data.get("fork").or_else(|| {
         data.get("forks")
             .and_then(Value::as_array)
@@ -5665,6 +5701,14 @@ fn status_matches_done(status: &str) -> bool {
     ) || status == "完成"
 }
 
+fn status_matches_awaiting_confirmation(status: &str) -> bool {
+    matches!(
+        normalized_status(status).as_str(),
+        "awaiting confirmation" | "needs confirmation" | "waiting confirmation" | "needs_user"
+    ) || status.contains("等待确认")
+        || status.contains("待确认")
+}
+
 fn normalized_status(status: &str) -> String {
     status.trim().to_ascii_lowercase()
 }
@@ -5680,7 +5724,9 @@ fn todo_marker(status: &str, active: bool) -> &'static str {
 }
 
 fn todo_status_label(status: &str, active: bool) -> String {
-    if active {
+    if status_matches_awaiting_confirmation(status) {
+        "等待确认".to_string()
+    } else if active {
         "进行中".to_string()
     } else if status_matches_done(status) {
         "完成".to_string()
@@ -5700,7 +5746,7 @@ fn plan_state_from_todos(todos: &[TodoItem]) -> PlanState {
         .map(|todo| todo.status.as_str())
         .collect::<Vec<_>>()
         .join(" ");
-    if joined.contains("等待确认") || joined.contains("待确认") {
+    if status_matches_awaiting_confirmation(&joined) {
         PlanState::AwaitingConfirmation
     } else if joined.contains("生成中") {
         PlanState::Generating
@@ -5711,6 +5757,13 @@ fn plan_state_from_todos(todos: &[TodoItem]) -> PlanState {
     } else {
         PlanState::Empty
     }
+}
+
+fn plan_id_waiting_for_confirmation(todos: &[TodoItem]) -> Option<String> {
+    todos
+        .iter()
+        .find(|todo| status_matches_awaiting_confirmation(&todo.status))
+        .and_then(|todo| todo.plan_id.clone())
 }
 
 fn error_message_from_payload(payload: &Option<Value>) -> String {
@@ -7601,6 +7654,7 @@ mod tests {
 
         assert!(app.pending_ask_continuation.is_some());
         assert_eq!(app.pending_ask_question_id.as_deref(), Some("q1"));
+        assert_eq!(app.pending_ask_choice_id.as_deref(), Some("other"));
         assert!(app.right_source.blackboard_status.contains("自定义"));
     }
 
@@ -7638,6 +7692,71 @@ mod tests {
     }
 
     #[test]
+    fn ask_menu_other_free_input_preserves_inbound_choice_id() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.socket_connected = true;
+        app.turns.push(Turn {
+            message_id: Some("message-1".to_string()),
+            event_id: Some("event-1".to_string()),
+            user: "u".to_string(),
+            thought: None,
+            answer: "需要选择".to_string(),
+            metadata: Some(json!({
+                "ask": {
+                    "prompt": "选择下一步",
+                    "continuationId": "cont-1",
+                    "questions": [{
+                        "id": "q1",
+                        "prompt": "选择下一步",
+                        "choices": [
+                            { "id": "safe", "label": "稳妥", "value": "safe" },
+                            { "id": "custom", "label": "自定义", "isOther": true }
+                        ]
+                    }]
+                }
+            })),
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+
+        assert!(app.open_latest_ask_menu());
+        app.ask_menu.as_mut().expect("ask menu").selected = 1;
+        app.confirm_ask_menu_selection();
+        app.input = "我的自定义回答".to_string();
+        app.submit_input();
+
+        let command = rx.try_recv().expect("send message command");
+        match command {
+            SocketCommand::SendMessage {
+                metadata: Some(metadata),
+                ..
+            } => {
+                let ask_answer = metadata.get("askAnswer").expect("askAnswer");
+                assert_eq!(
+                    ask_answer.get("questionId").and_then(Value::as_str),
+                    Some("q1")
+                );
+                assert_eq!(
+                    ask_answer.get("choiceId").and_then(Value::as_str),
+                    Some("custom")
+                );
+                assert_eq!(
+                    ask_answer.get("text").and_then(Value::as_str),
+                    Some("我的自定义回答")
+                );
+                assert_eq!(
+                    ask_answer.get("isOther").and_then(Value::as_bool),
+                    Some(true)
+                );
+            }
+            _ => panic!("expected ask send message with metadata"),
+        }
+    }
+
+    #[test]
     fn slash_command_does_not_steal_pending_ask_freeform() {
         let mut app = App::new();
         app.pending_ask_continuation =
@@ -7647,6 +7766,22 @@ mod tests {
         app.submit_input();
 
         assert!(app.pending_ask_continuation.is_some());
+        assert!(app.pending_plan_action.is_none());
+        assert!(app.right_source.blackboard_status.contains("当前 ASK"));
+    }
+
+    #[test]
+    fn slash_command_real_enter_path_does_not_steal_pending_ask_freeform() {
+        let mut app = App::new();
+        app.pending_ask_continuation =
+            Some(json!({ "mode": "continue", "continuationId": "cont-1" }));
+        app.input = "/todo".to_string();
+        app.refresh_command_palette();
+
+        handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        assert!(app.pending_ask_continuation.is_some());
+        assert!(app.command_palette.is_none());
         assert!(app.pending_plan_action.is_none());
         assert!(app.right_source.blackboard_status.contains("当前 ASK"));
     }
@@ -8905,6 +9040,66 @@ mod tests {
     }
 
     #[test]
+    fn plan_decision_targets_waiting_confirmation_plan_over_first_plan_id() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.task_todos = Some(vec![
+            TodoItem {
+                marker: "›".to_string(),
+                label: "执行中".to_string(),
+                status: "进行中".to_string(),
+                active: true,
+                plan_id: Some("plan-running".to_string()),
+            },
+            TodoItem {
+                marker: "○".to_string(),
+                label: "确认下一段".to_string(),
+                status: "等待确认".to_string(),
+                active: false,
+                plan_id: Some("plan-awaiting".to_string()),
+            },
+        ]);
+
+        app.open_plan_menu();
+        app.confirm_plan_menu_selection();
+
+        let command = rx.try_recv().expect("plan decide command");
+        match command {
+            SocketCommand::TaskPlanDecide {
+                plan_id, action, ..
+            } => {
+                assert_eq!(plan_id, "plan-awaiting");
+                assert_eq!(action, PlanAction::Confirm);
+            }
+            _ => panic!("expected task.plan.decide command"),
+        }
+    }
+
+    #[test]
+    fn english_waiting_confirmation_status_is_normalized_for_plan_actions() {
+        let mut turn = test_turn("u", "a");
+        turn.metadata = Some(json!({
+            "planning": {
+                "taskPlans": [{
+                    "planId": "plan-english",
+                    "steps": [
+                        { "title": "Confirm", "status": "awaiting confirmation" }
+                    ]
+                }]
+            }
+        }));
+
+        let todos = todos_from_turns(&[turn]);
+
+        assert_eq!(todos[0].status, "等待确认");
+        assert_eq!(
+            plan_state_from_todos(&todos),
+            PlanState::AwaitingConfirmation
+        );
+    }
+
+    #[test]
     fn task_list_snapshot_reads_payload_data() {
         let raw = r#"{
             "protocol": "flyflor.ws.v1",
@@ -9509,6 +9704,44 @@ mod tests {
     }
 
     #[test]
+    fn parses_fork_snapshot_with_direct_payload_shape() {
+        let raw = r#"{
+            "protocol": "flyflor.ws.v1",
+            "id": "env-fork-snapshot-direct",
+            "type": "fork.snapshot",
+            "at": "2026-05-22T00:00:06.500Z",
+            "payload": {
+                "fork": {
+                    "id": "fork-direct",
+                    "title": "Direct fork"
+                },
+                "session": {
+                    "activeForkId": "fork-direct",
+                    "rootId": "root-direct"
+                }
+            }
+        }"#;
+
+        let event = parse_fork_snapshot(raw)
+            .expect("fork snapshot should parse")
+            .expect("fork snapshot should emit event");
+
+        match event {
+            SocketEvent::ForkCreated {
+                fork_id,
+                root_id,
+                summary,
+                ..
+            } => {
+                assert_eq!(fork_id, "fork-direct");
+                assert_eq!(root_id.as_deref(), Some("root-direct"));
+                assert_eq!(summary.as_deref(), Some("Direct fork"));
+            }
+            _ => panic!("expected fork created event"),
+        }
+    }
+
+    #[test]
     fn fork_created_event_updates_active_context_fork_id() {
         let mut app = App::new();
         app.turns.push(test_turn("root", "root answer"));
@@ -9630,6 +9863,45 @@ mod tests {
         assert_eq!(app.turns.len(), 1);
         assert_eq!(app.turns[0].user, "root");
         assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn nested_fork_exit_restores_parent_fork_before_root() {
+        let mut app = App::new();
+        app.turns = vec![test_turn("root", "root answer")];
+
+        app.apply_socket_event(SocketEvent::ForkCreated {
+            fork_id: "fork-parent".to_string(),
+            parent_id: None,
+            root_id: Some("root-session".to_string()),
+            summary: Some("父 fork".to_string()),
+        });
+        app.turns = vec![test_turn("parent", "parent answer")];
+
+        app.apply_socket_event(SocketEvent::ForkCreated {
+            fork_id: "fork-child".to_string(),
+            parent_id: Some("fork-parent".to_string()),
+            root_id: Some("root-session".to_string()),
+            summary: Some("子 fork".to_string()),
+        });
+        app.turns = vec![test_turn("child", "child answer")];
+
+        app.exit_fork_session();
+
+        assert_eq!(app.active_context_fork_id.as_deref(), Some("fork-parent"));
+        assert_eq!(
+            app.active_fork.as_ref().map(|fork| fork.fork_id.as_str()),
+            Some("fork-parent")
+        );
+        assert_eq!(app.turns.len(), 1);
+        assert_eq!(app.turns[0].user, "parent");
+
+        app.exit_fork_session();
+
+        assert!(app.active_fork.is_none());
+        assert!(app.active_context_fork_id.is_none());
+        assert_eq!(app.turns.len(), 1);
+        assert_eq!(app.turns[0].user, "root");
     }
 
     #[test]
