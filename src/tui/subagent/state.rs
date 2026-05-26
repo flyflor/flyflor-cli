@@ -101,6 +101,8 @@ pub struct SubagentTree {
 
 impl SubagentTree {
     pub fn upsert_batch(&mut self, batch: SubagentBatch) {
+        let mut batch = batch;
+        attach_loose_children(&mut self.loose_children, &mut batch);
         if let Some(existing) = self.batches.iter_mut().find(|item| item.id == batch.id) {
             merge_batch(existing, batch);
             return;
@@ -134,6 +136,18 @@ impl SubagentTree {
         }
 
         self.loose_children.push(child);
+    }
+}
+
+fn attach_loose_children(loose_children: &mut Vec<SubagentChild>, batch: &mut SubagentBatch) {
+    let mut index = 0;
+    while index < loose_children.len() {
+        if loose_children[index].batch_id.as_deref() == Some(batch.id.as_str()) {
+            let child = loose_children.remove(index);
+            upsert_child_into(&mut batch.children, child);
+        } else {
+            index += 1;
+        }
     }
 }
 
@@ -198,5 +212,39 @@ fn merge_unique(target: &mut Vec<String>, incoming: Vec<String>) {
         if !target.iter().any(|existing| existing == &item) {
             target.push(item);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn child(id: &str, batch_id: Option<&str>, status: SubagentStatus) -> SubagentChild {
+        SubagentChild {
+            id: id.to_string(),
+            batch_id: batch_id.map(str::to_string),
+            name: id.to_string(),
+            task: None,
+            status,
+            allowed_tools: Vec::new(),
+            tool_calls: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn upsert_batch_drains_matching_loose_children() {
+        let mut tree = SubagentTree::default();
+        tree.upsert_child(child("child-1", Some("batch-1"), SubagentStatus::Running));
+
+        tree.upsert_batch(SubagentBatch {
+            id: "batch-1".to_string(),
+            name: "batch-1".to_string(),
+            status: SubagentStatus::Running,
+            allowed_tools: Vec::new(),
+            children: Vec::new(),
+        });
+
+        assert!(tree.loose_children.is_empty());
+        assert_eq!(tree.batches[0].children[0].id, "child-1");
     }
 }

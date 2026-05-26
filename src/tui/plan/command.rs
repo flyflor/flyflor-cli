@@ -13,24 +13,6 @@ pub fn plan_decide_payload(plan_id: &str, action: PlanAction, revision: Option<&
     payload
 }
 
-pub fn plan_decide_envelope(
-    now: u64,
-    at: String,
-    plan_id: &str,
-    action: PlanAction,
-    revision: Option<&str>,
-) -> Value {
-    let request_id = format!("flyflor-cli-task-plan-decide-{now}");
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "task.plan.decide",
-        "at": at,
-        "requestId": request_id,
-        "payload": plan_decide_payload(plan_id, action, revision)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

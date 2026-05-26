@@ -139,7 +139,11 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
                 first_string(payload, &["askId", "question", "message"]).unwrap_or_default(),
             )
         }
-        event_type if event_type.starts_with("plan.") || event_type.contains(".plan.") => {
+        event_type
+            if event_type.starts_with("plan.")
+                || event_type.contains(".plan.")
+                || event_type.starts_with("memory.task_plan.") =>
+        {
             RunTimelineItem::new(
                 id,
                 RunTimelineItemKind::Plan,
@@ -150,7 +154,11 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
                 first_string(payload, &["planId", "summary", "message"]).unwrap_or_default(),
             )
         }
-        event_type if event_type.starts_with("fork.") || event_type.contains(".fork.") => {
+        event_type
+            if event_type == "memory.context_fork.written"
+                || event_type.starts_with("fork.")
+                || event_type.contains(".fork.") =>
+        {
             RunTimelineItem::new(
                 id,
                 RunTimelineItemKind::Fork,
@@ -401,6 +409,8 @@ mod tests {
             ("subagent.child.end", RunTimelineItemKind::Subagent),
             ("executive.loop.paused", RunTimelineItemKind::Loop),
             ("executive.loop.resumed", RunTimelineItemKind::Loop),
+            ("memory.task_plan.written", RunTimelineItemKind::Plan),
+            ("memory.context_fork.written", RunTimelineItemKind::Fork),
         ];
 
         for (event_type, kind) in cases {

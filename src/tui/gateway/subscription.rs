@@ -3,6 +3,7 @@ use serde_json::{Value, json};
 pub const SUBSCRIPTION_EVENT_TYPES: &[&str] = &[
     "memory.task_plan.written",
     "memory.task_plan.decided",
+    "memory.context_fork.written",
     "memory.ask.recorded",
     "memory.ask.answered",
     "executive.loop.paused",
@@ -63,6 +64,7 @@ mod tests {
 
         assert_eq!(types, SUBSCRIPTION_EVENT_TYPES);
         assert!(types.contains(&"memory.task_plan.written"));
+        assert!(types.contains(&"memory.context_fork.written"));
         assert!(types.contains(&"executive.loop.paused"));
         assert!(types.contains(&"blackboard.message.appended"));
         assert!(types.contains(&"subagent.child.end"));

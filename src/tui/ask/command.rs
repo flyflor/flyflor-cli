@@ -24,8 +24,12 @@ impl AskAnswer {
     }
 
     pub fn other(text: String) -> Self {
+        Self::other_for_question(text, None)
+    }
+
+    pub fn other_for_question(text: String, question_id: Option<String>) -> Self {
         Self {
-            question_id: None,
+            question_id,
             choice_id: "other".to_string(),
             value: Some(text.clone()),
             text,
@@ -98,5 +102,21 @@ mod tests {
                 .and_then(Value::as_str),
             Some("fast")
         );
+    }
+
+    #[test]
+    fn freeform_answer_can_keep_question_id() {
+        let answer = AskAnswer::other_for_question("Custom".to_string(), Some("q1".to_string()));
+        let metadata = ask_answer_metadata(&answer);
+
+        assert_eq!(
+            metadata.get("questionId").and_then(Value::as_str),
+            Some("q1")
+        );
+        assert_eq!(
+            metadata.get("choiceId").and_then(Value::as_str),
+            Some("other")
+        );
+        assert_eq!(metadata.get("isOther").and_then(Value::as_bool), Some(true));
     }
 }

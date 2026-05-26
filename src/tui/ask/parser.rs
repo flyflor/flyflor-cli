@@ -35,9 +35,8 @@ pub fn ask_menu_from_metadata(turn_index: usize, metadata: &Value) -> Option<Ask
         }
     }
 
-    let mut items = flatten_questions(&questions);
+    let items = flatten_questions(&questions);
     let selected = items.iter().position(|item| item.recommended).unwrap_or(0);
-    items.push(other_choice());
     Some(AskMenu {
         turn_index,
         selected,
@@ -110,7 +109,13 @@ fn question_from_value((index, value): (usize, &Value)) -> Option<AskQuestion> {
 fn flatten_questions(questions: &[AskQuestion]) -> Vec<AskChoice> {
     questions
         .iter()
-        .flat_map(|question| question.choices.iter().cloned())
+        .flat_map(|question| {
+            let mut choices = question.choices.clone();
+            if !choices.iter().any(|choice| choice.is_other) {
+                choices.push(other_choice(Some(&question.id)));
+            }
+            choices
+        })
         .collect()
 }
 
@@ -166,6 +171,11 @@ fn choice_from_value(
             let answer = value_string(value, "value")
                 .or_else(|| value_string(value, "text"))
                 .unwrap_or_else(|| label.clone());
+            let is_other = value
+                .get("isOther")
+                .or_else(|| value.get("is_other"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             Some(AskChoice {
                 recommended: recommended_choice_id == Some(id.as_str()),
                 id,
@@ -174,20 +184,20 @@ fn choice_from_value(
                 description: value_string(value, "description")
                     .or_else(|| value_string(value, "detail")),
                 question_id: question_id.map(str::to_string),
-                is_other: false,
+                is_other,
             })
         }
         _ => None,
     }
 }
 
-fn other_choice() -> AskChoice {
+fn other_choice(question_id: Option<&str>) -> AskChoice {
     AskChoice {
         id: OTHER_CHOICE_ID.to_string(),
         label: OTHER_LABEL.to_string(),
         value: None,
         description: Some("自由输入".to_string()),
-        question_id: None,
+        question_id: question_id.map(str::to_string),
         recommended: false,
         is_other: true,
     }
@@ -237,11 +247,37 @@ mod tests {
 
         assert_eq!(menu.turn_index, 7);
         assert_eq!(menu.questions.len(), 2);
-        assert_eq!(menu.items.len(), 4);
+        assert_eq!(menu.items.len(), 5);
         assert_eq!(menu.selected, 1);
         assert_eq!(menu.items[1].id, "fast");
         assert!(menu.items[1].recommended);
         assert_eq!(menu.items[1].description.as_deref(), Some("Less waiting"));
         assert!(menu.items.last().expect("other").is_other);
+        assert_eq!(
+            menu.items
+                .last()
+                .and_then(|item| item.question_id.as_deref()),
+            Some("q2")
+        );
+    }
+
+    #[test]
+    fn preserves_inbound_other_choices() {
+        let metadata = json!({
+            "ask": {
+                "snapshotId": "ask-1",
+                "questions": [{
+                    "id": "q1",
+                    "prompt": "Pick",
+                    "choices": [{ "id": "custom", "label": "Custom", "isOther": true }]
+                }]
+            }
+        });
+
+        let menu = ask_menu_from_metadata(1, &metadata).expect("ask menu");
+
+        assert!(menu.items[0].is_other);
+        assert_eq!(menu.items[0].question_id.as_deref(), Some("q1"));
+        assert_eq!(menu.items.len(), 1);
     }
 }

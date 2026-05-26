@@ -10,6 +10,7 @@ use super::{
 pub struct GatewayClientBootstrap {
     commands: GatewayCommandBuilder,
     history_limit: u64,
+    history_before_ts: Option<u64>,
     fork_memory_limit: u64,
 }
 
@@ -18,6 +19,7 @@ impl GatewayClientBootstrap {
         Self {
             commands: GatewayCommandBuilder::new(factory),
             history_limit: 20,
+            history_before_ts: None,
             fork_memory_limit: 5,
         }
     }
@@ -28,11 +30,20 @@ impl GatewayClientBootstrap {
         self
     }
 
+    pub fn with_history_before_ts(mut self, before_ts: Option<u64>) -> Self {
+        self.history_before_ts = before_ts;
+        self
+    }
+
     pub fn build(&self, sequence: u64, version: &str) -> Vec<GatewayEnvelope> {
         vec![
             self.commands.client_hello(sequence, version),
-            self.commands
-                .history_list(sequence, self.history_limit, None),
+            self.commands.history_list_with_before(
+                sequence,
+                self.history_limit,
+                None,
+                self.history_before_ts,
+            ),
             self.commands.task_list(sequence),
             self.commands.gateway_status_get(sequence),
             self.commands
@@ -48,8 +59,9 @@ mod tests {
 
     #[test]
     fn bootstrap_preserves_command_order() {
-        let bootstrap =
-            GatewayClientBootstrap::new(EnvelopeFactory::new("flyflor-cli")).with_limits(30, 8);
+        let bootstrap = GatewayClientBootstrap::new(EnvelopeFactory::new("flyflor-cli"))
+            .with_limits(30, 8)
+            .with_history_before_ts(Some(123));
         let envelopes = bootstrap.build(42, "0.1.0");
         let types = envelopes
             .iter()
@@ -64,6 +76,14 @@ mod tests {
                 .and_then(|payload| payload.get("limit"))
                 .and_then(Value::as_u64),
             Some(30)
+        );
+        assert_eq!(
+            envelopes[1]
+                .value()
+                .get("payload")
+                .and_then(|payload| payload.get("beforeTs"))
+                .and_then(Value::as_u64),
+            Some(123)
         );
         assert_eq!(
             envelopes[4]

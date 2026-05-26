@@ -58,6 +58,11 @@ use tui::fork::{
     state::ActiveForkSession,
     view::session_summary,
 };
+use tui::gateway::{
+    client::GatewayClientBootstrap,
+    command::{GatewayCommandBuilder, GatewayMessagePayload},
+    envelope::EnvelopeFactory,
+};
 use tui::plan::{
     menu::default_plan_menu,
     state::{PlanAction, PlanMenu, PlanPendingAction},
@@ -860,6 +865,7 @@ struct App {
     ask_menu: Option<AskMenu>,
     plan_menu: Option<PlanMenu>,
     pending_ask_continuation: Option<Value>,
+    pending_ask_question_id: Option<String>,
     pending_plan_action: Option<PlanPendingAction>,
     pending_fork_create: bool,
 }
@@ -1061,6 +1067,7 @@ impl App {
             ask_menu: None,
             plan_menu: None,
             pending_ask_continuation: None,
+            pending_ask_question_id: None,
             pending_plan_action: None,
             pending_fork_create: false,
         }
@@ -1120,13 +1127,6 @@ impl App {
             SocketEvent::TaskListLoaded(todos) => {
                 self.task_todos = Some(todos);
             }
-            SocketEvent::TaskPlanWritten => {
-                self.right_source.blackboard_status = "task plan updated · refreshing".to_string();
-                if self.socket_tx.send(SocketCommand::TaskList).is_err() {
-                    self.right_source.blackboard_status =
-                        "task refresh failed · socket worker is not running".to_string();
-                }
-            }
             SocketEvent::StatusLoaded(status) => {
                 self.model_context_window_tokens = status.context_window_tokens;
                 self.model_name = status.model_name.clone();
@@ -1142,28 +1142,17 @@ impl App {
             SocketEvent::ForkMemoryLoaded(snapshot) => {
                 self.fork_memory = snapshot;
             }
-            SocketEvent::BlackboardMessageAppended { text } => {
-                self.right_source.blackboard_stream.push(format!(
-                    "流式记录：{}",
-                    truncate_to_width(&text.replace('\n', " "), 120)
-                ));
-                self.right_source.blackboard_status = "blackboard 正在更新".to_string();
-            }
-            SocketEvent::BlackboardTurnEnded { summary } => {
-                self.right_source.blackboard_stream.push(format!(
-                    "回合结束：{}",
-                    truncate_to_width(&summary.replace('\n', " "), 120)
-                ));
-                self.right_source.blackboard_status = "blackboard turn 已结束".to_string();
-            }
             SocketEvent::RuntimeEvent(event) => {
                 let item = self.run_timeline.apply_event_publish(&event);
+                let status = self.apply_runtime_event_side_effects(&event);
                 if let Some(job_id) = job_id_from_event_payload(&event) {
                     let _ = self
                         .socket_tx
                         .send(SocketCommand::ExecutionJobDetailGet { job_id });
                 }
-                if let Some(item) = item {
+                if let Some(status) = status {
+                    self.right_source.blackboard_status = status;
+                } else if let Some(item) = item {
                     self.right_source.blackboard_status = format!("runtime event · {}", item.title);
                 }
             }
@@ -1271,6 +1260,38 @@ impl App {
                 self.pending_fork_create = false;
                 self.fail_pending_turns(&format!("socket unavailable: {message}"));
             }
+        }
+    }
+
+    fn apply_runtime_event_side_effects(&mut self, event: &Value) -> Option<String> {
+        let event_type = runtime_event_type(event)?;
+        match event_type {
+            "memory.task_plan.written" | "memory.task_plan.decided" => {
+                if self.socket_tx.send(SocketCommand::TaskList).is_err() {
+                    Some("task refresh failed · socket worker is not running".to_string())
+                } else {
+                    Some("task plan updated · refreshing".to_string())
+                }
+            }
+            "blackboard.message.appended" => {
+                let text = event_text_from_payload(event)
+                    .unwrap_or_else(|| "收到 blackboard.message.appended".to_string());
+                self.right_source.blackboard_stream.push(format!(
+                    "流式记录：{}",
+                    truncate_to_width(&text.replace('\n', " "), 120)
+                ));
+                Some("blackboard 正在更新".to_string())
+            }
+            "blackboard.turn.end" => {
+                let summary = event_text_from_payload(event)
+                    .unwrap_or_else(|| "收到 blackboard.turn.end".to_string());
+                self.right_source.blackboard_stream.push(format!(
+                    "回合结束：{}",
+                    truncate_to_width(&summary.replace('\n', " "), 120)
+                ));
+                Some("blackboard turn 已结束".to_string())
+            }
+            _ => None,
         }
     }
 
@@ -1691,6 +1712,7 @@ impl App {
         };
         if item.is_other {
             self.pending_ask_continuation = Some(menu.continuation);
+            self.pending_ask_question_id = item.question_id;
             self.input.clear();
             self.input_cursor = None;
             self.right_source.blackboard_status = "请输入自定义 ASK 回答后发送".to_string();
@@ -2293,6 +2315,11 @@ impl App {
         if text.is_empty() {
             return;
         }
+        if self.pending_ask_continuation.is_some() && text.starts_with('/') {
+            self.right_source.blackboard_status =
+                "请先完成当前 ASK 自由输入，Esc 可关闭菜单但不会丢弃待答 ASK".to_string();
+            return;
+        }
         if matches!(self.pending_plan_action, Some(PlanPendingAction::Revise)) {
             self.pending_plan_action = None;
             self.send_plan_command(PlanAction::Revise, Some(text));
@@ -2339,9 +2366,10 @@ impl App {
             .pending_ask_continuation
             .take()
             .map(|continuation| {
+                let question_id = self.pending_ask_question_id.take();
                 tui::ask::ask_message_metadata(
                     continuation,
-                    &tui::ask::AskAnswer::other(text.clone()),
+                    &tui::ask::AskAnswer::other_for_question(text.clone(), question_id),
                 )
             })
             .or_else(|| {
@@ -4678,13 +4706,6 @@ enum SocketEvent {
     },
     ForkMemoryLoaded(ForkMemorySnapshot),
     TaskListLoaded(Vec<TodoItem>),
-    TaskPlanWritten,
-    BlackboardMessageAppended {
-        text: String,
-    },
-    BlackboardTurnEnded {
-        summary: String,
-    },
     RuntimeEvent(Value),
     ExecutionJobSnapshot(Value),
     StatusLoaded(StatusSnapshot),
@@ -4755,28 +4776,22 @@ fn run_socket_session(
     log_event("socket connected");
 
     let now = now_millis();
-    socket
-        .send(Message::text(client_hello_envelope(now).to_string()))
-        .map_err(|error| error.to_string())?;
-    event_tx
-        .send(SocketEvent::Connected)
-        .map_err(|error| error.to_string())?;
-
-    socket
-        .send(Message::text(history_list_envelope(now, None).to_string()))
-        .map_err(|error| error.to_string())?;
-    socket
-        .send(Message::text(task_list_envelope(now).to_string()))
-        .map_err(|error| error.to_string())?;
-    socket
-        .send(Message::text(status_get_envelope(now).to_string()))
-        .map_err(|error| error.to_string())?;
-    socket
-        .send(Message::text(fork_memory_get_envelope(now).to_string()))
-        .map_err(|error| error.to_string())?;
-    socket
-        .send(Message::text(event_subscribe_envelope(now).to_string()))
-        .map_err(|error| error.to_string())?;
+    let gateway = gateway_command_builder();
+    let bootstrap = gateway_client_bootstrap();
+    for (index, envelope) in bootstrap
+        .build(now, env!("CARGO_PKG_VERSION"))
+        .into_iter()
+        .enumerate()
+    {
+        socket
+            .send(Message::text(envelope.into_value().to_string()))
+            .map_err(|error| error.to_string())?;
+        if index == 0 {
+            event_tx
+                .send(SocketEvent::Connected)
+                .map_err(|error| error.to_string())?;
+        }
+    }
 
     loop {
         while let Ok(command) = command_rx.try_recv() {
@@ -4794,15 +4809,20 @@ fn run_socket_session(
                         text.chars().count()
                     ));
                     if let Err(error) = socket.send(Message::text(
-                        message_send_envelope(
-                            &message_id,
-                            &text,
-                            context_fork_id.as_deref(),
-                            metadata.as_ref(),
-                            mode,
-                            yolo,
-                        )
-                        .to_string(),
+                        gateway
+                            .gateway_message_send(
+                                now_millis(),
+                                gateway_message_payload(
+                                    &message_id,
+                                    &text,
+                                    context_fork_id.as_deref(),
+                                    metadata.as_ref(),
+                                    mode,
+                                    yolo,
+                                ),
+                            )
+                            .into_value()
+                            .to_string(),
                     )) {
                         log_event(format!("send failed message_id={message_id} error={error}"));
                         let _ = event_tx.send(SocketEvent::TurnError {
@@ -4818,7 +4838,10 @@ fn run_socket_session(
                 } => {
                     log_event(format!("send fork.create request_id={request_id}"));
                     if let Err(error) = socket.send(Message::text(
-                        fork_create_envelope(&request_id, payload).to_string(),
+                        gateway
+                            .fork_create(&request_id, now_millis(), payload)
+                            .into_value()
+                            .to_string(),
                     )) {
                         log_event(format!(
                             "fork.create failed request_id={request_id} error={error}"
@@ -4830,9 +4853,9 @@ fn run_socket_session(
                 SocketCommand::TaskList => {
                     let now = now_millis();
                     log_event("send task.list");
-                    if let Err(error) =
-                        socket.send(Message::text(task_list_envelope(now).to_string()))
-                    {
+                    if let Err(error) = socket.send(Message::text(
+                        gateway.task_list(now).into_value().to_string(),
+                    )) {
                         log_event(format!("task.list failed error={error}"));
                         let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
                         return Err(error.to_string());
@@ -4846,7 +4869,9 @@ fn run_socket_session(
                     let now = now_millis();
                     log_event(format!("send task.plan.decide action={}", action.as_str()));
                     if let Err(error) = socket.send(Message::text(
-                        task_plan_decide_envelope(now, &plan_id, action, revision.as_deref())
+                        gateway
+                            .task_plan_decide(now, &plan_id, action, revision.as_deref())
+                            .into_value()
                             .to_string(),
                     )) {
                         log_event(format!("task.plan.decide failed error={error}"));
@@ -4858,7 +4883,10 @@ fn run_socket_session(
                     let now = now_millis();
                     log_event(format!("send execution.job.detail.get job_id={job_id}"));
                     if let Err(error) = socket.send(Message::text(
-                        execution_job_detail_get_envelope(now, &job_id).to_string(),
+                        gateway
+                            .execution_job_detail_get(now, &job_id)
+                            .into_value()
+                            .to_string(),
                     )) {
                         log_event(format!("execution.job.detail.get failed error={error}"));
                         let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
@@ -4868,9 +4896,9 @@ fn run_socket_session(
                 SocketCommand::ForkMemoryGet => {
                     let now = now_millis();
                     log_event("send fork.memory.get");
-                    if let Err(error) =
-                        socket.send(Message::text(fork_memory_get_envelope(now).to_string()))
-                    {
+                    if let Err(error) = socket.send(Message::text(
+                        gateway.fork_memory_get(now, 5).into_value().to_string(),
+                    )) {
                         log_event(format!("fork.memory.get failed error={error}"));
                         let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
                         return Err(error.to_string());
@@ -4879,9 +4907,9 @@ fn run_socket_session(
                 SocketCommand::StatusGet => {
                     let now = now_millis();
                     log_event("send gateway.status.get");
-                    if let Err(error) =
-                        socket.send(Message::text(status_get_envelope(now).to_string()))
-                    {
+                    if let Err(error) = socket.send(Message::text(
+                        gateway.gateway_status_get(now).into_value().to_string(),
+                    )) {
                         log_event(format!("gateway.status.get failed error={error}"));
                         let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
                         return Err(error.to_string());
@@ -4891,7 +4919,15 @@ fn run_socket_session(
                     let now = now_millis();
                     log_event("send history.list");
                     if let Err(error) = socket.send(Message::text(
-                        history_list_envelope(now, context_fork_id.as_deref()).to_string(),
+                        gateway
+                            .history_list_with_before(
+                                now,
+                                history_limit_from_env(),
+                                context_fork_id.as_deref(),
+                                history_before_ts_from_env(),
+                            )
+                            .into_value()
+                            .to_string(),
                     )) {
                         log_event(format!("history.list failed error={error}"));
                         let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
@@ -4931,208 +4967,52 @@ fn configure_socket_timeout(
     }
 }
 
-fn client_hello_envelope(now: u64) -> Value {
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("flyflor-cli-client-hello-{now}"),
-        "type": "client.hello",
-        "at": iso8601_from_millis(now),
-        "requestId": format!("flyflor-cli-client-hello-{now}"),
-        "payload": {
-            "clientId": "flyflor-cli",
-            "name": "flyflor-cli",
-            "version": env!("CARGO_PKG_VERSION"),
-            "capabilities": { "ui": "ratatui" }
-        }
-    })
+fn gateway_command_builder() -> GatewayCommandBuilder {
+    GatewayCommandBuilder::new(EnvelopeFactory::new("flyflor-cli"))
 }
 
-fn history_list_envelope(now: u64, context_fork_id: Option<&str>) -> Value {
-    let history_limit = env::var("FLYFLOR_HISTORY_LIMIT")
+fn gateway_client_bootstrap() -> GatewayClientBootstrap {
+    GatewayClientBootstrap::new(EnvelopeFactory::new("flyflor-cli"))
+        .with_limits(history_limit_from_env(), 5)
+        .with_history_before_ts(history_before_ts_from_env())
+}
+
+fn history_limit_from_env() -> u64 {
+    env::var("FLYFLOR_HISTORY_LIMIT")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
-        .unwrap_or(20);
-    let before_ts = env::var("FLYFLOR_HISTORY_BEFORE_TS")
+        .unwrap_or(20)
+}
+
+fn history_before_ts_from_env() -> Option<u64> {
+    env::var("FLYFLOR_HISTORY_BEFORE_TS")
         .ok()
-        .and_then(|value| value.parse::<u64>().ok());
-
-    let mut history_payload = json!({ "limit": history_limit });
-    if let Some(before_ts) = before_ts {
-        history_payload["beforeTs"] = json!(before_ts);
-    }
-    if let Some(context_fork_id) = context_fork_id {
-        history_payload["contextForkId"] = json!(context_fork_id);
-    }
-    let history_request_id = format!("flyflor-cli-history-{now}");
-    let history_envelope_id = format!("env-{history_request_id}");
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": history_envelope_id,
-        "type": "history.list",
-        "at": iso8601_from_millis(now),
-        "requestId": history_request_id,
-        "payload": history_payload
-    })
+        .and_then(|value| value.parse::<u64>().ok())
 }
 
-fn task_list_envelope(now: u64) -> Value {
-    let request_id = format!("flyflor-cli-task-list-{now}");
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "task.list",
-        "at": iso8601_from_millis(now),
-        "requestId": request_id,
-        "payload": {}
-    })
-}
-
-fn status_get_envelope(now: u64) -> Value {
-    let request_id = format!("flyflor-cli-status-{now}");
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "gateway.status.get",
-        "at": iso8601_from_millis(now),
-        "requestId": request_id,
-        "payload": {}
-    })
-}
-
-fn fork_memory_get_envelope(now: u64) -> Value {
-    let request_id = format!("flyflor-cli-fork-memory-{now}");
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "fork.memory.get",
-        "at": iso8601_from_millis(now),
-        "requestId": request_id,
-        "payload": { "limit": 5 }
-    })
-}
-
-fn task_plan_decide_envelope(
-    now: u64,
-    plan_id: &str,
-    action: PlanAction,
-    revision: Option<&str>,
-) -> Value {
-    let action = match action {
-        PlanAction::Confirm => tui::plan::state::PlanAction::Confirm,
-        PlanAction::Revise => tui::plan::state::PlanAction::Revise,
-        PlanAction::Abandon => tui::plan::state::PlanAction::Abandon,
-    };
-    tui::plan::command::plan_decide_envelope(
-        now,
-        iso8601_from_millis(now),
-        plan_id,
-        action,
-        revision,
-    )
-}
-
-fn event_subscribe_envelope(now: u64) -> Value {
-    let request_id = format!("flyflor-cli-event-subscribe-{now}");
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "event.subscribe",
-        "at": iso8601_from_millis(now),
-        "requestId": request_id,
-        "payload": tui::gateway::subscription::subscription_payload()
-    })
-}
-
-fn execution_job_detail_get_envelope(now: u64, job_id: &str) -> Value {
-    let request_id = format!("flyflor-cli-execution-job-detail-{now}");
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "execution.job.detail.get",
-        "at": iso8601_from_millis(now),
-        "requestId": request_id,
-        "payload": { "jobId": job_id }
-    })
-}
-
-fn message_send_envelope(
+fn gateway_message_payload(
     message_id: &str,
     text: &str,
     context_fork_id: Option<&str>,
     metadata: Option<&Value>,
     mode: InteractionMode,
     yolo: bool,
-) -> Value {
-    let now = now_millis();
-    let request_id = format!("flyflor-cli-turn-{now}");
-    let mut payload = json!({
-        "id": message_id,
-        "text": text,
-        "conversationKey": env::var("FLYFLOR_CONVERSATION_KEY").unwrap_or_else(|_| "flyflor-cli".to_string()),
-        "chatType": "direct",
-        "threadId": env::var("FLYFLOR_THREAD_ID").unwrap_or_else(|_| "flyflor-cli".to_string()),
-        "user": {
-            "id": env::var("FLYFLOR_USER_ID").unwrap_or_else(|_| "flyflor-cli-user".to_string()),
-            "displayName": env::var("FLYFLOR_USER_NAME").unwrap_or_else(|_| "Flyflor CLI User".to_string())
-        }
-    });
+) -> GatewayMessagePayload {
+    let mut payload = GatewayMessagePayload::new(message_id, text)
+        .mode(mode.as_str(), yolo)
+        .identity(
+            env::var("FLYFLOR_CONVERSATION_KEY").unwrap_or_else(|_| "flyflor-cli".to_string()),
+            env::var("FLYFLOR_THREAD_ID").unwrap_or_else(|_| "flyflor-cli".to_string()),
+            env::var("FLYFLOR_USER_ID").unwrap_or_else(|_| "flyflor-cli-user".to_string()),
+            env::var("FLYFLOR_USER_NAME").unwrap_or_else(|_| "Flyflor CLI User".to_string()),
+        );
     if let Some(context_fork_id) = context_fork_id {
-        payload["context"] = json!({ "contextForkId": context_fork_id });
+        payload = payload.context_fork_id(context_fork_id);
     }
     if let Some(metadata) = metadata {
-        payload["metadata"] = metadata.clone();
+        payload = payload.metadata(metadata.clone());
     }
-    apply_message_mode(&mut payload, mode, yolo);
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "gateway.message.send",
-        "at": iso8601_from_millis(now),
-        "requestId": request_id,
-        "payload": payload
-    })
-}
-
-fn apply_message_mode(payload: &mut Value, mode: InteractionMode, yolo: bool) {
-    if !payload.get("metadata").is_some_and(Value::is_object) {
-        payload["metadata"] = json!({});
-    }
-    if let Some(metadata) = payload.get_mut("metadata").and_then(Value::as_object_mut) {
-        let tui = metadata
-            .entry("tui".to_string())
-            .or_insert_with(|| Value::Object(Map::new()));
-        if let Some(tui) = tui.as_object_mut() {
-            tui.insert("mode".to_string(), json!(mode.as_str()));
-            tui.insert("yolo".to_string(), json!(yolo));
-        }
-        metadata.insert(
-            "interaction".to_string(),
-            json!({
-                "source": "flyflor-cli",
-                "mode": mode.as_str(),
-                "yolo": yolo
-            }),
-        );
-        metadata.insert(
-            "uiMode".to_string(),
-            json!({
-                "source": "flyflor-cli",
-                "mode": mode.as_str(),
-                "yolo": yolo
-            }),
-        );
-    }
-}
-
-fn fork_create_envelope(request_id: &str, payload: Value) -> Value {
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "fork.create",
-        "at": iso8601_from_millis(now_millis()),
-        "requestId": request_id,
-        "payload": payload
-    })
+    payload
 }
 
 fn handle_socket_text(raw: &str, event_tx: &Sender<SocketEvent>) -> Result<(), String> {
@@ -5369,38 +5249,25 @@ fn parse_subscription_event(raw: &str) -> Result<Option<SocketEvent>, String> {
     let Some(payload) = envelope.payload else {
         return Ok(None);
     };
-    let event_type = payload
-        .get("type")
-        .or_else(|| payload.get("eventType"))
-        .or_else(|| payload.get("name"))
-        .and_then(Value::as_str)
-        .or_else(|| {
-            payload
-                .get("event")
-                .and_then(|event| event.get("type"))
-                .and_then(Value::as_str)
-        });
     let event = payload
         .get("event")
         .cloned()
         .unwrap_or_else(|| payload.clone());
-    if event_type == Some("memory.task_plan.written")
-        || event_type == Some("memory.task_plan.decided")
-    {
-        Ok(Some(SocketEvent::TaskPlanWritten))
-    } else if event_type == Some("blackboard.message.appended") {
-        Ok(Some(SocketEvent::BlackboardMessageAppended {
-            text: event_text_from_payload(&payload)
-                .unwrap_or_else(|| "收到 blackboard.message.appended".to_string()),
-        }))
-    } else if event_type == Some("blackboard.turn.end") {
-        Ok(Some(SocketEvent::BlackboardTurnEnded {
-            summary: event_text_from_payload(&payload)
-                .unwrap_or_else(|| "收到 blackboard.turn.end".to_string()),
-        }))
-    } else {
-        Ok(Some(SocketEvent::RuntimeEvent(event)))
-    }
+    Ok(Some(SocketEvent::RuntimeEvent(event)))
+}
+
+fn runtime_event_type(event: &Value) -> Option<&str> {
+    event
+        .get("type")
+        .or_else(|| event.get("eventType"))
+        .or_else(|| event.get("name"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            event
+                .get("event")
+                .and_then(|event| event.get("type"))
+                .and_then(Value::as_str)
+        })
 }
 
 fn job_id_from_event_payload(event: &Value) -> Option<String> {
@@ -7713,7 +7580,11 @@ mod tests {
                 "ask": {
                     "prompt": "选择下一步",
                     "continuationId": "cont-1",
-                    "choices": ["A"]
+                    "questions": [{
+                        "id": "q1",
+                        "prompt": "选择下一步",
+                        "choices": ["A"]
+                    }]
                 }
             })),
             context_rows: Vec::new(),
@@ -7726,6 +7597,7 @@ mod tests {
         app.confirm_ask_menu_selection();
 
         assert!(app.pending_ask_continuation.is_some());
+        assert_eq!(app.pending_ask_question_id.as_deref(), Some("q1"));
         assert!(app.right_source.blackboard_status.contains("自定义"));
     }
 
@@ -7760,6 +7632,20 @@ mod tests {
         let sent = app.turns.last().expect("sent turn");
         assert_eq!(sent.user, "我的自定义回答");
         assert!(app.pending_ask_continuation.is_none());
+    }
+
+    #[test]
+    fn slash_command_does_not_steal_pending_ask_freeform() {
+        let mut app = App::new();
+        app.pending_ask_continuation =
+            Some(json!({ "mode": "continue", "continuationId": "cont-1" }));
+        app.input = "/todo".to_string();
+
+        app.submit_input();
+
+        assert!(app.pending_ask_continuation.is_some());
+        assert!(app.pending_plan_action.is_none());
+        assert!(app.right_source.blackboard_status.contains("当前 ASK"));
     }
 
     #[test]
@@ -8985,8 +8871,9 @@ mod tests {
         app.confirm_plan_menu_selection();
         assert!(app.right_source.blackboard_status.contains("plan-test-1"));
 
-        let envelope =
-            task_plan_decide_envelope(1, "plan-test-1", PlanAction::Revise, Some("补充边界"));
+        let envelope = gateway_command_builder()
+            .task_plan_decide(1, "plan-test-1", PlanAction::Revise, Some("补充边界"))
+            .into_value();
         assert_eq!(
             envelope.get("type").and_then(Value::as_str),
             Some("task.plan.decide")
@@ -9052,12 +8939,21 @@ mod tests {
     fn task_plan_written_event_requests_task_refresh() {
         let mut app = App::new();
 
-        app.apply_socket_event(SocketEvent::TaskPlanWritten);
+        app.apply_socket_event(SocketEvent::RuntimeEvent(json!({
+            "type": "memory.task_plan.written",
+            "payload": { "planId": "plan-test-1" }
+        })));
 
         assert!(
             app.right_source
                 .blackboard_status
                 .contains("task plan updated")
+        );
+        assert!(
+            app.run_timeline
+                .items
+                .iter()
+                .any(|item| item.title == "memory task_plan written")
         );
     }
 
@@ -9084,6 +8980,12 @@ mod tests {
                 .blackboard_stream
                 .iter()
                 .any(|line| line.contains("记录复制路径优化"))
+        );
+        assert!(
+            app.run_timeline
+                .items
+                .iter()
+                .any(|item| item.title == "blackboard message appended")
         );
     }
 
@@ -9442,20 +9344,25 @@ mod tests {
     }
 
     #[test]
-    fn message_send_envelope_includes_context_fork_and_continuation_metadata() {
-        let envelope = message_send_envelope(
-            "message-1",
-            "继续",
-            Some("fork-1"),
-            Some(&json!({
-                "continuation": {
-                    "mode": "continue",
-                    "snapshotId": "behavior-1"
-                }
-            })),
-            InteractionMode::Plan,
-            true,
-        );
+    fn gateway_message_builder_includes_context_fork_and_continuation_metadata() {
+        let envelope = gateway_command_builder()
+            .gateway_message_send(
+                1,
+                gateway_message_payload(
+                    "message-1",
+                    "继续",
+                    Some("fork-1"),
+                    Some(&json!({
+                        "continuation": {
+                            "mode": "continue",
+                            "snapshotId": "behavior-1"
+                        }
+                    })),
+                    InteractionMode::Plan,
+                    true,
+                ),
+            )
+            .into_value();
 
         assert_eq!(
             envelope
@@ -9520,8 +9427,8 @@ mod tests {
     }
 
     #[test]
-    fn event_subscribe_envelope_uses_known_runtime_event_types_only() {
-        let envelope = event_subscribe_envelope(42);
+    fn event_subscribe_builder_uses_known_runtime_event_types_only() {
+        let envelope = gateway_command_builder().event_subscribe(42).into_value();
         let types = envelope
             .get("payload")
             .and_then(|payload| payload.get("types"))
@@ -9636,14 +9543,19 @@ mod tests {
 
     #[test]
     fn fork_session_messages_and_history_use_active_fork_id() {
-        let message = message_send_envelope(
-            "message-fork",
-            "fork 内继续",
-            Some("fork-active"),
-            None,
-            InteractionMode::Act,
-            false,
-        );
+        let message = gateway_command_builder()
+            .gateway_message_send(
+                1,
+                gateway_message_payload(
+                    "message-fork",
+                    "fork 内继续",
+                    Some("fork-active"),
+                    None,
+                    InteractionMode::Act,
+                    false,
+                ),
+            )
+            .into_value();
         assert_eq!(
             message
                 .get("payload")
@@ -9653,7 +9565,9 @@ mod tests {
             Some("fork-active")
         );
 
-        let history = history_list_envelope(1, Some("fork-active"));
+        let history = gateway_command_builder()
+            .history_list_with_before(1, 20, Some("fork-active"), None)
+            .into_value();
         assert_eq!(
             history
                 .get("payload")
@@ -9667,7 +9581,9 @@ mod tests {
                 .and_then(|payload| payload.get("context"))
                 .is_none()
         );
-        let root_history = history_list_envelope(1, None);
+        let root_history = gateway_command_builder()
+            .history_list_with_before(1, 20, None, None)
+            .into_value();
         assert!(
             root_history
                 .get("payload")

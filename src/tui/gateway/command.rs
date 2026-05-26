@@ -1,26 +1,11 @@
 use serde_json::{Map, Value, json};
 
+use crate::tui::plan::{command::plan_decide_payload, state::PlanAction};
+
 use super::{
     envelope::{EnvelopeFactory, GatewayEnvelope},
     subscription,
 };
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PlanDecision {
-    Confirm,
-    Revise,
-    Abandon,
-}
-
-impl PlanDecision {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Confirm => "confirm",
-            Self::Revise => "revise",
-            Self::Abandon => "abandon",
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct GatewayCommandBuilder {
@@ -51,7 +36,20 @@ impl GatewayCommandBuilder {
         limit: u64,
         context_fork_id: Option<&str>,
     ) -> GatewayEnvelope {
+        self.history_list_with_before(sequence, limit, context_fork_id, None)
+    }
+
+    pub fn history_list_with_before(
+        &self,
+        sequence: u64,
+        limit: u64,
+        context_fork_id: Option<&str>,
+        before_ts: Option<u64>,
+    ) -> GatewayEnvelope {
         let mut payload = json!({ "limit": limit });
+        if let Some(before_ts) = before_ts {
+            payload["beforeTs"] = json!(before_ts);
+        }
         if let Some(context_fork_id) = context_fork_id {
             payload["contextForkId"] = json!(context_fork_id);
         }
@@ -97,16 +95,10 @@ impl GatewayCommandBuilder {
         &self,
         sequence: u64,
         plan_id: &str,
-        decision: PlanDecision,
+        action: PlanAction,
         revision: Option<&str>,
     ) -> GatewayEnvelope {
-        let mut payload = json!({
-            "planId": plan_id,
-            "action": decision.as_str()
-        });
-        if let Some(revision) = revision {
-            payload["revision"] = json!(revision);
-        }
+        let payload = plan_decide_payload(plan_id, action, revision);
         self.factory.build("task.plan.decide", sequence, payload)
     }
 
@@ -124,19 +116,6 @@ impl GatewayCommandBuilder {
             "execution.job.detail.get",
             sequence,
             json!({ "jobId": job_id }),
-        )
-    }
-
-    pub fn ask_detail_get(&self, sequence: u64, ask_id: &str) -> GatewayEnvelope {
-        self.factory
-            .build("ask.detail.get", sequence, json!({ "askId": ask_id }))
-    }
-
-    pub fn blackboard_detail_get(&self, sequence: u64, blackboard_id: &str) -> GatewayEnvelope {
-        self.factory.build(
-            "blackboard.detail.get",
-            sequence,
-            json!({ "blackboardId": blackboard_id }),
         )
     }
 }
@@ -298,17 +277,13 @@ mod tests {
     }
 
     #[test]
-    fn builds_snapshot_and_detail_commands() {
+    fn builds_snapshot_commands() {
         let commands = vec![
             builder().history_list(1, 20, Some("fork-1")).into_value(),
             builder().task_list(2).into_value(),
             builder().gateway_status_get(3).into_value(),
             builder().fork_memory_get(4, 5).into_value(),
             builder().execution_job_detail_get(5, "job-1").into_value(),
-            builder().ask_detail_get(6, "ask-1").into_value(),
-            builder()
-                .blackboard_detail_get(7, "blackboard-1")
-                .into_value(),
         ];
 
         let types = commands
@@ -323,8 +298,6 @@ mod tests {
                 "gateway.status.get",
                 "fork.memory.get",
                 "execution.job.detail.get",
-                "ask.detail.get",
-                "blackboard.detail.get",
             ]
         );
         assert_eq!(
@@ -337,11 +310,6 @@ mod tests {
                 .and_then(|payload| payload.get("jobId"))
                 .and_then(Value::as_str),
             Some("job-1")
-        );
-        assert_eq!(payload_string(&commands[5], "askId"), Some("ask-1"));
-        assert_eq!(
-            payload_string(&commands[6], "blackboardId"),
-            Some("blackboard-1")
         );
     }
 
@@ -394,7 +362,7 @@ mod tests {
         );
 
         let plan = builder()
-            .task_plan_decide(11, "plan-1", PlanDecision::Revise, Some("more detail"))
+            .task_plan_decide(11, "plan-1", PlanAction::Revise, Some("more detail"))
             .into_value();
         assert_eq!(
             plan.get("type").and_then(Value::as_str),
@@ -420,8 +388,8 @@ mod tests {
 
     #[test]
     fn plan_decision_values_are_wire_actions() {
-        assert_eq!(PlanDecision::Confirm.as_str(), "confirm");
-        assert_eq!(PlanDecision::Revise.as_str(), "revise");
-        assert_eq!(PlanDecision::Abandon.as_str(), "abandon");
+        assert_eq!(PlanAction::Confirm.as_str(), "confirm");
+        assert_eq!(PlanAction::Revise.as_str(), "revise");
+        assert_eq!(PlanAction::Abandon.as_str(), "abandon");
     }
 }
