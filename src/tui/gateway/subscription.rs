@@ -73,7 +73,11 @@ mod tests {
                 .iter()
                 .any(|event_type| event_type.starts_with("fork.memory."))
         );
-        assert!(types.iter().any(|event_type| event_type.starts_with("blackboard.")));
+        assert!(
+            types
+                .iter()
+                .any(|event_type| event_type.starts_with("blackboard."))
+        );
     }
 
     #[test]

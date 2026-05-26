@@ -79,7 +79,10 @@ mod tests {
             is_other: false,
         };
 
-        let metadata = ask_message_metadata(json!({ "mode": "continue", "snapshotId": "ask-1" }), &answer);
+        let metadata = ask_message_metadata(
+            json!({ "mode": "continue", "snapshotId": "ask-1" }),
+            &answer,
+        );
 
         assert_eq!(
             metadata

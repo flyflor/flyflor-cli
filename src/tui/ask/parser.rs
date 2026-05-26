@@ -36,10 +36,7 @@ pub fn ask_menu_from_metadata(turn_index: usize, metadata: &Value) -> Option<Ask
     }
 
     let mut items = flatten_questions(&questions);
-    let selected = items
-        .iter()
-        .position(|item| item.recommended)
-        .unwrap_or(0);
+    let selected = items.iter().position(|item| item.recommended).unwrap_or(0);
     items.push(other_choice());
     Some(AskMenu {
         turn_index,

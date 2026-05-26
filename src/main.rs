@@ -47,6 +47,22 @@ use shared::{
     center_text, draw_separator, in_rect, metric_line, top_bar_title, working_light_bar,
     working_light_phase, working_light_style, working_shimmer_style, ws_url,
 };
+use tui::ask::{
+    command::AskAnswer,
+    parser::{ask_menu_from_turn_metadata, continuation_from_metadata, continuation_from_value},
+    state::{AskChoice, AskMenu},
+    view::visible_item_count,
+};
+use tui::fork::{
+    command::{ForkCreateSource, fork_create_payload},
+    state::ActiveForkSession,
+    view::session_summary,
+};
+use tui::plan::{
+    menu::default_plan_menu,
+    state::{PlanAction, PlanMenu, PlanPendingAction},
+};
+use tui::run_timeline::{state::RunTimeline, view::run_panel_lines};
 use tui::terminal::{
     TerminalMode, enter_terminal, leave_terminal, mouse_capture_enabled_from_env_args,
 };
@@ -314,7 +330,10 @@ fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
 fn fork_footer_suffix(app: &App) -> String {
     app.active_fork
         .as_ref()
-        .map(|fork| format!("   fork {}", truncate_to_width(&fork.fork_id, 18)))
+        .map(|fork| {
+            let label = session_summary(Some(fork)).unwrap_or(&fork.fork_id);
+            format!("   fork {}", truncate_to_width(label, 18))
+        })
         .unwrap_or_default()
 }
 
@@ -593,7 +612,12 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
         "ASK 选择 · Enter 确认 · Esc 关闭",
         Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
     )];
-    for (index, item) in menu.items.iter().take(7).enumerate() {
+    for (index, item) in menu
+        .items
+        .iter()
+        .take(visible_item_count(menu, 7))
+        .enumerate()
+    {
         let selected = index == menu.selected;
         lines.push(Line::from(vec![
             Span::styled(
@@ -607,6 +631,13 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                 } else {
                     theme.text
                 }),
+            ),
+            Span::styled(
+                item.description
+                    .as_ref()
+                    .map(|description| format!(" · {description}"))
+                    .unwrap_or_default(),
+                Style::default().fg(theme.muted),
             ),
         ]));
     }
@@ -814,6 +845,7 @@ struct App {
     interaction_mode: InteractionMode,
     yolo_mode: bool,
     task_todos: Option<Vec<TodoItem>>,
+    run_timeline: RunTimeline,
     model_context_window_tokens: Option<usize>,
     model_name: Option<String>,
     model_provider: Option<String>,
@@ -915,63 +947,6 @@ struct SlashCommand {
     kind: SlashCommandKind,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct ActiveForkSession {
-    fork_id: String,
-    parent_fork_id: Option<String>,
-    root_id: Option<String>,
-    summary: Option<String>,
-}
-
-#[derive(Clone)]
-struct AskMenu {
-    turn_index: usize,
-    selected: usize,
-    continuation: Value,
-    items: Vec<AskMenuItem>,
-}
-
-#[derive(Clone)]
-struct AskMenuItem {
-    label: String,
-    value: Option<String>,
-    is_other: bool,
-}
-
-#[derive(Clone)]
-struct PlanMenu {
-    selected: usize,
-    items: Vec<PlanMenuItem>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PlanAction {
-    Confirm,
-    Revise,
-    Abandon,
-}
-
-impl PlanAction {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Confirm => "confirm",
-            Self::Revise => "revise",
-            Self::Abandon => "abandon",
-        }
-    }
-}
-
-#[derive(Clone)]
-struct PlanMenuItem {
-    label: String,
-    action: PlanAction,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PlanPendingAction {
-    Revise,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum PlanState {
     Empty,
@@ -1071,6 +1046,7 @@ impl App {
             } else {
                 None
             },
+            run_timeline: RunTimeline::new(),
             model_context_window_tokens: demo_mode.then_some(12000),
             model_name: demo_mode.then(|| "demo-model".to_string()),
             model_provider: demo_mode.then(|| "demo".to_string()),
@@ -1179,6 +1155,21 @@ impl App {
                     truncate_to_width(&summary.replace('\n', " "), 120)
                 ));
                 self.right_source.blackboard_status = "blackboard turn 已结束".to_string();
+            }
+            SocketEvent::RuntimeEvent(event) => {
+                let item = self.run_timeline.apply_event_publish(&event);
+                if let Some(job_id) = job_id_from_event_payload(&event) {
+                    let _ = self
+                        .socket_tx
+                        .send(SocketCommand::ExecutionJobDetailGet { job_id });
+                }
+                if let Some(item) = item {
+                    self.right_source.blackboard_status = format!("runtime event · {}", item.title);
+                }
+            }
+            SocketEvent::ExecutionJobSnapshot(snapshot) => {
+                self.run_timeline.apply_execution_job_snapshot(&snapshot);
+                self.right_source.blackboard_status = "execution job snapshot updated".to_string();
             }
             SocketEvent::ContextSnapshotLoaded(snapshot) => {
                 if let Some(turn) = turn_from_context_snapshot(&snapshot) {
@@ -1705,28 +1696,12 @@ impl App {
             self.right_source.blackboard_status = "请输入自定义 ASK 回答后发送".to_string();
             return;
         }
-        let answer = item.value.unwrap_or(item.label);
+        let answer = AskAnswer::from_choice(&item);
         self.send_ask_answer(menu.turn_index, answer, menu.continuation);
     }
 
     fn open_plan_menu(&mut self) {
-        self.plan_menu = Some(PlanMenu {
-            selected: 0,
-            items: vec![
-                PlanMenuItem {
-                    label: "确认计划".to_string(),
-                    action: PlanAction::Confirm,
-                },
-                PlanMenuItem {
-                    label: "补充计划".to_string(),
-                    action: PlanAction::Revise,
-                },
-                PlanMenuItem {
-                    label: "放弃计划".to_string(),
-                    action: PlanAction::Abandon,
-                },
-            ],
-        });
+        self.plan_menu = Some(default_plan_menu());
     }
 
     fn confirm_plan_menu_selection(&mut self) {
@@ -1769,14 +1744,15 @@ impl App {
             format!("已发送计划决策：{} · {plan_id}", action.as_str());
     }
 
-    fn send_ask_answer(&mut self, turn_index: usize, answer: String, continuation: Value) {
+    fn send_ask_answer(&mut self, turn_index: usize, ask_answer: AskAnswer, continuation: Value) {
         let message_id = format!("flyflor-cli-message-{}", now_millis());
         let new_turn_index = self.turns.len();
         let socket_connected = self.socket_connected;
+        let metadata = tui::ask::ask_message_metadata(continuation, &ask_answer);
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
-            user: answer.clone(),
+            user: ask_answer.text.clone(),
             thought: None,
             answer: String::new(),
             metadata: None,
@@ -1802,9 +1778,9 @@ impl App {
             .socket_tx
             .send(SocketCommand::SendMessage {
                 message_id,
-                text: answer,
+                text: ask_answer.text,
                 context_fork_id: self.active_context_fork_id.clone(),
-                metadata: Some(json!({ "continuation": continuation })),
+                metadata: Some(metadata),
                 mode: self.interaction_mode,
                 yolo: self.yolo_mode,
             })
@@ -1948,6 +1924,7 @@ impl App {
             .max_tokens
             .map(compact_token_count)
             .unwrap_or_else(|| "未知".to_string());
+        data.run_timeline = self.run_timeline.clone();
         data.footer = "Shift+Tab 切换模式".to_string();
         data
     }
@@ -2361,12 +2338,22 @@ impl App {
         let metadata = self
             .pending_ask_continuation
             .take()
-            .map(|continuation| json!({ "continuation": continuation }))
+            .map(|continuation| {
+                tui::ask::ask_message_metadata(
+                    continuation,
+                    &tui::ask::AskAnswer::other(text.clone()),
+                )
+            })
             .or_else(|| {
                 self.turns
                     .iter_mut()
                     .find_map(|turn| turn.pending_continuation.take())
-                    .map(|continuation| json!({ "continuation": continuation }))
+                    .map(|continuation| {
+                        tui::ask::ask_message_metadata(
+                            continuation,
+                            &tui::ask::AskAnswer::other(text.clone()),
+                        )
+                    })
             });
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
@@ -3768,6 +3755,13 @@ fn render_right_panel_sections(
     let mut sections = vec![
         right_section("TODO List", todo_section_rows(todos)),
         right_section(
+            "Run",
+            run_panel_lines(&data.run_timeline)
+                .into_iter()
+                .map(|line| line_plain_text(&line))
+                .collect(),
+        ),
+        right_section(
             "Model / Status",
             data.model_stats
                 .iter()
@@ -4650,6 +4644,9 @@ enum SocketCommand {
         action: PlanAction,
         revision: Option<String>,
     },
+    ExecutionJobDetailGet {
+        job_id: String,
+    },
     ForkMemoryGet,
     StatusGet,
     HistoryList {
@@ -4688,6 +4685,8 @@ enum SocketEvent {
     BlackboardTurnEnded {
         summary: String,
     },
+    RuntimeEvent(Value),
+    ExecutionJobSnapshot(Value),
     StatusLoaded(StatusSnapshot),
     ContextSnapshotLoaded(Value),
     Disconnected(String),
@@ -4855,6 +4854,17 @@ fn run_socket_session(
                         return Err(error.to_string());
                     }
                 }
+                SocketCommand::ExecutionJobDetailGet { job_id } => {
+                    let now = now_millis();
+                    log_event(format!("send execution.job.detail.get job_id={job_id}"));
+                    if let Err(error) = socket.send(Message::text(
+                        execution_job_detail_get_envelope(now, &job_id).to_string(),
+                    )) {
+                        log_event(format!("execution.job.detail.get failed error={error}"));
+                        let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
+                        return Err(error.to_string());
+                    }
+                }
                 SocketCommand::ForkMemoryGet => {
                     let now = now_millis();
                     log_event("send fork.memory.get");
@@ -5007,22 +5017,18 @@ fn task_plan_decide_envelope(
     action: PlanAction,
     revision: Option<&str>,
 ) -> Value {
-    let request_id = format!("flyflor-cli-task-plan-decide-{now}");
-    let mut payload = json!({
-        "planId": plan_id,
-        "action": action.as_str()
-    });
-    if let Some(revision) = revision {
-        payload["revision"] = json!(revision);
-    }
-    json!({
-        "protocol": "flyflor.ws.v1",
-        "id": format!("env-{request_id}"),
-        "type": "task.plan.decide",
-        "at": iso8601_from_millis(now),
-        "requestId": request_id,
-        "payload": payload
-    })
+    let action = match action {
+        PlanAction::Confirm => tui::plan::state::PlanAction::Confirm,
+        PlanAction::Revise => tui::plan::state::PlanAction::Revise,
+        PlanAction::Abandon => tui::plan::state::PlanAction::Abandon,
+    };
+    tui::plan::command::plan_decide_envelope(
+        now,
+        iso8601_from_millis(now),
+        plan_id,
+        action,
+        revision,
+    )
 }
 
 fn event_subscribe_envelope(now: u64) -> Value {
@@ -5033,11 +5039,19 @@ fn event_subscribe_envelope(now: u64) -> Value {
         "type": "event.subscribe",
         "at": iso8601_from_millis(now),
         "requestId": request_id,
-        "payload": {
-            "types": [
-                "memory.task_plan.written"
-            ]
-        }
+        "payload": tui::gateway::subscription::subscription_payload()
+    })
+}
+
+fn execution_job_detail_get_envelope(now: u64, job_id: &str) -> Value {
+    let request_id = format!("flyflor-cli-execution-job-detail-{now}");
+    json!({
+        "protocol": "flyflor.ws.v1",
+        "id": format!("env-{request_id}"),
+        "type": "execution.job.detail.get",
+        "at": iso8601_from_millis(now),
+        "requestId": request_id,
+        "payload": { "jobId": job_id }
     })
 }
 
@@ -5142,6 +5156,10 @@ fn handle_socket_text(raw: &str, event_tx: &Sender<SocketEvent>) -> Result<(), S
         return Ok(());
     }
     if let Some(event) = parse_fork_memory_snapshot(raw)? {
+        event_tx.send(event).map_err(|error| error.to_string())?;
+        return Ok(());
+    }
+    if let Some(event) = parse_execution_job_snapshot(raw)? {
         event_tx.send(event).map_err(|error| error.to_string())?;
         return Ok(());
     }
@@ -5326,6 +5344,20 @@ fn parse_fork_memory_snapshot(raw: &str) -> Result<Option<SocketEvent>, String> 
     ))))
 }
 
+fn parse_execution_job_snapshot(raw: &str) -> Result<Option<SocketEvent>, String> {
+    let envelope: SocketEnvelope = serde_json::from_str(raw).map_err(|error| error.to_string())?;
+    if envelope.message_type != "execution.job.snapshot" {
+        return Ok(None);
+    }
+    let Some(payload) = envelope.payload else {
+        return Ok(None);
+    };
+    Ok(Some(SocketEvent::ExecutionJobSnapshot(json!({
+        "type": envelope.message_type,
+        "payload": payload
+    }))))
+}
+
 fn parse_subscription_event(raw: &str) -> Result<Option<SocketEvent>, String> {
     let envelope: SocketEnvelope = serde_json::from_str(raw).map_err(|error| error.to_string())?;
     if !matches!(
@@ -5348,7 +5380,13 @@ fn parse_subscription_event(raw: &str) -> Result<Option<SocketEvent>, String> {
                 .and_then(|event| event.get("type"))
                 .and_then(Value::as_str)
         });
-    if event_type == Some("memory.task_plan.written") {
+    let event = payload
+        .get("event")
+        .cloned()
+        .unwrap_or_else(|| payload.clone());
+    if event_type == Some("memory.task_plan.written")
+        || event_type == Some("memory.task_plan.decided")
+    {
         Ok(Some(SocketEvent::TaskPlanWritten))
     } else if event_type == Some("blackboard.message.appended") {
         Ok(Some(SocketEvent::BlackboardMessageAppended {
@@ -5361,8 +5399,30 @@ fn parse_subscription_event(raw: &str) -> Result<Option<SocketEvent>, String> {
                 .unwrap_or_else(|| "收到 blackboard.turn.end".to_string()),
         }))
     } else {
-        Ok(None)
+        Ok(Some(SocketEvent::RuntimeEvent(event)))
     }
+}
+
+fn job_id_from_event_payload(event: &Value) -> Option<String> {
+    for source in [
+        Some(event),
+        event.get("payload"),
+        event
+            .get("payload")
+            .and_then(|payload| payload.get("event")),
+        event
+            .get("payload")
+            .and_then(|payload| payload.get("payload")),
+        event.get("event"),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if let Some(job_id) = value_string(source, "jobId") {
+            return Some(job_id);
+        }
+    }
+    None
 }
 
 fn event_text_from_payload(payload: &Value) -> Option<String> {
@@ -5812,7 +5872,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
 
     if let Some(ask) = metadata.get("ask") {
         let summary = value_string(ask, "prompt").unwrap_or_else(|| "等待用户确认".to_string());
-        if continuation_from_ask(ask).is_some() {
+        if continuation_from_value(ask).is_some() {
             rows.push(ContextRow {
                 kind: ContextRowKind::AskResume,
                 summary,
@@ -6232,10 +6292,12 @@ fn format_ask_detail(value: &Value) -> String {
         "continuationId",
         value_string(value, "continuationId"),
     );
-    let options = ask_options_from_value(value);
-    if !options.is_empty() {
+    let menu = tui::ask::parser::ask_menu_from_metadata(0, &json!({ "ask": value }));
+    if let Some(menu) = menu
+        && !menu.items.is_empty()
+    {
         lines.push("   选项:".to_string());
-        for option in options {
+        for option in menu.items.iter().filter(|option| !option.is_other) {
             lines.push(format!("   - {}", option.label));
         }
     }
@@ -6259,92 +6321,9 @@ fn continuation_from_turn(turn: &Turn) -> Option<Value> {
         .or_else(|| turn.metadata.as_ref().and_then(continuation_from_metadata))
 }
 
-fn continuation_from_metadata(metadata: &Value) -> Option<Value> {
-    metadata
-        .get("ask")
-        .and_then(continuation_from_ask)
-        .or_else(|| {
-            metadata
-                .get("continuation")
-                .and_then(continuation_from_value)
-        })
-}
-
-fn continuation_from_ask(ask: &Value) -> Option<Value> {
-    continuation_from_value(ask)
-}
-
-fn continuation_from_value(value: &Value) -> Option<Value> {
-    if let Some(snapshot_id) = value_string(value, "snapshotId") {
-        return Some(json!({ "mode": "continue", "snapshotId": snapshot_id }));
-    }
-    if let Some(continuation_id) = value_string(value, "continuationId") {
-        return Some(json!({ "mode": "continue", "continuationId": continuation_id }));
-    }
-    None
-}
-
 fn ask_menu_from_turn(turn_index: usize, turn: &Turn) -> Option<(usize, AskMenu)> {
     let metadata = turn.metadata.as_ref()?;
-    let continuation = continuation_from_metadata(metadata)?;
-    let ask = metadata
-        .get("ask")
-        .or_else(|| metadata.get("continuation"))?;
-    let mut items = ask_options_from_value(ask);
-    items.push(AskMenuItem {
-        label: "Other 自由输入".to_string(),
-        value: None,
-        is_other: true,
-    });
-    Some((
-        turn_index,
-        AskMenu {
-            turn_index,
-            selected: 0,
-            continuation,
-            items,
-        },
-    ))
-}
-
-fn ask_options_from_value(value: &Value) -> Vec<AskMenuItem> {
-    for key in ["options", "choices", "questions"] {
-        if let Some(array) = value.get(key).and_then(Value::as_array) {
-            let items = array
-                .iter()
-                .filter_map(ask_menu_item_from_value)
-                .collect::<Vec<_>>();
-            if !items.is_empty() {
-                return items;
-            }
-        }
-    }
-    Vec::new()
-}
-
-fn ask_menu_item_from_value(value: &Value) -> Option<AskMenuItem> {
-    match value {
-        Value::String(text) => Some(AskMenuItem {
-            label: text.clone(),
-            value: Some(text.clone()),
-            is_other: false,
-        }),
-        Value::Object(_) => {
-            let label = value_string(value, "label")
-                .or_else(|| value_string(value, "title"))
-                .or_else(|| value_string(value, "text"))
-                .or_else(|| value_string(value, "value"))?;
-            let answer = value_string(value, "value")
-                .or_else(|| value_string(value, "text"))
-                .unwrap_or_else(|| label.clone());
-            Some(AskMenuItem {
-                label,
-                value: Some(answer),
-                is_other: false,
-            })
-        }
-        _ => None,
-    }
+    ask_menu_from_turn_metadata(turn_index, metadata)
 }
 
 fn latest_context_summary(turns: &[Turn], kind: ContextRowKind, fallback: &str) -> String {
@@ -6361,42 +6340,23 @@ fn fork_create_command_from_turn(
     turn: &Turn,
     active_context_fork_id: &Option<String>,
 ) -> Option<SocketCommand> {
-    let source_event_id = turn.event_id.clone().or_else(|| turn.message_id.clone())?;
     let request_id = format!("flyflor-cli-fork-{}", now_millis());
-    let summary = if turn.answer.trim().is_empty() {
-        turn.user.trim().to_string()
-    } else {
-        truncate_to_width(&turn.answer.replace('\n', " "), 240)
+    let source = ForkCreateSource {
+        user: turn.user.clone(),
+        answer: turn.answer.clone(),
+        source_event_id: turn.event_id.clone(),
+        source_message_id: turn.message_id.clone(),
+        source_ask_id: turn
+            .metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("ask"))
+            .and_then(|ask| value_string(ask, "askId").or_else(|| value_string(ask, "snapshotId"))),
     };
-    let mut payload = json!({
-        "title": truncate_to_width(&turn.user.replace('\n', " "), 80),
-        "summary": summary,
-        "continuitySummary": truncate_to_width(&turn.answer.replace('\n', " "), 600),
-        "inheritedEventIds": [source_event_id],
-        "maxContextTokens": 12000,
-    });
-    if let Some(event_id) = &turn.event_id {
-        payload["sourceEventId"] = json!(event_id);
-    }
-    if let Some(parent_id) = active_context_fork_id {
-        payload["context"] = json!({ "contextForkId": parent_id });
-    }
-    if let Some(ask_id) = turn
-        .metadata
-        .as_ref()
-        .and_then(|metadata| metadata.get("ask"))
-        .and_then(ask_source_id)
-    {
-        payload["sourceAskId"] = json!(ask_id);
-    }
+    let payload = fork_create_payload(&source, active_context_fork_id.as_deref())?;
     Some(SocketCommand::ForkCreate {
         request_id,
         payload,
     })
-}
-
-fn ask_source_id(ask: &Value) -> Option<String> {
-    value_string(ask, "askId").or_else(|| value_string(ask, "snapshotId"))
 }
 
 fn value_string(value: &Value, key: &str) -> Option<String> {
@@ -6580,6 +6540,8 @@ struct RightPanelData {
     context_max: String,
     #[serde(default)]
     fork_memory: ForkMemorySnapshot,
+    #[serde(skip)]
+    run_timeline: RunTimeline,
     footer: String,
 }
 
@@ -6601,6 +6563,7 @@ impl RightPanelData {
             context_used: "0".to_string(),
             context_max: "未知".to_string(),
             fork_memory: ForkMemorySnapshot::default(),
+            run_timeline: RunTimeline::new(),
             footer: "flyflor-cli".to_string(),
         }
     }
@@ -7888,15 +7851,24 @@ mod tests {
             turn_index: 0,
             selected: 0,
             continuation: json!({ "mode": "continue", "snapshotId": "ask-1" }),
+            questions: Vec::new(),
             items: vec![
-                AskMenuItem {
+                AskChoice {
+                    id: "continue".to_string(),
                     label: "继续实现".to_string(),
                     value: Some("继续实现".to_string()),
+                    description: None,
+                    question_id: None,
+                    recommended: false,
                     is_other: false,
                 },
-                AskMenuItem {
+                AskChoice {
+                    id: "other".to_string(),
                     label: "Other 自由输入".to_string(),
                     value: None,
+                    description: Some("自由输入".to_string()),
+                    question_id: None,
+                    recommended: false,
                     is_other: true,
                 },
             ],
@@ -8267,7 +8239,7 @@ mod tests {
 
         assert!(app.right_sections.len() >= 4);
         assert_eq!(app.right_sections[0].title, "TODO List");
-        let model = app.right_sections[1]
+        let model = app.right_sections[2]
             .lines
             .iter()
             .map(line_plain_text)
@@ -8392,12 +8364,7 @@ mod tests {
 
         assert_eq!(
             &titles[..4],
-            [
-                "TODO List",
-                "Model / Status",
-                "Context Window",
-                "Fork / Memory"
-            ]
+            ["TODO List", "Run", "Model / Status", "Context Window",]
         );
         let rendered = sections
             .iter()
@@ -8696,7 +8663,7 @@ mod tests {
         assert_eq!(app.right.scrollbar.x, 39);
         assert_eq!(
             app.right_lines.first().map(line_plain_text).as_deref(),
-            Some("  Model / Status")
+            Some("  Run")
         );
         assert!(
             app.right_lines
@@ -9121,6 +9088,41 @@ mod tests {
     }
 
     #[test]
+    fn runtime_events_update_run_timeline_panel() {
+        let raw = r#"{
+            "protocol": "flyflor.ws.v1",
+            "id": "env-event-1",
+            "type": "event.publish",
+            "payload": {
+                "type": "subagent.child.end",
+                "payload": {
+                    "batchId": "batch-1",
+                    "childId": "child-1",
+                    "status": "needs_user",
+                    "summary": "Pick an option"
+                }
+            }
+        }"#;
+        let event = parse_subscription_event(raw)
+            .expect("event should parse")
+            .expect("runtime event");
+        let mut app = App::new();
+
+        app.apply_socket_event(event);
+        app.update_right_viewport(Rect::new(0, 0, 60, 20));
+        let right = app
+            .right_lines
+            .iter()
+            .map(line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(right.contains("Run"));
+        assert!(right.contains("subagent child ended"));
+        assert!(right.contains("child-1"));
+    }
+
+    #[test]
     fn context_window_estimate_reports_missing_window_without_model_limit() {
         let estimate = estimate_context_window(
             &[test_turn("hello", "world")],
@@ -9173,6 +9175,7 @@ mod tests {
             context_used: "12.3k".to_string(),
             context_max: "1M".to_string(),
             fork_memory: ForkMemorySnapshot::default(),
+            run_timeline: RunTimeline::new(),
             footer: String::new(),
         };
 
@@ -9528,14 +9531,17 @@ mod tests {
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
 
-        assert_eq!(types, vec!["memory.task_plan.written"]);
+        assert_eq!(types, tui::gateway::subscription::SUBSCRIPTION_EVENT_TYPES);
+        assert!(types.contains(&"executive.loop.paused"));
+        assert!(types.contains(&"blackboard.message.appended"));
+        assert!(types.contains(&"subagent.child.end"));
         assert!(
             !types
                 .iter()
                 .any(|event_type| event_type.starts_with("fork.memory."))
         );
         assert!(
-            !types
+            types
                 .iter()
                 .any(|event_type| event_type.starts_with("blackboard."))
         );
@@ -9845,6 +9851,7 @@ fn load_mock_data() -> MockData {
             context_used: "0".to_string(),
             context_max: "未知".to_string(),
             fork_memory: ForkMemorySnapshot::default(),
+            run_timeline: RunTimeline::new(),
             footer: "flyflor-cli".to_string(),
         },
         fork_memory: ForkMemorySnapshot::default(),
@@ -10006,6 +10013,7 @@ fn demo_mock_data() -> MockData {
                 brain_db_human: Some("12.4 MB".to_string()),
                 brain_db_status: Some("available".to_string()),
             },
+            run_timeline: RunTimeline::new(),
             footer: "Shift+Tab 切换模式 · ←/→ 分区 · y 复制分区".to_string(),
         },
         fork_memory: ForkMemorySnapshot {
