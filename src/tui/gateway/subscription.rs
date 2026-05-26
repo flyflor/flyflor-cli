@@ -3,35 +3,61 @@ use serde_json::{Value, json};
 pub const SUBSCRIPTION_EVENT_TYPES: &[&str] = &[
     "memory.task_plan.written",
     "memory.task_plan.decided",
+    "memory.task_plan.decision.failed",
     "memory.context_fork.written",
     "memory.ask.recorded",
     "memory.ask.answered",
+    "memory.ask.chain.capped",
+    "memory.ask.mutex.violation",
     "executive.loop.paused",
     "executive.loop.resumed",
+    "executive.loop.guard.blocked",
     "route.escalated",
+    "memory.recall.started",
+    "memory.recall.item",
+    "memory.recall.assembled",
+    "memory.recall.completed",
     "scope.recall.started",
     "scope.recall.decided",
     "scope.recall.loaded",
     "scope.recall.ask",
     "blackboard.started",
+    "blackboard.lease.acquired",
+    "blackboard.lease.released",
+    "blackboard.turn.start",
     "blackboard.round.started",
+    "blackboard.worker.start",
     "blackboard.worker.done",
+    "blackboard.worker.end",
     "blackboard.message.appended",
     "blackboard.turn.end",
+    "blackboard.decision.requested",
+    "blackboard.livelock.detected",
     "blackboard.completed",
     "mcp.tool.call.executed",
-    "tool.call.executed",
-    "tool.shell.completed",
     "tool.started",
     "tool.progress",
     "tool.succeeded",
     "tool.failed",
+    "tool.output.persisted",
     "tool.ask_required",
     "tool.budget.exhausted",
+    "sandbox.tool.approval.requested",
+    "sandbox.tool.approval.denied",
+    "sandbox.tool.denied",
     "subagent.batch.start",
     "subagent.child.start",
     "subagent.child.end",
     "subagent.batch.end",
+    "process.start",
+    "process.output",
+    "process.output.truncated",
+    "process.exit",
+    "process.restart.give_up",
+    "worker.task.queued",
+    "worker.task.start",
+    "worker.task.end",
+    "worker.task.failed",
 ];
 
 #[cfg(test)]
@@ -70,10 +96,16 @@ mod tests {
         assert!(types.contains(&"memory.context_fork.written"));
         assert!(types.contains(&"executive.loop.paused"));
         assert!(types.contains(&"blackboard.message.appended"));
+        assert!(types.contains(&"blackboard.lease.acquired"));
+        assert!(types.contains(&"blackboard.worker.start"));
         assert!(types.contains(&"subagent.child.end"));
-        assert!(types.contains(&"tool.call.executed"));
-        assert!(types.contains(&"tool.shell.completed"));
+        assert!(types.contains(&"tool.output.persisted"));
         assert!(types.contains(&"tool.budget.exhausted"));
+        assert!(types.contains(&"memory.ask.chain.capped"));
+        assert!(types.contains(&"memory.task_plan.decision.failed"));
+        assert!(types.contains(&"memory.recall.assembled"));
+        assert!(types.contains(&"process.start"));
+        assert!(types.contains(&"worker.task.start"));
         assert!(payload.get("classes").is_none());
         assert!(
             !types

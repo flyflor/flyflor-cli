@@ -55,10 +55,23 @@ impl SubagentStatus {
         } else if event_type.ends_with(".end")
             || event_type.ends_with(".ended")
             || event_type.ends_with(".completed")
+            || event_type.ends_with(".succeeded")
+            || event_type.ends_with(".written")
+            || event_type.ends_with(".exit")
         {
             Self::Completed
-        } else if event_type.ends_with(".failed") || event_type.ends_with(".error") {
+        } else if event_type.ends_with(".failed")
+            || event_type.ends_with(".error")
+            || event_type.ends_with(".denied")
+        {
             Self::Failed
+        } else if event_type.ends_with(".paused")
+            || event_type.ends_with(".needs_user")
+            || event_type.ends_with(".ask_required")
+            || event_type.ends_with(".budget.exhausted")
+            || event_type.ends_with(".approval.requested")
+        {
+            Self::NeedsUser
         } else {
             Self::Unknown
         }

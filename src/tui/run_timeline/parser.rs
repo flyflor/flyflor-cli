@@ -36,13 +36,21 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
             )
             .unwrap_or_else(|| compact_json(payload)),
         ),
-        event_type if event_type.starts_with("scope.recall.") => RunTimelineItem::new(
-            id,
-            RunTimelineItemKind::Recall,
-            status_from_event_type(event_type),
-            event_type.replace('.', " "),
-        )
-        .with_detail(first_string(payload, &["query", "summary", "content"]).unwrap_or_default()),
+        event_type
+            if event_type.starts_with("scope.recall.")
+                || event_type.starts_with("memory.recall.") =>
+        {
+            RunTimelineItem::new(
+                id,
+                RunTimelineItemKind::Recall,
+                status_from_event_type(event_type),
+                event_type.replace('.', " "),
+            )
+            .with_detail(
+                first_string(payload, &["query", "summary", "content", "memory"])
+                    .unwrap_or_default(),
+            )
+        }
         event_type if event_type.starts_with("blackboard.") => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Blackboard,
@@ -54,7 +62,20 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
                 .unwrap_or_else(|| compact_json(payload)),
         ),
         "mcp.tool.call.executed" => tool_item(id, "mcp tool", payload),
-        event_type if event_type.starts_with("tool.") => tool_item(id, event_type, payload),
+        event_type
+            if event_type.starts_with("tool.")
+                || event_type.starts_with("sandbox.tool.")
+                || event_type.starts_with("process.") =>
+        {
+            tool_item(id, event_type, payload)
+        }
+        event_type if event_type.starts_with("worker.task.") => RunTimelineItem::new(
+            id,
+            RunTimelineItemKind::Subagent,
+            status_from_event_type(event_type),
+            event_type.replace('.', " "),
+        )
+        .with_detail(first_string(payload, &["task", "summary", "message"]).unwrap_or_default()),
         "subagent.batch.start" | "subagent.batch.end" => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Subagent,
@@ -158,6 +179,7 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
     let data = value
         .get("payload")
         .and_then(|payload| payload.get("data"))
+        .or_else(|| value.get("payload").and_then(|payload| payload.get("job")))
         .or_else(|| value.get("data"))
         .or_else(|| value.get("job"))
         .unwrap_or(value);
@@ -225,7 +247,7 @@ fn tool_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
     RunTimelineItem::new(
         id,
         RunTimelineItemKind::Tool,
-        status_from_value(payload),
+        status_from_payload_or_event(payload, event_type),
         format!("tool {name}"),
     )
     .with_detail(
@@ -275,7 +297,9 @@ pub(crate) fn first_string(value: &Value, keys: &[&str]) -> Option<String> {
 }
 
 pub(crate) fn status_from_event_type(event_type: &str) -> RunTimelineItemStatus {
-    if event_type.ends_with(".start")
+    if event_type.ends_with(".queued") {
+        RunTimelineItemStatus::Pending
+    } else if event_type.ends_with(".start")
         || event_type.ends_with(".started")
         || event_type.ends_with(".resumed")
     {
@@ -283,12 +307,22 @@ pub(crate) fn status_from_event_type(event_type: &str) -> RunTimelineItemStatus 
     } else if event_type.ends_with(".end")
         || event_type.ends_with(".ended")
         || event_type.ends_with(".completed")
+        || event_type.ends_with(".succeeded")
         || event_type.ends_with(".written")
+        || event_type.ends_with(".exit")
     {
         RunTimelineItemStatus::Completed
-    } else if event_type.ends_with(".failed") || event_type.ends_with(".error") {
+    } else if event_type.ends_with(".failed")
+        || event_type.ends_with(".error")
+        || event_type.ends_with(".denied")
+    {
         RunTimelineItemStatus::Failed
-    } else if event_type.ends_with(".paused") || event_type.ends_with(".needs_user") {
+    } else if event_type.ends_with(".paused")
+        || event_type.ends_with(".needs_user")
+        || event_type.ends_with(".ask_required")
+        || event_type.ends_with(".budget.exhausted")
+        || event_type.ends_with(".approval.requested")
+    {
         RunTimelineItemStatus::NeedsUser
     } else {
         RunTimelineItemStatus::Info
@@ -383,12 +417,16 @@ mod tests {
     fn parses_required_event_families() {
         let cases = [
             ("scope.recall.started", RunTimelineItemKind::Recall),
+            ("memory.recall.assembled", RunTimelineItemKind::Recall),
             (
                 "blackboard.message.appended",
                 RunTimelineItemKind::Blackboard,
             ),
             ("mcp.tool.call.executed", RunTimelineItemKind::Tool),
+            ("sandbox.tool.approval.requested", RunTimelineItemKind::Tool),
+            ("process.start", RunTimelineItemKind::Tool),
             ("tool.shell.completed", RunTimelineItemKind::Tool),
+            ("worker.task.start", RunTimelineItemKind::Subagent),
             ("subagent.batch.start", RunTimelineItemKind::Subagent),
             ("subagent.child.end", RunTimelineItemKind::Subagent),
             ("executive.loop.paused", RunTimelineItemKind::Loop),
@@ -428,6 +466,23 @@ mod tests {
             .find(|item| item.id == "child:child-1")
             .expect("child item");
         assert_eq!(child.status, RunTimelineItemStatus::NeedsUser);
+    }
+
+    #[test]
+    fn parses_execution_job_snapshot_payload_job_shape() {
+        let items = parse_execution_job_snapshot(&json!({
+            "type": "execution.job.snapshot",
+            "payload": {
+                "job": {
+                    "jobId": "job-payload",
+                    "status": "completed",
+                    "children": [{ "id": "child-payload", "status": "succeeded" }]
+                }
+            }
+        }));
+
+        assert!(items.iter().any(|item| item.id == "job:job-payload"));
+        assert!(items.iter().any(|item| item.id == "child:child-payload"));
     }
 
     #[test]

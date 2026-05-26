@@ -29,8 +29,10 @@ pub fn merge_event_publish(tree: &mut SubagentTree, event_type: &str, value: &Va
                 subagent_status(payload, event_type),
             ));
         }
-        "mcp.tool.call.executed" | "tool.call.executed" => merge_tool_call(tree, payload),
-        event_type if event_type.starts_with("tool.") => merge_tool_call(tree, payload),
+        "mcp.tool.call.executed" | "tool.call.executed" => {
+            merge_tool_call(tree, payload, event_type)
+        }
+        event_type if event_type.starts_with("tool.") => merge_tool_call(tree, payload, event_type),
         "executive.loop.paused" => mark_needs_user(tree, payload),
         _ => {}
     }
@@ -49,6 +51,7 @@ pub fn merge_execution_job_snapshot(tree: &mut SubagentTree, value: &Value) {
     let data = value
         .get("payload")
         .and_then(|payload| payload.get("data"))
+        .or_else(|| value.get("payload").and_then(|payload| payload.get("job")))
         .or_else(|| value.get("data"))
         .or_else(|| value.get("job"))
         .unwrap_or(value);
@@ -98,7 +101,7 @@ fn child_from_value(value: &Value, status: SubagentStatus) -> SubagentChild {
     let tool_calls = arrays_at(value, &["toolCalls", "tool_calls", "calls"])
         .into_iter()
         .flat_map(|calls| calls.iter())
-        .map(tool_call_from_value)
+        .map(|value| tool_call_from_value(value, SubagentStatus::from_value(value)))
         .collect();
     SubagentChild {
         batch_id: value_string(value, "batchId").or_else(|| value_string(value, "batch_id")),
@@ -111,7 +114,7 @@ fn child_from_value(value: &Value, status: SubagentStatus) -> SubagentChild {
     }
 }
 
-fn tool_call_from_value(value: &Value) -> SubagentToolCall {
+fn tool_call_from_value(value: &Value, status: SubagentStatus) -> SubagentToolCall {
     let id = value_string(value, "id")
         .or_else(|| value_string(value, "callId"))
         .or_else(|| value_string(value, "toolCallId"))
@@ -119,12 +122,12 @@ fn tool_call_from_value(value: &Value) -> SubagentToolCall {
     SubagentToolCall {
         name: first_string(value, &["name", "toolName", "tool"]).unwrap_or_else(|| id.clone()),
         id,
-        status: SubagentStatus::from_value(value),
+        status,
         detail: first_string(value, &["summary", "command", "result", "error"]),
     }
 }
 
-fn merge_tool_call(tree: &mut SubagentTree, value: &Value) {
+fn merge_tool_call(tree: &mut SubagentTree, value: &Value, event_type: &str) {
     let Some(child_id) = value_string(value, "childId")
         .or_else(|| value_string(value, "agentId"))
         .or_else(|| value_string(value, "subagentId"))
@@ -138,7 +141,10 @@ fn merge_tool_call(tree: &mut SubagentTree, value: &Value) {
         task: None,
         status: SubagentStatus::Unknown,
         allowed_tools: Vec::new(),
-        tool_calls: vec![tool_call_from_value(value)],
+        tool_calls: vec![tool_call_from_value(
+            value,
+            subagent_status(value, event_type),
+        )],
     };
     tree.upsert_child(child);
 }
@@ -254,6 +260,45 @@ mod tests {
         let child = &tree.batches[0].children[0];
         assert_eq!(child.status, SubagentStatus::NeedsUser);
         assert_eq!(child.task.as_deref(), Some("Need user approval"));
+    }
+
+    #[test]
+    fn snapshot_accepts_payload_job_shape() {
+        let mut tree = SubagentTree::default();
+        merge_execution_job_snapshot(
+            &mut tree,
+            &json!({
+                "type": "execution.job.snapshot",
+                "payload": {
+                    "job": {
+                        "batches": [{ "id": "batch-1" }],
+                        "children": [{ "id": "child-1", "batchId": "batch-1", "status": "running" }]
+                    }
+                }
+            }),
+        );
+
+        assert_eq!(tree.batches.len(), 1);
+        assert_eq!(tree.batches[0].children[0].id, "child-1");
+    }
+
+    #[test]
+    fn tool_event_status_falls_back_to_event_type() {
+        let mut tree = SubagentTree::default();
+        merge_event_publish(
+            &mut tree,
+            "tool.budget.exhausted",
+            &json!({
+                "type": "tool.budget.exhausted",
+                "payload": {
+                    "childId": "child-1",
+                    "tool": "workspace.read"
+                }
+            }),
+        );
+
+        let call = &tree.loose_children[0].tool_calls[0];
+        assert_eq!(call.status, SubagentStatus::NeedsUser);
     }
 
     #[test]

@@ -1212,12 +1212,14 @@ impl App {
                 summary,
             } => {
                 self.pending_fork_create = false;
-                let parent_fork_id = parent_id.or_else(|| self.active_context_fork_id.clone());
-                if let Some(active_fork) = self.active_fork.clone() {
+                let parent_fork_id = if let Some(active_fork) = self.active_fork.clone() {
+                    let parent_fork_id = parent_id.or_else(|| self.active_context_fork_id.clone());
                     self.fork_stack.push((active_fork, self.turns.clone()));
+                    parent_fork_id
                 } else {
                     self.root_turns = self.turns.clone();
-                }
+                    None
+                };
                 self.active_context_fork_id = Some(fork_id.clone());
                 self.active_fork = Some(ActiveForkSession {
                     fork_id: fork_id.clone(),
@@ -1905,6 +1907,7 @@ impl App {
             .as_ref()
             .and_then(|todos| plan_id_waiting_for_confirmation(todos))
             .or_else(|| plan_id_waiting_for_confirmation(&self.todos))
+            .or_else(|| plan_id_waiting_for_confirmation(&todos_from_turns(&self.turns)))
     }
 
     fn plan_state(&self) -> PlanState {
@@ -2349,11 +2352,6 @@ impl App {
         if text.is_empty() {
             return;
         }
-        if self.pending_ask_continuation.is_some() && text.starts_with('/') {
-            self.right_source.blackboard_status =
-                "请先完成当前 ASK 自由输入，Esc 可关闭菜单但不会丢弃待答 ASK".to_string();
-            return;
-        }
         if matches!(self.pending_plan_action, Some(PlanPendingAction::Revise)) {
             self.pending_plan_action = None;
             self.send_plan_command(PlanAction::Revise, Some(text));
@@ -2361,30 +2359,32 @@ impl App {
             self.input_cursor = None;
             return;
         }
-        if text == "/exit" {
-            self.should_quit = true;
-            return;
-        }
-        if text == "/exit fork" {
-            if self.active_fork.is_some() {
-                self.exit_fork_session();
-            } else {
-                self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
+        if self.pending_ask_continuation.is_none() {
+            if text == "/exit" {
+                self.should_quit = true;
+                return;
             }
-            self.input.clear();
-            self.input_cursor = None;
-            return;
-        }
-        if text.starts_with('/') {
-            self.refresh_command_palette();
-            if self.command_palette.is_some() {
-                self.confirm_command_palette_selection();
-            } else {
-                self.right_source.blackboard_status = format!("未知命令：{text}");
+            if text == "/exit fork" {
+                if self.active_fork.is_some() {
+                    self.exit_fork_session();
+                } else {
+                    self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
+                }
                 self.input.clear();
                 self.input_cursor = None;
+                return;
             }
-            return;
+            if text.starts_with('/') {
+                self.refresh_command_palette();
+                if self.command_palette.is_some() {
+                    self.confirm_command_palette_selection();
+                } else {
+                    self.right_source.blackboard_status = format!("未知命令：{text}");
+                    self.input.clear();
+                    self.input_cursor = None;
+                }
+                return;
+            }
         }
         self.composer_notice = None;
 
@@ -5309,7 +5309,10 @@ fn runtime_event_type(event: &Value) -> Option<&str> {
 fn job_id_from_event_payload(event: &Value) -> Option<String> {
     for source in [
         Some(event),
+        event.get("data"),
         event.get("payload"),
+        event.get("payload").and_then(|payload| payload.get("data")),
+        event.get("payload").and_then(|payload| payload.get("job")),
         event
             .get("payload")
             .and_then(|payload| payload.get("event")),
@@ -7759,20 +7762,33 @@ mod tests {
     #[test]
     fn slash_command_does_not_steal_pending_ask_freeform() {
         let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.socket_connected = true;
         app.pending_ask_continuation =
             Some(json!({ "mode": "continue", "continuationId": "cont-1" }));
         app.input = "/todo".to_string();
 
         app.submit_input();
 
-        assert!(app.pending_ask_continuation.is_some());
+        assert!(app.pending_ask_continuation.is_none());
         assert!(app.pending_plan_action.is_none());
-        assert!(app.right_source.blackboard_status.contains("当前 ASK"));
+        match rx.try_recv().expect("ask send command") {
+            SocketCommand::SendMessage {
+                text,
+                metadata: Some(_),
+                ..
+            } => assert_eq!(text, "/todo"),
+            _ => panic!("expected ask send message"),
+        }
     }
 
     #[test]
     fn slash_command_real_enter_path_does_not_steal_pending_ask_freeform() {
         let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.socket_connected = true;
         app.pending_ask_continuation =
             Some(json!({ "mode": "continue", "continuationId": "cont-1" }));
         app.input = "/todo".to_string();
@@ -7780,10 +7796,17 @@ mod tests {
 
         handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
 
-        assert!(app.pending_ask_continuation.is_some());
+        assert!(app.pending_ask_continuation.is_none());
         assert!(app.command_palette.is_none());
         assert!(app.pending_plan_action.is_none());
-        assert!(app.right_source.blackboard_status.contains("当前 ASK"));
+        match rx.try_recv().expect("ask send command") {
+            SocketCommand::SendMessage {
+                text,
+                metadata: Some(_),
+                ..
+            } => assert_eq!(text, "/todo"),
+            _ => panic!("expected ask send message"),
+        }
     }
 
     #[test]
@@ -9077,6 +9100,40 @@ mod tests {
     }
 
     #[test]
+    fn plan_decision_targets_waiting_confirmation_plan_from_turn_metadata() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        let mut turn = test_turn("u", "a");
+        turn.metadata = Some(json!({
+            "planning": {
+                "taskPlans": [
+                    {
+                        "planId": "plan-running-meta",
+                        "steps": [{ "title": "Run", "status": "running" }]
+                    },
+                    {
+                        "planId": "plan-awaiting-meta",
+                        "steps": [{ "title": "Confirm", "status": "awaiting confirmation" }]
+                    }
+                ]
+            }
+        }));
+        app.turns = vec![turn];
+
+        app.open_plan_menu();
+        app.confirm_plan_menu_selection();
+
+        let command = rx.try_recv().expect("plan decide command");
+        match command {
+            SocketCommand::TaskPlanDecide { plan_id, .. } => {
+                assert_eq!(plan_id, "plan-awaiting-meta");
+            }
+            _ => panic!("expected task.plan.decide command"),
+        }
+    }
+
+    #[test]
     fn english_waiting_confirmation_status_is_normalized_for_plan_actions() {
         let mut turn = test_turn("u", "a");
         turn.metadata = Some(json!({
@@ -9153,6 +9210,28 @@ mod tests {
                 .iter()
                 .any(|item| item.title == "memory task_plan written")
         );
+    }
+
+    #[test]
+    fn runtime_event_job_id_in_data_requests_execution_job_detail() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+
+        app.apply_socket_event(SocketEvent::RuntimeEvent(json!({
+            "type": "subagent.child.start",
+            "data": {
+                "jobId": "job-data-1",
+                "childId": "child-1"
+            }
+        })));
+
+        match rx.try_recv().expect("job detail command") {
+            SocketCommand::ExecutionJobDetailGet { job_id } => {
+                assert_eq!(job_id, "job-data-1");
+            }
+            _ => panic!("expected execution job detail command"),
+        }
     }
 
     #[test]
@@ -9763,7 +9842,7 @@ mod tests {
             app.active_fork
                 .as_ref()
                 .and_then(|fork| fork.parent_fork_id.as_deref()),
-            Some("parent-created")
+            None
         );
         assert_eq!(
             app.active_fork
@@ -9863,6 +9942,25 @@ mod tests {
         assert_eq!(app.turns.len(), 1);
         assert_eq!(app.turns[0].user, "root");
         assert!(!app.should_quit);
+    }
+
+    #[test]
+    fn root_fork_exit_clears_context_even_when_snapshot_has_parent_id() {
+        let mut app = App::new();
+        app.turns = vec![test_turn("root", "root answer")];
+
+        app.apply_socket_event(SocketEvent::ForkCreated {
+            fork_id: "fork-session".to_string(),
+            parent_id: Some("parent-from-server".to_string()),
+            root_id: Some("root-session".to_string()),
+            summary: Some("分支会话".to_string()),
+        });
+
+        app.exit_fork_session();
+
+        assert!(app.active_fork.is_none());
+        assert!(app.active_context_fork_id.is_none());
+        assert_eq!(app.turns[0].user, "root");
     }
 
     #[test]
