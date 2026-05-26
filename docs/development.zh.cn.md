@@ -1,132 +1,39 @@
 # 开发
 
-## 工作区检查
+## Commands
 
-修改本工作区前，先确认位置和分支：
-
-```bash
-pwd
-git branch --show-current
-git status --short --branch
-```
-
-对于当前 tmux-managed integration worktree，预期分支是 `feat/cli-ws-event-tui-integration`。
-
-## 运行命令
-
-运行 TUI：
-
-```bash
-cargo run
-```
-
-以 dev mode 运行：
-
-```bash
-cargo run -- --dev
-```
-
-或：
-
-```bash
-FLYFLOR_DEV=1 cargo run
-```
-
-连接非默认 kernel socket：
-
-```bash
-FLYFLOR_WS_URL=ws://127.0.0.1:8787/ws cargo run
-```
-
-禁用 socket/history 集成并使用 mock/offline history：
-
-```bash
-FLYFLOR_HISTORY=0 cargo run
-```
-
-## Dev Mode
-
-Dev mode 可以在启动时通过 `--dev` 或 `FLYFLOR_DEV=1` 开启。在 TUI 内，`F2` 或 `Ctrl+D` 可以切换内部 dev flag。
-
-旧的 diagnostics 悬浮窗已禁用，避免遮挡 TUI。诊断信息请使用 `.flyflor-cli/logs/dev.log` 和 focused tests。
-
-## 热重载
-
-使用 npm scripts 前先安装依赖：
-
-```bash
-npm install
-```
-
-默认 dev script 使用 `cargo watch`：
-
-```bash
-npm run dev
-```
-
-也可以使用 Node-based runner：
-
-```bash
-npm run dev:node
-```
-
-两者都会以 dev mode 运行 TUI，并把诊断写入 `.flyflor-cli/logs/dev.log`。
-
-## 日志
-
-查看开发日志：
-
-```bash
-npm run logs
-```
-
-日志文件是：
-
-```text
-.flyflor-cli/logs/dev.log
-```
-
-Rust TUI 会写入 startup、exit、panic、socket connect、envelope send、parser side effects、copy failures 和 socket disconnect 等记录。Node dev runner 也会写入 restart 和 child-process lifecycle 记录。
-
-## tmux 查看
-
-为了方便 tmux 旁观，命令应显式且低噪声：
-
-```bash
-pwd
-git branch --show-current
-git status --short --branch
-npm run logs
-```
-
-当 TUI 在一个 pane 中运行时，用另一个 pane 观察日志：
-
-```bash
-tail -n 200 -f .flyflor-cli/logs/dev.log
-```
-
-如果 crash 后终端停留在 alternate-screen 或 mouse-capture 状态，可以重启 dev runner，或先在 shell 中运行 terminal reset，再继续手工测试。
-
-## 验证
-
-变更后运行 Rust type/build check：
+在 `flyflor-cli` workspace 中运行检查：
 
 ```bash
 cargo check
-```
-
-更完整的检查：
-
-```bash
-npm run check
 cargo test
+cargo run
 ```
 
-对于纯文档改动，确认 diff 只包含 Markdown：
+连接到非默认 kernel 端口时显式设置：
 
 ```bash
-git diff --name-only
-git diff --stat
+FLYFLOR_WS_URL=ws://127.0.0.1:8788/ws cargo run
 ```
 
-文档工作不应修改 Rust source、script 或 configuration 文件。
+编译后的 binary name 是 `flyflor`。
+
+## Environment
+
+- `FLYFLOR_WS_URL`：覆盖默认 `ws://127.0.0.1:8787/ws`。
+- `FLYFLOR_HISTORY=0|false|FALSE|off|OFF`：禁用 socket/history usage。
+- `FLYFLOR_CONTEXT_WINDOW`：当 kernel 没有提供最大窗口时，用作 context-window display 的本地 fallback。
+
+## Debugging
+
+使用 `tmux` 或分开的终端：
+
+1. 在 `flyflor` 仓库运行 Bun kernel socket server。
+2. 使用指向 kernel 的 `FLYFLOR_WS_URL` 运行 CLI。
+3. 查看 CLI logs 和 TUI Run timeline，确认 socket、event、ASK、tool、process、worker 和 subagent visibility。
+
+CLI 应作为 thin client 调试。如果某个行为需要 kernel state，应检查 kernel `/ws` contract 和 read-model snapshots，而不是给 CLI 增加本地权威。
+
+## Documentation Rule
+
+活跃文档保持双语。英文 doc 变化时，必须在同一次变更中更新对应 `.zh.cn.md`。如果现有 doc 需要语义重写，先归档到 `docs/old-docs/`，再重建 active path。

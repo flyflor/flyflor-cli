@@ -2,69 +2,65 @@
 
 ## 职责边界
 
-`flyflor-cli` 是 Flyflor 系统的 Rust TUI 可视化/交互壳。它不是 kernel，不是权威状态机，也不是 ledger 所有者。
+`flyflor-cli` 是用于可视化和交互 Flyflor kernel 的 Rust TUI shell。它不是 kernel，不是权威 state machine，不是 tool executor，也不是 ledger owner。
 
 CLI 负责：
 
-- 使用 `ratatui` 和 `crossterm` 绘制终端 UI。
-- 接收键盘、粘贴、鼠标、选择、复制和 slash command 输入。
-- 通过 WebSocket envelope 把用户意图发送给 Flyflor kernel。
-- 渲染 kernel 返回的快照和事件。
-- 维护本地展示状态，例如滚动位置、菜单、右侧面板焦点、pending turn 占位和复制选择。
+- 用 `ratatui` 和 `crossterm` 绘制 terminal UI。
+- 接收 keyboard、paste、mouse、selection、copy 和 slash-command input。
+- 通过 `flyflor.ws.v1` WebSocket envelopes 向 kernel 发送用户意图。
+- 渲染 kernel 返回的 snapshots 和 events。
+- 为 ASK、plan decision、fork creation 和未来 approval UX 发送结构化用户决策。
+- 保存 scroll offsets、menus、focused right-panel section、pending turn placeholders 和 copy selections 等本地展示状态。
 
 Flyflor kernel 负责：
 
-- 对话权威状态和持久历史。
-- task planning 状态和计划决策。
-- ASK continuation 语义。
-- context fork 创建和 fork session 数据。
-- blackboard、recall、memory、audit、query、replay 和 ledger 数据。
-- 模型/provider 状态与 context-window 遥测。
+- Conversation authority 和 durable history。
+- Prompt layering 和 model calls。
+- Memory、Crystal、Scope、codename、ContextFork 和 ASK 语义。
+- Task planning state 和 plan decisions。
+- Blackboard、recall、audit、query、replay 和 ledger data。
+- Capability catalog、tool execution、sandbox、approval、quota 和 audit。
+- Model/provider status 和 context-window telemetry。
 
-CLI 应把 kernel 数据视为 source of truth。本地状态只服务于展示连续性和交互体验。
+CLI 应把 kernel data 当作 source-of-truth input。本地状态只服务展示连续性和交互手感。
 
-## 与 Kernel 的分层
+## CLI 看到的 Kernel 分层
 
-CLI 和 kernel 的边界是 `flyflor.ws.v1` envelope 协议。CLI 发送 `gateway.message.send`、`history.list`、`task.list`、`gateway.status.get`、`fork.memory.get`、`event.subscribe`、`task.plan.decide` 和 `fork.create` 等命令。
+CLI 不实现 Flyflor 哲学层，但应该一致地渲染它们：
 
-Kernel 响应以快照或事件形式到达。CLI 将它们解析为本地 `SocketEvent` 变体，并把这些事件应用到内存中的 `App` 状态。kernel 不可用时，CLI 可以保持 mock/offline 展示，但不能虚构权威历史、计划、fork 或 ledger 状态。
+- Route decisions 显示在 Run timeline。
+- Blackboard 显示为 transcript context rows、snapshots 和 `blackboard.*` events。
+- ASK 显示为 continuation rows 和 menus。
+- Hot memory 与 fork memory 显示为 context-window 和 fork/memory panels。
+- `brain.db` 只显示为 kernel 提供的 labels 或 history/fork snapshots。
+- Executive tools 显示为 capability snapshots、tool events、execution jobs、loop pauses 和未来 approval prompts。
 
-## 当前 `src/main.rs` 聚合结构
+## 当前源码布局
 
-当前 binary 入口是 `src/main.rs`，由 `Cargo.toml` 配置为 `flyflor` binary。它目前有意承载较多职责，多个关注点聚合在一个文件中：
+当前 binary entrypoint 是 `src/main.rs`，由 `Cargo.toml` 配置为 `flyflor` binary。它仍然拥有 app loop、高层 state transitions、snapshot parsers 和 drawing glue。
 
-- 终端生命周期：raw mode、alternate screen、mouse capture、bracketed paste、panic 日志与清理。
-- 事件循环：socket drain、clipboard drain、draw pass、cursor update、键盘事件、粘贴事件和鼠标事件。
-- App 状态：transcript turns、滚动状态、右侧面板数据、fork session、pending turns、菜单、status snapshots 和 interaction mode。
-- 渲染：header、body layout、左侧 transcript、右侧面板、composer、command/ASK/plan 菜单、类 Markdown answer 渲染和 mermaid ASCII 渲染。
-- 协议接线：socket worker、command channel、gateway command builders 和 envelope 解析器。
-- 数据整形：history snapshots、context rows、task/todo rows、status snapshots、fork memory rows、ASK options 和 plan state。
-- 测试：parser、envelope、render、selection、right-panel 和状态行为。
-
-这种聚合让当前行为容易在一个文件里审查，但也让无关改动变得更危险，因为终端、协议、渲染和状态逻辑彼此相邻。
-
-## 约定目录
-
-当前拆分把 feature ownership 放在显式目录中：
+Feature ownership 按 convention directories 拆分：
 
 - `src/tui/terminal`：raw mode、alternate screen、mouse capture、clipboard fallback 和 panic/log setup。
-- `src/tui/gateway`：`flyflor.ws.v1` envelope factory、固定 subscription list、启动 bootstrap 和 command builders。
+- `src/tui/gateway`：`flyflor.ws.v1` envelope factory、fixed subscription list、startup bootstrap 和 command builders。
 - `src/tui/ask`：ASK menu state、parser、view helpers 和 continuation answer metadata。
 - `src/tui/plan`：plan menu state 与 `task.plan.decide` payload。
 - `src/tui/fork`：active fork state、fork command payload 和 labels。
 - `src/tui/run_timeline`：event timeline parsing/state/view。
 - `src/tui/subagent`：subagent batch/child parsing/state/view。
 
-`src/main.rs` 仍负责 app loop、顶层状态流转、snapshot parsers 和绘制 glue。新能力应该先进入上述约定目录，再 composition 到 `App`；不要新增并行的根级 runtime 或 WebSocket 实现。
+新功能应该进入这些 convention directories 并组合进 `App`；不要增加并行 root-level runtime 或 WebSocket implementations。
 
-## CLI 非目标
+## 非目标
 
-CLI 不应成为：
+CLI 不得成为：
 
-- kernel 的 prompt 容器。
-- 权威计划执行器。
-- 持久 memory ledger。
-- kernel query、replay、audit 或 detail API 的替代品。
-- kernel 规则的第二套实现。
+- Kernel 的 prompt container。
+- 权威 plan executor。
+- Durable memory ledger。
+- Kernel query、replay、audit 或 detail APIs 的替代品。
+- Kernel tool rules 的第二套实现。
+- `brain.db` 的本地写入者。
 
-尤其要注意，`brain.db` 是 kernel 侧用于 ledger/query/replay/audit/detail 工作流的存储。CLI 可以展示来自 `fork.memory` 数据的 `brain.db` 可用性或大小标签，但不得把 `brain.db` 当成本地 prompt 容器或写入目标。
+`brain.db` 是 kernel 侧用于 ledger/query/replay/audit/detail workflows 的存储。CLI 可以展示来自 `fork.memory` 数据的 `brain.db` 可用性或大小标签，但不得把 `brain.db` 当成本地 prompt container 或 write target。

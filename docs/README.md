@@ -1,18 +1,15 @@
 # flyflor-cli Documentation
 
-This directory is the synchronized English and Chinese documentation set for the
-`flyflor-cli` Rust TUI workspace.
+This directory is the synchronized English and Chinese documentation set for the `flyflor-cli` Rust TUI workspace.
+
+`flyflor-cli` is a thin external shell for the Flyflor Bun kernel. It renders `/ws` snapshots and events, sends user intent and user decisions, and keeps local presentation state. It is not the kernel, ledger, tool executor, or prompt owner.
 
 ## Document Map
 
-- [Architecture](architecture.md): CLI responsibility boundaries, the current
-  `src/main.rs` aggregate, and the target split.
-- [Protocol](protocol.md): WebSocket envelope wiring, startup messages,
-  snapshots, subscriptions, and event parsing.
-- [TUI Model](tui-model.md): ASK, plan, fork, blackboard, status, right-panel,
-  hot memory, and fork memory display behavior.
-- [Development](development.md): run commands, `cargo check`, dev mode, logs,
-  and tmux-friendly inspection.
+- [Architecture](architecture.md): CLI responsibility boundaries, current source layout, and the kernel/CLI ownership split.
+- [Protocol](protocol.md): WebSocket envelope wiring, startup messages, snapshots, subscriptions, event parsing, and current closure gaps.
+- [TUI Model](tui-model.md): ASK, plan, fork, blackboard, Run timeline, status, right-panel, hot memory, fork memory, and tool visibility.
+- [Development](development.md): run commands, `cargo check`, dev mode, logs, and tmux-friendly inspection.
 
 ## Chinese Edition
 
@@ -24,8 +21,14 @@ The Chinese document set mirrors this structure:
 - [TUI 模型](tui-model.zh.cn.md)
 - [开发](development.zh.cn.md)
 
+## Current Alignment Notes
+
+- The kernel socket docs use `ws://127.0.0.1:8788/ws` for local smoke examples; the CLI default remains `ws://127.0.0.1:8787/ws` unless `FLYFLOR_WS_URL` is set.
+- The kernel exposes `server.hello` and `capability.catalog.get`; the current CLI startup does not yet request `capability.catalog.get`.
+- The kernel context input supports `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls`; the CLI currently exposes YOLO mode and tool/run visibility, while normal per-turn approval UX remains future work.
+
 ## Synchronization Rule
 
-Every English `.md` document in this set has a Chinese `.zh.cn.md` counterpart.
-Section order and technical claims should stay aligned. When protocol or UI
-behavior changes, update both files in the same change.
+Every English `.md` document in this set has a Chinese `.zh.cn.md` counterpart. Section order and technical claims should stay aligned. When protocol or UI behavior changes, update both files in the same change.
+
+Superseded docs are archived under `docs/old-docs/` before rewriting active paths.

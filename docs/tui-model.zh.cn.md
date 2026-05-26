@@ -1,92 +1,98 @@
 # TUI 模型
 
-## 展示契约
+## Display Contract
 
-TUI 会同时展示 kernel 状态和本地交互状态。kernel 状态是权威；本地交互状态用于让 UI 能平滑滚动、聚焦、复制、打开菜单和展示 pending request。
+TUI 同时显示 kernel state 和 local interaction state。Kernel state 是权威；local interaction state 只用于滚动、聚焦、复制、打开菜单和平滑展示 pending requests。
 
 主屏幕包含：
 
-- Header：显示 socket/history 状态、session label 和 turn count。
-- 左侧 transcript：显示用户 prompt、assistant answer、context rows、ASK continuation rows、blackboard/replay rows、recall/thought rows 和 create fork 入口。
-- 右侧面板：显示 TODO、Run timeline、model/status、context window 和 fork/memory。
-- Composer footer：显示 interaction mode、active fork label 和本地命令提示。
+- Header：socket/history status、session label 和 turn count。
+- 左侧 transcript：显示 user prompts、assistant answers、context rows、ASK continuation rows、blackboard/replay rows、recall/thought rows 和 create fork affordances。
+- 右侧 panel：TODO、Run timeline、model/status、context window 和 fork/memory。
+- Composer footer：interaction mode、active fork label 和本地 command hints。
 
-## ASK 展示
+## ASK Display
 
 ASK 数据来自 turn metadata 或 ASK snapshots。如果 metadata 包含 continuation（`snapshotId` 或 `continuationId`），transcript 会得到一个 `AskResume` context row。打开它会显示 ASK menu。
 
-ASK menu 包含 kernel 提供的 options，并额外提供 `Other` 自由输入。选择固定 option 会发送带 continuation metadata 的 `gateway.message.send`。选择 `Other` 会把 continuation 暂存在本地，直到下一次 composer submit，再把用户输入文本和同一份 continuation metadata 一起发送。
+ASK menu 包含 kernel-provided options，并额外提供 `Other` 自由输入。选择固定 option 会发送带 continuation metadata 的 `gateway.message.send`。选择 `Other` 会把 continuation 暂存在本地，直到下一次 composer submit，再把用户输入文本和同一份 continuation metadata 一起发送。
 
 CLI 不决定 ASK 语义。它只展示选项，并把用户选择的答案交回 kernel。
 
-## Plan 展示
+## Plan Display
 
 Plan 和 TODO 数据可以来自 task snapshots 或 turn metadata。右侧面板 TODO section 会推导 `PlanState`：
 
 - Empty：没有 task rows，或只有 placeholder plan。
-- Generating：状态文本表示正在生成。
-- Awaiting confirmation：状态文本包含确认语义。
-- Running：至少存在一个 active/current row。
-- Abandoned：状态文本表示已放弃。
+- Generating：status text 表示正在生成。
+- Awaiting confirmation：status text 包含确认语义。
+- Running：至少有一条 active/current row。
+- Abandoned：status text 表示已放弃。
 
-当 plan 等待确认时，`/todo` 会打开 plan menu。菜单提供确认、补充和放弃。确认与放弃会立即发送 `task.plan.decide`。补充会让 composer 进入 pending plan-revision input；下一次 submit 会发送带 `revision` 的 `task.plan.decide`。
+当 plan 等待确认时，`/todo` 会打开 plan menu。菜单提供 confirm、revise 和 abandon。Confirm 与 abandon 会立即发送 `task.plan.decide`。Revise 会让 composer 进入 pending plan-revision input；下一次 submit 发送带 `revision` 的 `task.plan.decide`。
 
-CLI 不执行计划。它只展示 plan state，并发送用户的决策。
+CLI 不执行 plan。它只展示 plan state 并发送用户决策。
 
-## Fork 展示
+## Fork Display
 
-Fork 数据出现在三个位置：
+Fork data 出现在三处：
 
-- Transcript context rows 聚合 `planning.contextForks` metadata，并展示 fork 摘要。
-- Create-fork row 或 `/fork` 命令会基于最新的结构化 assistant turn anchor 发送 `fork.create`。
-- 当 CLI 进入 fork 时，header 和 composer footer 会展示 active fork session label。
+- Transcript context rows 聚合 `planning.contextForks` metadata，并展示 fork summaries。
+- Create-fork row 或 `/fork` command 基于最新 structured assistant turn anchor 发送 `fork.create`。
+- 当 CLI 进入 fork 时，header 和 composer footer 显示 active fork session label。
 
-当 `fork.snapshot` 创建 active fork session 后，CLI 会保存 root turns，清空 transcript 用于 fork 对话，请求 fork-scoped history，并在后续消息中携带 `context.contextForkId`。
+当 `fork.snapshot` 创建 active fork session 后，CLI 保存 root turns，清空 transcript 用于 fork conversation，请求 fork-scoped history，并在后续消息中携带 `context.contextForkId`。
 
-`/exit fork` 会离开 fork session，并在可用时恢复 root 或 parent 状态。真实 fork 数据仍由 kernel 权威维护。
+`/exit fork` 离开 fork session，并在可用时恢复 root 或 parent state。真实 fork data 仍由 kernel 权威维护。
 
-## Blackboard 展示
+## Blackboard Display
 
-Blackboard 数据可以通过 metadata、snapshot 或 subscription event 到达：
+Blackboard data 可以通过 metadata、snapshots 或 subscription events 到达：
 
-- Turn metadata 可在左侧 transcript 创建 blackboard context rows。
-- `blackboard.snapshot` 会变成一个 synthetic display turn。
-- 固定 gateway subscription 包含稳定的 `blackboard.*` runtime events。这些事件会进入 Run 展示，让过程可见，而不是藏在 snapshot 后面。
-- `/blackboard` 会把最新 blackboard summary 写入右侧面板 status line。
+- Turn metadata 可以在左侧 transcript 创建 blackboard context rows。
+- `blackboard.snapshot` 变成 synthetic display turn。
+- 固定 gateway subscription 包含稳定 `blackboard.*` runtime events。这些 events 显示在 Run 中，让过程可见，而不是藏在 snapshots 后。
+- `/blackboard` 把 latest blackboard summary 复制到右侧 panel status line。
 
-右侧下方面板用 Run 承载 event/process timeline。测试保护当前右侧面板 section 集合：TODO、Run、Model / Status、Context Window 和 Fork / Memory。
+CLI 不调度 workers，不决定 route convergence，也不写 Blackboard state。
 
 ## Run Timeline
 
-Run 是 gateway event 的可见执行脊柱。它消费 `event.publish`、`event.snapshot`、`event` 和 `execution.job.snapshot` 数据，并展示 route decision、scope recall、blackboard turn、tool call、ASK pause、plan write、fork、Executive loop transition 和 subagent lifecycle update。
+Run 是 gateway events 的可见执行脊柱。它消费 `event.publish`、`event.snapshot`、`event` 和 `execution.job.snapshot` data，并展示 route decisions、scope recall、blackboard turns、tool calls、ASK pauses、plan writes、forks、Executive loop transitions、process events、worker events 和 subagent lifecycle updates。
 
-Subagent events 会合并成 batch/child tree。先到的 loose child event 会在后续 snapshot 或 batch event 到达时挂回对应 batch；重复 snapshot 会更新已有行，而不是复制新行。这样子代理过程对用户可见，但 CLI 不承担 runtime scheduling 权威。
+Subagent events 会合并成 batch/child tree。Loose child events 会在后续 snapshot 或 batch event 到来时挂到对应 batch，重复 snapshot 更新已有 rows 而不是重复追加。这样 subagents 可见，但 CLI 不负责 runtime scheduling。
 
-## 状态模型
+## Tool Visibility And Approval Gap
 
-可见状态模型由以下部分组合：
+Tool events 和 execution-job snapshots 让 Executive 外骨骼可见。CLI 可以展示 tool start/progress/success/failure、MCP tool execution、loop pause/resume 和 budget exhaustion。
+
+当前缺口：kernel `toolApprovals.mcpToolCalls` 和 `toolApprovals.userToolCalls` 的普通 per-turn approval 还没有闭环。YOLO mode 是作为 metadata 发送的本地高权限 interaction mode marker，不是完整 approval UX 的替代品。
+
+## Status Model
+
+可见 status model 组合：
 
 - `HistoryStatus`：loading、connected/live、mock/offline 或 error。
 - `InteractionMode`：ACT、PLAN 或 YOLO。
 - Pending work：pending turns、streaming footers 和 pending fork creation。
-- 来自 `StatusSnapshot` 的 model/provider 字段。
-- 来自 `StatusSnapshot` 的 context-window telemetry、本地 fallback 估算和可选环境变量 fallback。
-- 通过右侧面板 status 暴露的 clipboard 与 socket error message。
+- 来自 `StatusSnapshot` 的 model/provider fields。
+- 来自 `StatusSnapshot` 的 context-window telemetry、本地 fallback estimation 和可选 environment fallback。
+- 右侧 panel status 中展示的 clipboard 与 socket error messages。
 
-状态 label 是展示提示，不应被用作持久状态或协议权威。
+Status labels 是展示提示，不能当作 durable state 或 protocol authority。
 
-## 右侧面板
+## Right Panel
 
-右侧面板使用 sticky layout：
+右侧 panel 使用 sticky layout：
 
-- TODO 占据可伸缩的顶部区域，并拥有右侧滚动状态。
-- Separator 将 TODO 和固定的下方 status 区域分隔开。
-- 下方区域显示 Run、Model / Status、Context Window 和 Fork / Memory。
+- TODO 占据 flexible top area，并拥有 right scroll state。
+- Separator 把 TODO 与 fixed lower status area 分开。
+- Lower area 显示 Run、Model / Status、Context Window 和 Fork / Memory。
 
-左右方向键会在可复制的右侧面板 sections 之间移动焦点。按 `y` 时，如果存在 active selection，会复制 selection；否则复制当前聚焦的右侧面板 section。TODO list 有意与下方 scroll/copy model 分离。
+左右箭头在可复制 right-panel sections 间移动焦点。按 `y` 时，如果有 active selection 则复制 selection，否则复制 focused right-panel section。TODO list 有意独立于 lower scroll/copy model。
 
-## Hot Memory 与 Fork Memory
+## Hot Memory and Fork Memory
 
-Context Window section 展示 hot context usage。它优先使用 kernel 提供的 context telemetry；当 kernel 没有提供时，从最近 turns 和 active fork id 做本地估算；当 kernel 没有提供最大窗口时，可以使用 `FLYFLOR_CONTEXT_WINDOW`。
+Context Window section 展示 hot context usage。它优先使用 kernel-provided context telemetry；当 kernel 没有提供时，从最近 turns 和 active fork id 做本地估算；当 kernel 没有提供最大窗口时，可以使用 `FLYFLOR_CONTEXT_WINDOW`。
 
-Fork / Memory section 展示最多五条最近 fork 摘要，以及来自 `fork.memory` 数据的 `brain.db` label。`brain.db` label 只用于展示。`brain.db` 是 kernel 侧 ledger/query/replay/audit/detail 存储，不是 CLI prompt 容器。
+Fork / Memory section 展示最多五条最近 fork summaries，以及来自 `fork.memory` data 的 `brain.db` label。`brain.db` label 只用于展示。`brain.db` 是 kernel 侧 ledger/query/replay/audit/detail storage，不是 CLI prompt container。
