@@ -69,8 +69,6 @@ The UI can send these socket commands:
 - `task.plan.decide`: plan confirm, revise, or abandon.
 - `fork.create`: create a context fork from a structured turn anchor.
 - `execution.job.detail.get`: fetch execution job detail snapshots for display.
-- `ask.detail.get`: fetch ASK detail snapshots for display.
-- `blackboard.detail.get`: fetch blackboard detail snapshots for display.
 
 `gateway.message.send` includes conversation, thread, user identity, optional
 `context.contextForkId`, optional continuation metadata, and TUI mode metadata:
@@ -110,8 +108,9 @@ The CLI parses turn and subscription events:
 - `executive.loop.paused` and `executive.loop.resumed`: update ASK/run-loop
   process visibility.
 - `blackboard.*`, `tool.*`, `mcp.tool.call.executed`, `route.escalated`,
-  `scope.recall.*`, and `subagent.*`: become run-timeline rows or trigger
-  detail snapshot fetches.
+  `scope.recall.*`, `memory.context_fork.written`, and `subagent.*`: become
+  run-timeline rows. Job ids can trigger `execution.job.detail.get` for a
+  richer `execution.job.snapshot`.
 - `error`: becomes `SocketEvent::Disconnected`.
 
 Socket read errors and close frames are logged and cause the worker to retry

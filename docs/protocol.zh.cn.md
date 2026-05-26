@@ -55,8 +55,6 @@ UI 可以发送这些 socket 命令：
 - `task.plan.decide`：确认、补充或放弃计划。
 - `fork.create`：基于结构化 turn anchor 创建 context fork。
 - `execution.job.detail.get`：请求 execution job detail snapshot 用于展示。
-- `ask.detail.get`：请求 ASK detail snapshot 用于展示。
-- `blackboard.detail.get`：请求 blackboard detail snapshot 用于展示。
 
 `gateway.message.send` 包含 conversation、thread、user identity、可选 `context.contextForkId`、可选 continuation metadata，以及 TUI mode metadata：`act`、`plan` 或带 `yolo: true` 的 `act`。
 
@@ -83,7 +81,7 @@ CLI 解析 turn 和 subscription 事件：
 - `event.publish`、`event.snapshot` 或 `event`：解包 subscription event。
 - `memory.task_plan.written` 与 `memory.task_plan.decided`：标记 plan 数据已更新并请求 `task.list`。
 - `executive.loop.paused` 与 `executive.loop.resumed`：更新 ASK/run-loop 过程可见性。
-- `blackboard.*`、`tool.*`、`mcp.tool.call.executed`、`route.escalated`、`scope.recall.*` 和 `subagent.*`：变成 run-timeline 行，或触发 detail snapshot 拉取。
+- `blackboard.*`、`tool.*`、`mcp.tool.call.executed`、`route.escalated`、`scope.recall.*`、`memory.context_fork.written` 和 `subagent.*`：变成 run-timeline 行。带 job id 的事件可以触发 `execution.job.detail.get`，以获得更丰富的 `execution.job.snapshot`。
 - `error`：转换为 `SocketEvent::Disconnected`。
 
 Socket read error 和 close frame 会写入日志，并让 worker 短暂等待后重试。
