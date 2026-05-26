@@ -7,7 +7,9 @@ use crate::tui::{
     run_timeline::state::{
         RunTimeline, RunTimelineItem, RunTimelineItemKind, RunTimelineItemStatus,
     },
-    subagent::view::{model_lines, subagent_tree_lines, truncate},
+    subagent::view::{
+        child_detail_lines, child_summary_line, current_subagent, subagent_child_count, truncate,
+    },
 };
 
 pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
@@ -18,7 +20,7 @@ pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
             .add_modifier(Modifier::BOLD),
     )];
 
-    if timeline.items.is_empty() && timeline.subagents.batches.is_empty() {
+    if timeline.items.is_empty() && subagent_child_count(&timeline.subagents) == 0 {
         lines.push(Line::styled(
             "waiting for run events",
             Style::default().fg(Color::Rgb(126, 139, 170)),
@@ -28,26 +30,25 @@ pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
 
     lines.push(summary_line(timeline));
 
-    for model in &timeline.subagents.models {
-        lines.extend(model_lines(model, ""));
-    }
-
-    for item in timeline.items.iter().filter(|item| {
-        !matches!(
-            item.kind,
-            RunTimelineItemKind::Subagent
-                | RunTimelineItemKind::Tool
-                | RunTimelineItemKind::Process
-                | RunTimelineItemKind::Model
-        )
-    }) {
-        lines.extend(item_lines(item));
-    }
-
-    let tree_lines = subagent_tree_lines(&timeline.subagents);
-    if !tree_lines.is_empty() {
+    if let Some((batch_name, child)) = current_subagent(&timeline.subagents) {
         lines.push(Line::raw(""));
-        lines.extend(tree_lines);
+        lines.push(Line::styled(
+            "Current",
+            Style::default()
+                .fg(Color::Rgb(230, 236, 255))
+                .add_modifier(Modifier::BOLD),
+        ));
+        lines.push(child_summary_line(child, batch_name));
+        lines.extend(child_detail_lines(child, batch_name, "  "));
+    } else if let Some(item) = timeline.items.last() {
+        lines.push(Line::raw(""));
+        lines.push(Line::styled(
+            "Current",
+            Style::default()
+                .fg(Color::Rgb(230, 236, 255))
+                .add_modifier(Modifier::BOLD),
+        ));
+        lines.extend(item_lines(item));
     }
 
     lines
@@ -139,7 +140,7 @@ fn summary_line(timeline: &RunTimeline) -> Line<'static> {
                         .sum::<usize>()
             })
             .sum::<usize>();
-    let subagent_count = timeline.subagents.batches.len() + timeline.subagents.loose_children.len();
+    let subagent_count = subagent_child_count(&timeline.subagents);
     let parts = [
         format!(
             "Model {}",
@@ -268,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn run_panel_shows_model_tool_process_and_crystal_tree() {
+    fn run_panel_shows_summary_and_current_subagent_detail() {
         let mut timeline = RunTimeline::new();
         timeline.apply_event_publish(&json!({
             "type": "model.allocation.selected",
@@ -326,9 +327,11 @@ mod tests {
 
         assert!(rendered.contains("Model 1"));
         assert!(rendered.contains("openai/gpt-5"));
-        assert!(rendered.contains("tool shell/exec"));
+        assert!(rendered.contains("Current"));
+        assert!(rendered.contains("Shell rg model"));
         assert!(rendered.contains("process rg model"));
         assert!(rendered.contains("ASK ask-1"));
         assert!(rendered.contains("crystal save learned route"));
+        assert!(!rendered.contains("Subagents\n"));
     }
 }

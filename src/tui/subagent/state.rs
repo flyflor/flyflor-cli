@@ -34,7 +34,18 @@ impl SubagentStatus {
 
         match value
             .get("status")
-            .or_else(|| value.get("state"))
+            .or_else(|| {
+                value.get("state").and_then(|state| match state {
+                    Value::Object(_) => state.get("status").or_else(|| state.get("state")),
+                    other => Some(other),
+                })
+            })
+            .or_else(|| {
+                value.get("result").and_then(|result| match result {
+                    Value::Object(_) => result.get("status").or_else(|| result.get("state")),
+                    _ => None,
+                })
+            })
             .and_then(Value::as_str)
             .unwrap_or_default()
             .to_ascii_lowercase()
@@ -59,6 +70,7 @@ impl SubagentStatus {
         } else if event_type.ends_with(".end")
             || event_type.ends_with(".ended")
             || event_type.ends_with(".completed")
+            || event_type.ends_with(".executed")
             || event_type.ends_with(".succeeded")
             || event_type.ends_with(".persisted")
             || event_type.ends_with(".exit")
@@ -191,11 +203,19 @@ impl SubagentTree {
         }
         for call in take_matching(&mut self.loose_tool_calls, |call| {
             call.child_id.as_deref() == Some(child_id.as_str())
+                || child
+                    .job_id
+                    .as_deref()
+                    .is_some_and(|job_id| call.job_id.as_deref() == Some(job_id))
         }) {
             upsert_tool_into(&mut child.tool_calls, call);
         }
         for process in take_matching(&mut self.loose_processes, |process| {
             process.child_id.as_deref() == Some(child_id.as_str())
+                || child
+                    .job_id
+                    .as_deref()
+                    .is_some_and(|job_id| process.job_id.as_deref() == Some(job_id))
         }) {
             upsert_process_on_child(&mut child, process);
         }
@@ -222,6 +242,26 @@ impl SubagentTree {
             }
             self.loose_children.push(merged);
             return;
+        }
+
+        if let Some(job_id) = child.job_id.as_deref() {
+            if let Some(index) = self
+                .loose_children
+                .iter()
+                .position(|item| item.job_id.as_deref() == Some(job_id))
+            {
+                let mut merged = self.loose_children.remove(index);
+                merge_child(&mut merged, child);
+                if let Some(batch_id) = &merged.batch_id {
+                    if let Some(batch) = self.batches.iter_mut().find(|batch| &batch.id == batch_id)
+                    {
+                        upsert_child_into(&mut batch.children, merged);
+                        return;
+                    }
+                }
+                self.loose_children.push(merged);
+                return;
+            }
         }
 
         self.loose_children.push(child);
@@ -276,12 +316,26 @@ impl SubagentTree {
             return;
         }
 
+        if let Some(job_id) = &call.job_id {
+            if let Some(child) = self.child_mut_by_job(job_id) {
+                upsert_tool_into(&mut child.tool_calls, call);
+                return;
+            }
+        }
+
         upsert_tool_into(&mut self.loose_tool_calls, call);
     }
 
     pub fn upsert_process(&mut self, process: SubagentProcess) {
         if let Some(child_id) = &process.child_id {
             if let Some(child) = self.child_mut(child_id) {
+                upsert_process_on_child(child, process);
+                return;
+            }
+        }
+
+        if let Some(job_id) = &process.job_id {
+            if let Some(child) = self.child_mut_by_job(job_id) {
                 upsert_process_on_child(child, process);
                 return;
             }
@@ -323,6 +377,21 @@ impl SubagentTree {
         self.loose_children
             .iter_mut()
             .find(|child| child.id == child_id)
+    }
+
+    fn child_mut_by_job(&mut self, job_id: &str) -> Option<&mut SubagentChild> {
+        for batch in &mut self.batches {
+            if let Some(child) = batch
+                .children
+                .iter_mut()
+                .find(|child| child.job_id.as_deref() == Some(job_id))
+            {
+                return Some(child);
+            }
+        }
+        self.loose_children
+            .iter_mut()
+            .find(|child| child.job_id.as_deref() == Some(job_id))
     }
 }
 
