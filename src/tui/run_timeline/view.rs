@@ -329,9 +329,9 @@ mod tests {
         assert!(rendered.contains("openai/gpt-5"));
         assert!(rendered.contains("Current"));
         assert!(rendered.contains("Shell rg model"));
-        assert!(rendered.contains("process rg model"));
+        assert!(rendered.contains("子进程 rg model"));
         assert!(rendered.contains("ASK ask-1"));
-        assert!(rendered.contains("crystal save learned route"));
+        assert!(rendered.contains("结晶 save learned route"));
         assert!(!rendered.contains("Subagents\n"));
     }
 }

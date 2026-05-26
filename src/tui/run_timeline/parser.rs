@@ -372,6 +372,9 @@ fn tool_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
 
 fn tool_display_name(payload: &Value) -> Option<String> {
     let payload = tool_payload_value(payload);
+    if let Some(display) = first_string(payload, &["displayName", "key"]) {
+        return Some(display.replace('.', "/"));
+    }
     let server = first_string_nested(
         payload,
         &[
@@ -392,6 +395,7 @@ fn tool_display_name(payload: &Value) -> Option<String> {
             &["tool", "key"],
             &["content", "tool", "key"],
             &["payload", "tool", "key"],
+            &["key"],
             &["tool"],
             &["content", "tool"],
             &["payload", "tool"],
@@ -415,8 +419,10 @@ fn tool_detail(payload: &Value) -> Option<String> {
         payload,
         &[
             &["metadata", "preview"],
+            &["inputPreview"],
             &["call", "inputPreview"],
             &["call", "argsPreview"],
+            &["resultSummary"],
             &["result", "preview"],
         ],
     )

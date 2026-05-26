@@ -66,7 +66,9 @@ Subagent events 会合并成 batch/child tree。Loose child events 会在后续 
 
 Tool events 和 execution-job snapshots 让 Executive 外骨骼可见。CLI 可以展示 tool start/progress/success/failure、MCP tool execution、loop pause/resume 和 budget exhaustion。
 
-当前缺口：kernel `toolApprovals.mcpToolCalls` 和 `toolApprovals.userToolCalls` 的普通 per-turn approval 还没有闭环。YOLO mode 是作为 metadata 发送的本地高权限 interaction mode marker，不是完整 approval UX 的替代品。
+kernel `toolApprovals.mcpToolCalls` 和 `toolApprovals.userToolCalls` 的普通 per-turn approval 已通过 `/approve` 闭环。它只标记下一次发送，发送后清除。YOLO mode 仍是单独的本地高权限 interaction metadata。
+
+当 turn 处于 active 状态时，footer 会显示动画 Working 行。按一次 Esc 会进入终断预备状态；在窗口期内再按一次 Esc，会按 pending public message id 发送 `gateway.message.interrupt`。
 
 ## Status Model
 

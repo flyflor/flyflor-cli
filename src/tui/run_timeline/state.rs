@@ -110,14 +110,16 @@ impl RunTimeline {
                 value,
             );
         }
-        self.items.push(parsed.clone());
+        self.upsert_item(parsed.clone());
         Some(parsed)
     }
 
     pub fn apply_execution_job_snapshot(&mut self, value: &Value) -> Vec<RunTimelineItem> {
         let parsed = crate::tui::run_timeline::parser::parse_execution_job_snapshot(value);
         crate::tui::subagent::parser::merge_execution_job_snapshot(&mut self.subagents, value);
-        self.items.extend(parsed.iter().cloned());
+        for item in &parsed {
+            self.upsert_item(item.clone());
+        }
         parsed
     }
 
@@ -138,8 +140,31 @@ impl RunTimeline {
                 );
             }
         }
-        self.items.extend(parsed.iter().cloned());
+        for item in &parsed {
+            self.upsert_item(item.clone());
+        }
         parsed
+    }
+
+    fn upsert_item(&mut self, item: RunTimelineItem) {
+        if let Some(existing) = self
+            .items
+            .iter_mut()
+            .find(|existing| existing.id == item.id)
+        {
+            *existing = merge_item(existing.clone(), item);
+        } else {
+            self.items.push(item);
+        }
+    }
+}
+
+fn merge_item(existing: RunTimelineItem, incoming: RunTimelineItem) -> RunTimelineItem {
+    RunTimelineItem {
+        detail: incoming.detail.or(existing.detail),
+        at: incoming.at.or(existing.at),
+        raw: incoming.raw.or(existing.raw),
+        ..incoming
     }
 }
 

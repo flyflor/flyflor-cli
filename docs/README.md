@@ -24,8 +24,8 @@ The Chinese document set mirrors this structure:
 ## Current Alignment Notes
 
 - The kernel socket docs use `ws://127.0.0.1:8788/ws` for local smoke examples; the CLI default remains `ws://127.0.0.1:8787/ws` unless `FLYFLOR_WS_URL` is set.
-- The kernel exposes `server.hello` and `capability.catalog.get`; the current CLI startup does not yet request `capability.catalog.get`.
-- The kernel context input supports `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls`; the CLI currently exposes YOLO mode and tool/run visibility, while normal per-turn approval UX remains future work.
+- The kernel exposes `server.hello` and `capability.catalog.get`; CLI startup requests the visible capability catalog.
+- The kernel context input supports `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls`; the CLI exposes `/approve` for one-turn non-YOLO approval, plus YOLO mode and tool/run visibility.
 
 ## Synchronization Rule
 

@@ -27,13 +27,14 @@ After the socket connects, the current CLI sends:
 - `client.hello`: identifies `flyflor-cli`, package version, and `ratatui` capability.
 - `history.list`: requests recent history, optionally scoped later by `contextForkId`.
 - `task.list`: requests task/todo state.
+- `capability.catalog.get`: requests the visible kernel capability/tool surface.
 - `gateway.status.get`: requests model/provider/context-window status.
 - `fork.memory.get`: requests recent fork memory and `brain.db` display fields.
 - `event.subscribe`: subscribes only to known-safe runtime events used by the CLI.
 
 The current CLI marks the socket as connected after the transport connection and `client.hello` send path succeed. A future `server.hello` parser may be added, but `server.hello` should remain handshake metadata, not authoritative business state.
 
-Current gap: the kernel exposes `capability.catalog.get` and `capability.catalog.snapshot`, but the CLI does not yet send `capability.catalog.get` during startup.
+The kernel exposes `capability.catalog.get` and `capability.catalog.snapshot`; CLI startup now requests the catalog. Normal non-YOLO per-turn approval is exposed through `/approve`, which marks only the next `gateway.message.send` with kernel-shaped `context.toolApprovals`.
 
 ## Subscriptions
 
@@ -46,6 +47,7 @@ It deliberately does not subscribe to nonexistent or provisional event names, su
 The UI can send these socket commands:
 
 - `gateway.message.send`: normal user message or ASK continuation answer.
+- `gateway.message.interrupt`: interrupt an active turn by public message id.
 - `history.list`: history refresh, optionally scoped by active context fork.
 - `task.list`: todo/task refresh.
 - `gateway.status.get`: status refresh.
@@ -54,9 +56,13 @@ The UI can send these socket commands:
 - `fork.create`: create a context fork from a structured turn anchor.
 - `execution.job.detail.get`: fetch execution job detail snapshots for display.
 
-`gateway.message.send` includes conversation, thread, user identity, optional `context.contextForkId`, optional continuation metadata, and TUI mode metadata: `act`, `plan`, or `act` with `yolo: true`.
+`gateway.message.send` includes conversation, thread, user identity, optional `context.contextForkId`, optional continuation metadata, optional one-turn `context.toolApprovals`, and TUI mode metadata: `act`, `plan`, or `act` with `yolo: true`.
 
-Future approval closure should submit kernel-shaped `context.toolApprovals.mcpToolCalls` and `context.toolApprovals.userToolCalls`. The CLI must not execute approved tools locally.
+`/approve` submits `context.toolApprovals.mcpToolCalls=true` and `context.toolApprovals.userToolCalls=true` for the next send only. YOLO also submits these approvals, but carries separate high-privilege metadata. The CLI must not execute approved tools locally.
+
+## Localization
+
+TUI copy is loaded from JSON catalogs. The bundled defaults live in `i18n/zh-CN.json` and `i18n/en-US.json`. Set `FLYFLOR_LANG=en` to select English, `FLYFLOR_I18N_DIR=/path/to/catalogs` to load `<lang>.json`, or `FLYFLOR_I18N_FILE=/path/to/custom.json` to override the catalog directly.
 
 ## Snapshot Parsing
 

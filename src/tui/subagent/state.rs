@@ -103,6 +103,7 @@ pub struct SubagentToolCall {
     pub error: Option<String>,
     pub duration_ms: Option<u64>,
     pub detail: Option<String>,
+    pub output_tail: Vec<String>,
     pub processes: Vec<SubagentProcess>,
 }
 
@@ -118,6 +119,7 @@ pub struct SubagentProcess {
     pub output_path: Option<String>,
     pub error: Option<String>,
     pub duration_ms: Option<u64>,
+    pub output_tail: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -510,6 +512,9 @@ fn merge_tool(existing: &mut SubagentToolCall, incoming: SubagentToolCall) {
     if incoming.detail.is_some() {
         existing.detail = incoming.detail;
     }
+    if !incoming.output_tail.is_empty() {
+        existing.output_tail = incoming.output_tail;
+    }
     for process in incoming.processes {
         upsert_process_into(&mut existing.processes, process);
     }
@@ -564,6 +569,9 @@ fn merge_process(existing: &mut SubagentProcess, incoming: SubagentProcess) {
     }
     if incoming.duration_ms.is_some() {
         existing.duration_ms = incoming.duration_ms;
+    }
+    if !incoming.output_tail.is_empty() {
+        existing.output_tail = incoming.output_tail;
     }
 }
 

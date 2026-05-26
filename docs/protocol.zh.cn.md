@@ -27,13 +27,14 @@ Socket 连接后，当前 CLI 发送：
 - `client.hello`：标识 `flyflor-cli`、package version 和 `ratatui` capability。
 - `history.list`：请求最近 history，后续可按 `contextForkId` 限定。
 - `task.list`：请求 task/todo state。
+- `capability.catalog.get`：请求 kernel 当前可见 capability/tool surface。
 - `gateway.status.get`：请求 model/provider/context-window status。
 - `fork.memory.get`：请求最近 fork memory 和 `brain.db` display fields。
 - `event.subscribe`：只订阅 CLI 使用的已知安全 runtime events。
 
 当前 CLI 在 transport connection 和 `client.hello` 发送路径成功后，就把 socket 标记为 connected。未来可以加入 `server.hello` parser，但 `server.hello` 应继续作为 handshake metadata，而不是权威业务状态。
 
-当前缺口：kernel 暴露 `capability.catalog.get` 和 `capability.catalog.snapshot`，但 CLI startup 还没有发送 `capability.catalog.get`。
+kernel 暴露 `capability.catalog.get` 和 `capability.catalog.snapshot`；CLI startup 现在会请求 catalog。非 YOLO 流程下的普通 per-turn approval 通过 `/approve` 暴露，只给下一次 `gateway.message.send` 携带 kernel-shaped `context.toolApprovals`。
 
 ## Subscriptions
 
@@ -46,6 +47,7 @@ Socket 连接后，当前 CLI 发送：
 UI 可以发送这些 socket commands：
 
 - `gateway.message.send`：普通用户消息或 ASK continuation answer。
+- `gateway.message.interrupt`：按 public message id 终断 active turn。
 - `history.list`：history refresh，可按 active context fork 限定范围。
 - `task.list`：todo/task refresh。
 - `gateway.status.get`：status refresh。
@@ -54,9 +56,13 @@ UI 可以发送这些 socket commands：
 - `fork.create`：基于结构化 turn anchor 创建 context fork。
 - `execution.job.detail.get`：请求 execution job detail snapshots 用于展示。
 
-`gateway.message.send` 包含 conversation、thread、user identity、可选 `context.contextForkId`、可选 continuation metadata，以及 TUI mode metadata：`act`、`plan` 或带 `yolo: true` 的 `act`。
+`gateway.message.send` 包含 conversation、thread、user identity、可选 `context.contextForkId`、可选 continuation metadata、可选单轮 `context.toolApprovals`，以及 TUI mode metadata：`act`、`plan` 或带 `yolo: true` 的 `act`。
 
-未来 approval closure 应提交 kernel-shaped `context.toolApprovals.mcpToolCalls` 和 `context.toolApprovals.userToolCalls`。CLI 不得本地执行已批准工具。
+`/approve` 只为下一次发送提交 `context.toolApprovals.mcpToolCalls=true` 和 `context.toolApprovals.userToolCalls=true`。YOLO 也会提交这些 approvals，但它额外携带高权限 metadata。CLI 不得本地执行已批准工具。
+
+## Localization
+
+TUI 文案从 JSON catalog 读取。默认文件位于 `i18n/zh-CN.json` 和 `i18n/en-US.json`。设置 `FLYFLOR_LANG=en` 可切换英文，设置 `FLYFLOR_I18N_DIR=/path/to/catalogs` 可加载 `<lang>.json`，或设置 `FLYFLOR_I18N_FILE=/path/to/custom.json` 直接覆盖 catalog。
 
 ## Snapshot Parsing
 

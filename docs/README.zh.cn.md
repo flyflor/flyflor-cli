@@ -24,8 +24,8 @@
 ## 当前对齐说明
 
 - Kernel socket 文档用 `ws://127.0.0.1:8788/ws` 作为本地 smoke 示例；CLI 默认值仍是 `ws://127.0.0.1:8787/ws`，除非设置 `FLYFLOR_WS_URL`。
-- Kernel 暴露 `server.hello` 和 `capability.catalog.get`；当前 CLI startup 还没有请求 `capability.catalog.get`。
-- Kernel context input 支持 `toolApprovals.mcpToolCalls` 和 `toolApprovals.userToolCalls`；CLI 当前提供 YOLO mode 与 tool/run 可见性，普通 per-turn approval UX 仍是后续任务。
+- Kernel 暴露 `server.hello` 和 `capability.catalog.get`；CLI startup 会请求 visible capability catalog。
+- Kernel context input 支持 `toolApprovals.mcpToolCalls` 和 `toolApprovals.userToolCalls`；CLI 通过 `/approve` 提供非 YOLO 的单轮 approval，同时保留 YOLO mode 与 tool/run 可见性。
 
 ## 同步规则
 

@@ -66,7 +66,9 @@ Subagent events are merged into a batch/child tree. Loose child events are attac
 
 Tool events and execution-job snapshots make the Executive exoskeleton visible. The CLI can show tool start/progress/success/failure, MCP tool execution, loop pause/resume, and budget exhaustion.
 
-Current gap: normal per-turn approval for kernel `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls` is not yet closed. YOLO mode is a local high-privilege interaction mode marker sent as metadata; it is not a replacement for the full approval UX.
+Normal per-turn approval for kernel `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls` is closed through `/approve`. It marks only the next send and then clears. YOLO mode remains a separate local high-privilege interaction marker sent as metadata.
+
+While a turn is active, the footer shows an animated Working line. Pressing Esc once arms interruption; pressing Esc again within the interrupt window sends `gateway.message.interrupt` for the pending public message id.
 
 ## Status Model
 

@@ -3,9 +3,12 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::tui::subagent::state::{
-    ModelAllocation, SubagentAskPause, SubagentChild, SubagentProcess, SubagentStatus,
-    SubagentToolCall, SubagentTree,
+use crate::tui::{
+    i18n::{CopyKey, text},
+    subagent::state::{
+        ModelAllocation, SubagentAskPause, SubagentChild, SubagentProcess, SubagentStatus,
+        SubagentToolCall, SubagentTree,
+    },
 };
 
 pub fn subagent_child_count(tree: &SubagentTree) -> usize {
@@ -45,7 +48,10 @@ pub fn child_summary_line(child: &SubagentChild, batch_name: Option<&str>) -> Li
     Line::from(vec![
         Span::styled(status_marker(&child.status), marker_style(&child.status)),
         Span::raw(" "),
-        Span::styled("Task", Style::default().fg(Color::Rgb(126, 139, 170))),
+        Span::styled(
+            text(CopyKey::Task),
+            Style::default().fg(Color::Rgb(126, 139, 170)),
+        ),
         Span::raw(" "),
         Span::styled(
             truncate(task, 72),
@@ -60,11 +66,19 @@ pub fn child_summary_line(child: &SubagentChild, batch_name: Option<&str>) -> Li
         Span::raw(" "),
         Span::styled(child.status.as_str(), marker_style(&child.status)),
         Span::styled(
-            if child.limited { " · partial" } else { "" },
+            if child.limited {
+                format!(" · {}", text(CopyKey::Partial))
+            } else {
+                String::new()
+            },
             Style::default().fg(Color::Rgb(255, 204, 102)),
         ),
         Span::styled(
-            format!(" · tools {tool_count} · proc {process_count}"),
+            format!(
+                " · {} {tool_count} · {} {process_count}",
+                text(CopyKey::Tools),
+                text(CopyKey::Proc)
+            ),
             Style::default().fg(Color::Rgb(126, 139, 170)),
         ),
     ])
@@ -78,7 +92,7 @@ pub fn child_detail_lines(
     let mut lines = Vec::new();
     if let Some(batch_name) = batch_name {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}batch ")),
+            Span::raw(format!("{indent}{} ", text(CopyKey::Batch))),
             Span::styled(
                 truncate(batch_name, 80),
                 Style::default().fg(Color::Rgb(170, 180, 205)),
@@ -86,7 +100,7 @@ pub fn child_detail_lines(
         ]));
     }
     lines.push(Line::from(vec![
-        Span::raw(format!("{indent}id ")),
+        Span::raw(format!("{indent}{} ", text(CopyKey::Id))),
         Span::styled(
             child.id.clone(),
             Style::default().fg(Color::Rgb(126, 139, 170)),
@@ -94,7 +108,7 @@ pub fn child_detail_lines(
     ]));
     if let Some(task) = &child.task {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}Task ")),
+            Span::raw(format!("{indent}{} ", text(CopyKey::Task))),
             Span::styled(
                 truncate(task, 120),
                 Style::default().fg(Color::Rgb(230, 236, 255)),
@@ -106,7 +120,7 @@ pub fn child_detail_lines(
     }
     if child.limited || child.suppressed_ask_required {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}partial ")),
+            Span::raw(format!("{indent}{} ", text(CopyKey::Partial))),
             Span::styled(
                 truncate(
                     child.limit_reason.as_deref().unwrap_or("partial-result"),
@@ -116,9 +130,9 @@ pub fn child_detail_lines(
             ),
             Span::styled(
                 if child.suppressed_ask_required {
-                    " · ASK suppressed"
+                    format!(" · {}", text(CopyKey::AskSuppressed))
                 } else {
-                    ""
+                    String::new()
                 },
                 Style::default().fg(Color::Rgb(170, 180, 205)),
             ),
@@ -126,7 +140,7 @@ pub fn child_detail_lines(
     }
     if !child.allowed_tools.is_empty() {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}allowed tools ")),
+            Span::raw(format!("{indent}{} ", text(CopyKey::AllowedTools))),
             Span::styled(
                 truncate(&child.allowed_tools.join(", "), 120),
                 Style::default().fg(Color::Rgb(170, 180, 205)),
@@ -144,7 +158,7 @@ pub fn child_detail_lines(
     }
     if let Some(crystal) = &child.crystal {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}crystal ")),
+            Span::raw(format!("{indent}{} ", text(CopyKey::Crystal))),
             Span::styled(
                 truncate(crystal, 120),
                 Style::default().fg(Color::Rgb(202, 188, 255)),
@@ -162,7 +176,7 @@ pub fn model_lines(model: &ModelAllocation, indent: &str) -> Vec<Line<'static>> 
         (None, None) => model.id.clone(),
     };
     let mut lines = vec![Line::from(vec![
-        Span::raw(format!("{indent}model ")),
+        Span::raw(format!("{indent}{} ", text(CopyKey::Model))),
         Span::styled(
             truncate(&model_name, 80),
             Style::default().fg(Color::Rgb(230, 236, 255)),
@@ -172,7 +186,7 @@ pub fn model_lines(model: &ModelAllocation, indent: &str) -> Vec<Line<'static>> 
             model
                 .scope
                 .clone()
-                .unwrap_or_else(|| "selected".to_string()),
+                .unwrap_or_else(|| text(CopyKey::Selected).to_string()),
             Style::default().fg(Color::Rgb(126, 139, 170)),
         ),
     ])];
@@ -215,9 +229,26 @@ fn tool_lines(call: &SubagentToolCall, indent: &str) -> Vec<Line<'static>> {
     .next();
     if let Some(detail) = detail {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}  result ")),
+            Span::raw(format!("{indent}  {} ", text(CopyKey::Result))),
             Span::styled(
                 truncate(detail, 120),
+                Style::default().fg(Color::Rgb(170, 180, 205)),
+            ),
+        ]));
+    }
+    for tail in call
+        .output_tail
+        .iter()
+        .rev()
+        .take(3)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
+        lines.push(Line::from(vec![
+            Span::raw(format!("{indent}  > ")),
+            Span::styled(
+                truncate(tail, 120),
                 Style::default().fg(Color::Rgb(170, 180, 205)),
             ),
         ]));
@@ -227,7 +258,7 @@ fn tool_lines(call: &SubagentToolCall, indent: &str) -> Vec<Line<'static>> {
     }
     if let Some(duration_ms) = call.duration_ms {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}  duration ")),
+            Span::raw(format!("{indent}  {} ", text(CopyKey::Duration))),
             Span::styled(
                 format!("{duration_ms}ms"),
                 Style::default().fg(Color::Rgb(126, 139, 170)),
@@ -247,7 +278,7 @@ fn process_lines(process: &SubagentProcess, indent: &str) -> Vec<Line<'static>> 
         .or_else(|| process.output_path.clone())
         .unwrap_or_else(|| process.id.clone());
     let mut lines = vec![Line::from(vec![
-        Span::raw(format!("{indent}process ")),
+        Span::raw(format!("{indent}{} ", text(CopyKey::Processes))),
         Span::styled(
             truncate(&title, 90),
             Style::default().fg(Color::Rgb(230, 236, 255)),
@@ -265,9 +296,26 @@ fn process_lines(process: &SubagentProcess, indent: &str) -> Vec<Line<'static>> 
     .next();
     if let Some(detail) = detail {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}  result ")),
+            Span::raw(format!("{indent}  {} ", text(CopyKey::Result))),
             Span::styled(
                 truncate(detail, 120),
+                Style::default().fg(Color::Rgb(170, 180, 205)),
+            ),
+        ]));
+    }
+    for tail in process
+        .output_tail
+        .iter()
+        .rev()
+        .take(3)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+    {
+        lines.push(Line::from(vec![
+            Span::raw(format!("{indent}  > ")),
+            Span::styled(
+                truncate(tail, 120),
                 Style::default().fg(Color::Rgb(170, 180, 205)),
             ),
         ]));
@@ -299,7 +347,7 @@ fn ask_lines(ask: &SubagentAskPause, indent: &str) -> Vec<Line<'static>> {
     }
     if let Some(crystal) = &ask.crystal_candidate {
         lines.push(Line::from(vec![
-            Span::raw(format!("{indent}  crystal ")),
+            Span::raw(format!("{indent}  {} ", text(CopyKey::Crystal))),
             Span::styled(
                 truncate(crystal, 120),
                 Style::default().fg(Color::Rgb(202, 188, 255)),
@@ -386,7 +434,7 @@ fn canonical_tool_name(server: Option<&str>, name: &str) -> String {
 
 fn error_line(indent: &str, error: &str) -> Line<'static> {
     Line::from(vec![
-        Span::raw(format!("{indent}  error ")),
+        Span::raw(format!("{indent}  {} ", text(CopyKey::Error))),
         Span::styled(
             truncate(error, 120),
             Style::default().fg(Color::Rgb(255, 105, 130)),
@@ -453,11 +501,11 @@ mod tests {
             .join("\n");
 
         assert_eq!(subagent_child_count(&tree), 1);
-        assert!(summary.contains("Task Pick an option"));
+        assert!(summary.contains("任务 Pick an option"));
         assert!(summary.contains("needs_user"));
-        assert!(detail.contains("allowed tools read"));
+        assert!(detail.contains("可用工具 read"));
         assert!(detail.contains("Read"));
-        assert!(!summary.contains("allowed tools read"));
+        assert!(!summary.contains("可用工具 read"));
     }
 
     #[test]
@@ -495,9 +543,9 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(summary.contains("partial"));
+        assert!(summary.contains("部分结果"));
         assert!(detail.contains("tool-budget-exhausted"));
-        assert!(detail.contains("ASK suppressed"));
+        assert!(detail.contains("ASK 已抑制"));
     }
 
     #[test]
@@ -544,7 +592,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(summary.contains("tools 1"));
+        assert!(summary.contains("工具 1"));
         assert!(detail.contains("workspace/read src/tui/subagent/parser.rs"));
         assert!(!detail.contains("tool · unknown"));
         assert!(!detail.contains("unknown"));

@@ -11,6 +11,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::{DEFAULT_WS_URL, Theme};
 
+pub const WORKING_SHIMMER_PHASES: usize = 192;
+
 pub fn ws_url() -> String {
     env::var("FLYFLOR_WS_URL").unwrap_or_else(|_| DEFAULT_WS_URL.to_string())
 }
@@ -24,7 +26,7 @@ pub fn top_bar_title_for_url(url: &str) -> String {
 }
 
 pub fn working_light_phase(now_millis: u64) -> usize {
-    ((now_millis / 120) % 48) as usize
+    ((now_millis / 35) % WORKING_SHIMMER_PHASES as u64) as usize
 }
 
 pub fn working_light_line(width: usize, phase: usize, theme: &Theme) -> Line<'static> {
@@ -45,9 +47,16 @@ pub fn working_light_line(width: usize, phase: usize, theme: &Theme) -> Line<'st
     )
 }
 
-pub fn working_shimmer_style(index: usize, phase: usize, theme: &Theme) -> Style {
-    let colors = [theme.pink, theme.purple, theme.blue, theme.purple];
-    Style::default().fg(colors[(index + phase) % colors.len()])
+pub fn working_shimmer_style(index: usize, phase: usize, _theme: &Theme) -> Style {
+    let position =
+        ((index * 7 + phase) % WORKING_SHIMMER_PHASES) as f64 / WORKING_SHIMMER_PHASES as f64;
+    let wave = ((position * std::f64::consts::TAU).sin() + 1.0) * 0.5;
+    let eased = wave * wave * (3.0 - 2.0 * wave);
+    Style::default().fg(interpolate_color(
+        Color::Rgb(92, 96, 106),
+        Color::Rgb(242, 244, 248),
+        eased,
+    ))
 }
 
 fn interpolated_gradient_color(colors: &[Color], position: usize, width: usize) -> Color {

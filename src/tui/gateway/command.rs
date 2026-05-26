@@ -56,6 +56,11 @@ impl GatewayCommandBuilder {
             .build("gateway.status.get", sequence, json!({}))
     }
 
+    pub fn capability_catalog_get(&self, sequence: u64) -> GatewayEnvelope {
+        self.factory
+            .build("capability.catalog.get", sequence, json!({}))
+    }
+
     pub fn fork_memory_get(&self, sequence: u64, limit: u64) -> GatewayEnvelope {
         self.factory
             .build("fork.memory.get", sequence, json!({ "limit": limit }))
@@ -80,6 +85,35 @@ impl GatewayCommandBuilder {
             Some(format!("flyflor-cli-turn-{sequence}")),
             payload.into_value(),
         )
+    }
+
+    pub fn gateway_message_interrupt(&self, sequence: u64, message_id: &str) -> GatewayEnvelope {
+        self.factory.build(
+            "gateway.message.interrupt",
+            sequence,
+            json!({ "messageId": message_id }),
+        )
+    }
+
+    pub fn gateway_message_undo(
+        &self,
+        sequence: u64,
+        anchor_event_id: Option<&str>,
+        anchor_message_id: Option<&str>,
+        turn_index: usize,
+    ) -> GatewayEnvelope {
+        let mut payload = json!({
+            "reason": "cli.undo",
+            "turnIndex": turn_index
+        });
+        if let Some(anchor_event_id) = anchor_event_id {
+            payload["anchorEventId"] = json!(anchor_event_id);
+        }
+        if let Some(anchor_message_id) = anchor_message_id {
+            payload["anchorMessageId"] = json!(anchor_message_id);
+        }
+        self.factory
+            .build("gateway.message.undo", sequence, payload)
     }
 
     pub fn task_plan_decide(
@@ -117,6 +151,7 @@ pub struct GatewayMessagePayload {
     text: String,
     context_fork_id: Option<String>,
     metadata: Option<Value>,
+    tool_approvals: Option<GatewayToolApprovals>,
     mode: &'static str,
     yolo: bool,
     conversation_key: String,
@@ -132,6 +167,7 @@ impl GatewayMessagePayload {
             text: text.into(),
             context_fork_id: None,
             metadata: None,
+            tool_approvals: None,
             mode: "act",
             yolo: false,
             conversation_key: "flyflor-cli".to_string(),
@@ -148,6 +184,14 @@ impl GatewayMessagePayload {
 
     pub fn metadata(mut self, metadata: Value) -> Self {
         self.metadata = Some(metadata);
+        self
+    }
+
+    pub fn tool_approvals(mut self, mcp_tool_calls: bool, user_tool_calls: bool) -> Self {
+        self.tool_approvals = Some(GatewayToolApprovals {
+            mcp_tool_calls,
+            user_tool_calls,
+        });
         self
     }
 
@@ -183,8 +227,21 @@ impl GatewayMessagePayload {
                 "displayName": self.display_name
             }
         });
-        if let Some(context_fork_id) = self.context_fork_id {
-            payload["context"] = json!({ "contextForkId": context_fork_id });
+        if self.context_fork_id.is_some() || self.tool_approvals.is_some() {
+            let mut context = Map::new();
+            if let Some(context_fork_id) = self.context_fork_id {
+                context.insert("contextForkId".to_string(), json!(context_fork_id));
+            }
+            if let Some(approvals) = self.tool_approvals {
+                context.insert(
+                    "toolApprovals".to_string(),
+                    json!({
+                        "mcpToolCalls": approvals.mcp_tool_calls,
+                        "userToolCalls": approvals.user_tool_calls
+                    }),
+                );
+            }
+            payload["context"] = Value::Object(context);
         }
         if let Some(metadata) = self.metadata {
             payload["metadata"] = metadata;
@@ -192,6 +249,12 @@ impl GatewayMessagePayload {
         apply_message_mode(&mut payload, self.mode, self.yolo);
         payload
     }
+}
+
+#[derive(Clone, Debug)]
+struct GatewayToolApprovals {
+    mcp_tool_calls: bool,
+    user_tool_calls: bool,
 }
 
 fn apply_message_mode(payload: &mut Value, mode: &'static str, yolo: bool) {
@@ -264,6 +327,30 @@ mod tests {
                 .get("payload")
                 .and_then(|payload| payload.get("classes"))
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn builds_gateway_message_undo_envelope() {
+        let envelope = builder()
+            .gateway_message_undo(7, Some("event-1"), Some("message-1"), 3)
+            .into_value();
+
+        assert_eq!(
+            envelope.get("type").and_then(Value::as_str),
+            Some("gateway.message.undo")
+        );
+        assert_eq!(payload_string(&envelope, "anchorEventId"), Some("event-1"));
+        assert_eq!(
+            payload_string(&envelope, "anchorMessageId"),
+            Some("message-1")
+        );
+        assert_eq!(
+            envelope
+                .get("payload")
+                .and_then(|payload| payload.get("turnIndex"))
+                .and_then(Value::as_u64),
+            Some(3)
         );
     }
 

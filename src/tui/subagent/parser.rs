@@ -274,6 +274,7 @@ fn tool_call_from_value(value: &Value) -> SubagentToolCall {
         detail: first_string(value, &["summary", "command", "error"])
             .or_else(|| first_string_nested(value, &[&["state", "title"]]))
             .or(result_preview),
+        output_tail: output_tail_lines(value),
         processes: arrays_at(value, &["processes", "subprocesses"])
             .into_iter()
             .flat_map(|processes| processes.iter())
@@ -493,7 +494,57 @@ fn process_from_value(value: &Value, status: SubagentStatus) -> SubagentProcess 
             ],
         ),
         duration_ms: value_u64(value, "durationMs").or_else(|| value_u64(value, "duration_ms")),
+        output_tail: output_tail_lines(value),
     }
+}
+
+fn output_tail_lines(value: &Value) -> Vec<String> {
+    if let Some(lines) = value
+        .get("resultTailLines")
+        .or_else(|| value.get("outputTail"))
+        .or_else(|| value.get("tailLines"))
+        .and_then(Value::as_array)
+    {
+        return lines
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim_end)
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.chars().take(240).collect::<String>())
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+    }
+
+    let text = first_string_nested(
+        value,
+        &[
+            &["outputPreview"],
+            &["output"],
+            &["stdout"],
+            &["stderr"],
+            &["result", "raw", "stdout"],
+            &["result", "raw", "stderr"],
+        ],
+    );
+    text.map(|text| {
+        text.lines()
+            .map(str::trim_end)
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.chars().take(240).collect::<String>())
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
+    })
+    .unwrap_or_default()
 }
 
 fn ask_from_value(value: &Value) -> Option<SubagentAskPause> {

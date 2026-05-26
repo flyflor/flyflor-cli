@@ -10,7 +10,7 @@ CLI 负责：
 - 接收 keyboard、paste、mouse、selection、copy 和 slash-command input。
 - 通过 `flyflor.ws.v1` WebSocket envelopes 向 kernel 发送用户意图。
 - 渲染 kernel 返回的 snapshots 和 events。
-- 为 ASK、plan decision、fork creation 和未来 approval UX 发送结构化用户决策。
+- 为 ASK、plan decision、fork creation 和单轮 tool approval 发送结构化用户决策。
 - 保存 scroll offsets、menus、focused right-panel section、pending turn placeholders 和 copy selections 等本地展示状态。
 
 Flyflor kernel 负责：
@@ -34,7 +34,7 @@ CLI 不实现 Flyflor 哲学层，但应该一致地渲染它们：
 - ASK 显示为 continuation rows 和 menus。
 - Hot memory 与 fork memory 显示为 context-window 和 fork/memory panels。
 - `brain.db` 只显示为 kernel 提供的 labels 或 history/fork snapshots。
-- Executive tools 显示为 capability snapshots、tool events、execution jobs、loop pauses 和未来 approval prompts。
+- Executive tools 显示为 capability snapshots、tool events、execution jobs、loop pauses 和显式单轮 approval state。
 
 ## 当前源码布局
 

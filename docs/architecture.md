@@ -10,7 +10,7 @@ The CLI is responsible for:
 - Accepting keyboard, paste, mouse, selection, copy, and slash-command input.
 - Sending user intent to the kernel through `flyflor.ws.v1` WebSocket envelopes.
 - Rendering snapshots and events returned by the kernel.
-- Sending structured user decisions for ASK, plan decisions, fork creation, and future approval UX.
+- Sending structured user decisions for ASK, plan decisions, fork creation, and one-turn tool approval.
 - Keeping local presentation state such as scroll offsets, menus, focused right-panel section, pending turn placeholders, and copy selections.
 
 The Flyflor kernel is responsible for:
@@ -34,7 +34,7 @@ The CLI does not implement Flyflor philosophy layers, but it should render them 
 - ASK appears as continuation rows and menus.
 - Hot memory and fork memory appear as context-window and fork/memory panels.
 - `brain.db` appears only as kernel-provided labels or history/fork snapshots.
-- Executive tools appear as capability snapshots, tool events, execution jobs, loop pauses, and future approval prompts.
+- Executive tools appear as capability snapshots, tool events, execution jobs, loop pauses, and explicit one-turn approval state.
 
 ## Current Source Layout
 

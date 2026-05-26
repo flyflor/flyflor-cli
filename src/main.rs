@@ -44,14 +44,17 @@ mod shared;
 mod tui;
 
 use shared::{
-    center_text, draw_separator, in_rect, metric_line, top_bar_title, working_light_line,
-    working_light_phase, working_shimmer_style, ws_url,
+    WORKING_SHIMMER_PHASES, center_text, draw_separator, in_rect, metric_line, top_bar_title,
+    working_light_line, working_light_phase, working_shimmer_style, ws_url,
 };
 use tui::ask::{
     command::AskAnswer,
     parser::{ask_menu_from_turn_metadata, continuation_from_metadata, continuation_from_value},
     state::AskMenu,
     view::visible_item_count,
+};
+use tui::execution::{
+    state::ExecutionRowStatus, view::execution_context_rows as build_execution_context_rows,
 };
 use tui::fork::{
     command::{ForkCreateSource, fork_create_payload},
@@ -63,6 +66,7 @@ use tui::gateway::{
     command::{GatewayCommandBuilder, GatewayMessagePayload},
     envelope::EnvelopeFactory,
 };
+use tui::i18n::{CopyKey, text as ui_text, text_key as ui_text_key};
 use tui::plan::{
     menu::default_plan_menu,
     state::{PlanAction, PlanMenu, PlanPendingAction},
@@ -76,6 +80,8 @@ const CLIPBOARD_INIT_TIMEOUT: Duration = Duration::from_millis(500);
 const OSC52_MAX_BYTES: usize = 100 * 1024;
 const DEFAULT_WS_URL: &str = "ws://127.0.0.1:8787/ws";
 const DEFAULT_CONTEXT_BAR_WIDTH: usize = 32;
+const ESC_INTERRUPT_WINDOW_MS: u64 = 1_200;
+const EXO_ACTIVITY_FRAMES: [&str; 8] = ["⣏⣹", "⣇⣸", "⣧⣤", "⣿⣴", "⣿⣿", "⣿⡷", "⣿⡇", "⡇⡇"];
 
 fn main() -> io::Result<()> {
     install_panic_logger();
@@ -155,6 +161,12 @@ fn run(mut terminal: DefaultTerminal, terminal_mode: TerminalMode) -> io::Result
 }
 
 fn handle_key(app: &mut App, key: KeyEvent) {
+    if !matches!(key.code, KeyCode::Esc) {
+        app.esc_interrupt_armed_at_ms = None;
+        if matches!(app.composer_notice, Some(ComposerNotice::InterruptHint)) {
+            app.composer_notice = None;
+        }
+    }
     match key.code {
         KeyCode::Char('c')
             if key.modifiers.contains(KeyModifiers::CONTROL)
@@ -173,7 +185,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::F(2) => app.dev_mode = !app.dev_mode,
         KeyCode::BackTab => app.toggle_interaction_mode(),
-        KeyCode::Esc => app.close_menus(),
+        KeyCode::Esc => app.handle_escape(),
         KeyCode::Tab if app.handle_menu_confirm_or_next(false) => {}
         KeyCode::Enter
             if key.modifiers.contains(KeyModifiers::ALT)
@@ -491,74 +503,86 @@ fn slash_commands() -> Vec<SlashCommand> {
     vec![
         SlashCommand {
             name: "exit",
-            title: "退出 TUI",
-            detail: "关闭 FlyFlor CLI",
+            title: ui_text_key("slash.exit.title"),
+            detail: ui_text_key("slash.exit.detail"),
             kind: SlashCommandKind::Exit,
         },
         SlashCommand {
             name: "help",
-            title: "命令帮助",
-            detail: "显示可用 slash 命令",
+            title: ui_text_key("slash.help.title"),
+            detail: ui_text_key("slash.help.detail"),
             kind: SlashCommandKind::Help,
         },
         SlashCommand {
             name: "yolo",
-            title: "切换 YOLO",
-            detail: "危险：外模式会绕过沙箱/高权限执行",
+            title: ui_text_key("slash.yolo.title"),
+            detail: ui_text_key("slash.yolo.detail"),
             kind: SlashCommandKind::Yolo,
         },
         SlashCommand {
+            name: "approve",
+            title: ui_text_key("slash.approve.title"),
+            detail: ui_text_key("slash.approve.detail"),
+            kind: SlashCommandKind::Approve,
+        },
+        SlashCommand {
+            name: "undo",
+            title: ui_text_key("slash.undo.title"),
+            detail: ui_text_key("slash.undo.detail"),
+            kind: SlashCommandKind::Undo,
+        },
+        SlashCommand {
             name: "model",
-            title: "模型状态",
-            detail: "只读显示 provider / 上下文窗口 / 最大输出",
+            title: ui_text_key("slash.model.title"),
+            detail: ui_text_key("slash.model.detail"),
             kind: SlashCommandKind::Model,
         },
         SlashCommand {
             name: "status",
-            title: "刷新状态",
-            detail: "请求 gateway.status.get",
+            title: ui_text_key("slash.status.title"),
+            detail: ui_text_key("slash.status.detail"),
             kind: SlashCommandKind::Status,
         },
         SlashCommand {
             name: "history",
-            title: "刷新历史",
-            detail: "请求 history.list",
+            title: ui_text_key("slash.history.title"),
+            detail: ui_text_key("slash.history.detail"),
             kind: SlashCommandKind::History,
         },
         SlashCommand {
             name: "fork",
-            title: "新建 fork",
-            detail: "从最近回答创建 context fork",
+            title: ui_text_key("slash.fork.title"),
+            detail: ui_text_key("slash.fork.detail"),
             kind: SlashCommandKind::Fork,
         },
         SlashCommand {
             name: "ask",
-            title: "回答 ASK",
-            detail: "打开待回答 ASK 选项菜单",
+            title: ui_text_key("slash.ask.title"),
+            detail: ui_text_key("slash.ask.detail"),
             kind: SlashCommandKind::Ask,
         },
         SlashCommand {
             name: "blackboard",
-            title: "Blackboard",
-            detail: "查看 blackboard 摘要",
+            title: ui_text_key("slash.blackboard.title"),
+            detail: ui_text_key("slash.blackboard.detail"),
             kind: SlashCommandKind::Blackboard,
         },
         SlashCommand {
             name: "todo",
-            title: "刷新 TODO",
-            detail: "请求 task.list",
+            title: ui_text_key("slash.todo.title"),
+            detail: ui_text_key("slash.todo.detail"),
             kind: SlashCommandKind::Todo,
         },
         SlashCommand {
             name: "memory",
-            title: "回忆摘要",
-            detail: "查看 recall / memory 摘要",
+            title: ui_text_key("slash.memory.title"),
+            detail: ui_text_key("slash.memory.detail"),
             kind: SlashCommandKind::Memory,
         },
         SlashCommand {
             name: "recall",
-            title: "回忆摘要",
-            detail: "同 /memory",
+            title: ui_text_key("slash.recall.title"),
+            detail: ui_text_key("slash.recall.detail"),
             kind: SlashCommandKind::Memory,
         },
     ]
@@ -569,8 +593,8 @@ fn slash_commands_for_fork(in_fork: bool) -> Vec<SlashCommand> {
     if in_fork {
         commands.push(SlashCommand {
             name: "exit fork",
-            title: "退出 fork",
-            detail: "回到父级/root 对话",
+            title: ui_text_key("slash.exitFork.title"),
+            detail: ui_text_key("slash.exitFork.detail"),
             kind: SlashCommandKind::ExitFork,
         });
     }
@@ -779,6 +803,44 @@ fn render_plan_menu_lines(menu: &PlanMenu, theme: &Theme) -> Vec<Line<'static>> 
     lines
 }
 
+fn render_undo_menu_lines(menu: &UndoMenu, theme: &Theme) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::styled(
+        ui_text_key("undo.menu.title"),
+        Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
+    )];
+    if menu.items.is_empty() {
+        lines.push(Line::styled(
+            ui_text_key("undo.menu.empty"),
+            Style::default().fg(theme.muted),
+        ));
+        return lines;
+    }
+    for (index, item) in menu.items.iter().take(9).enumerate() {
+        let selected = index == menu.selected;
+        lines.push(Line::from(vec![
+            Span::styled(
+                if selected { "› " } else { "  " },
+                Style::default().fg(if selected { theme.pink } else { theme.muted }),
+            ),
+            Span::styled(
+                format!("{}. ", index + 1),
+                Style::default().fg(if selected { theme.text } else { theme.muted }),
+            ),
+            Span::styled(
+                item.label.clone(),
+                Style::default()
+                    .fg(if selected { theme.text } else { theme.muted })
+                    .add_modifier(if selected {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
+            ),
+        ]));
+    }
+    lines
+}
+
 fn draw_scrollbar(frame: &mut Frame, scrollbar: ScrollbarGeometry, theme: &Theme) {
     if scrollbar.track_height == 0 {
         return;
@@ -960,8 +1022,11 @@ struct App {
     root_turns: Vec<Turn>,
     fork_stack: Vec<(ActiveForkSession, Vec<Turn>)>,
     pending_turns: HashMap<String, usize>,
+    working_started_at_ms: Option<u64>,
+    esc_interrupt_armed_at_ms: Option<u64>,
     interaction_mode: InteractionMode,
     yolo_mode: bool,
+    tool_approval_next_turn: bool,
     task_todos: Option<Vec<TodoItem>>,
     run_timeline: RunTimeline,
     model_context_window_tokens: Option<usize>,
@@ -977,6 +1042,7 @@ struct App {
     command_palette: Option<CommandPalette>,
     ask_menu: Option<AskMenu>,
     plan_menu: Option<PlanMenu>,
+    undo_menu: Option<UndoMenu>,
     pending_plan_action: Option<PlanPendingAction>,
     pending_fork_create: bool,
 }
@@ -1046,6 +1112,8 @@ enum SlashCommandKind {
     Exit,
     Help,
     Yolo,
+    Approve,
+    Undo,
     Model,
     Status,
     History,
@@ -1057,12 +1125,26 @@ enum SlashCommandKind {
     ExitFork,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct SlashCommand {
     name: &'static str,
-    title: &'static str,
-    detail: &'static str,
+    title: String,
+    detail: String,
     kind: SlashCommandKind,
+}
+
+#[derive(Clone)]
+struct UndoMenu {
+    selected: usize,
+    items: Vec<UndoMenuItem>,
+}
+
+#[derive(Clone)]
+struct UndoMenuItem {
+    event_id: Option<String>,
+    message_id: Option<String>,
+    turn_index: usize,
+    label: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1095,6 +1177,7 @@ struct RightPanelSection {
 #[derive(Clone, Copy)]
 enum ComposerNotice {
     ExitHint,
+    InterruptHint,
 }
 
 #[derive(Clone, Copy)]
@@ -1154,12 +1237,15 @@ impl App {
             root_turns: Vec::new(),
             fork_stack: Vec::new(),
             pending_turns: HashMap::new(),
+            working_started_at_ms: None,
+            esc_interrupt_armed_at_ms: None,
             interaction_mode: if demo_mode {
                 InteractionMode::Yolo
             } else {
                 InteractionMode::Act
             },
             yolo_mode: demo_mode,
+            tool_approval_next_turn: false,
             task_todos: if demo_mode {
                 Some(mock.todos.clone())
             } else {
@@ -1179,6 +1265,7 @@ impl App {
             command_palette: None,
             ask_menu: None,
             plan_menu: None,
+            undo_menu: None,
             pending_plan_action: None,
             pending_fork_create: false,
         }
@@ -1345,6 +1432,7 @@ impl App {
                 });
                 self.turns.clear();
                 self.pending_turns.clear();
+                self.clear_working_state_if_idle();
                 self.chat_render_key = None;
                 self.left.initial_scroll_applied = false;
                 self.left.stick_to_bottom = true;
@@ -1371,6 +1459,7 @@ impl App {
                         turn.footer = "flyflor · turn error".to_string();
                         self.left.stick_to_bottom = true;
                     }
+                    self.clear_working_state_if_idle();
                 } else {
                     self.right_source.blackboard_status = format!("turn error · {message}");
                 }
@@ -1467,6 +1556,7 @@ impl App {
             }
         }
         self.left.stick_to_bottom = true;
+        self.clear_working_state_if_idle();
     }
 
     fn pending_turn_mut(&mut self, message_id: &str) -> Option<&mut Turn> {
@@ -1476,6 +1566,7 @@ impl App {
 
     fn resolve_turn_final_index(&mut self, message_id: &str) -> Option<usize> {
         if let Some(turn_index) = self.pending_turns.remove(message_id) {
+            self.clear_working_state_if_idle();
             return Some(turn_index);
         }
         if self.pending_turns.len() == 1 {
@@ -1488,6 +1579,7 @@ impl App {
                 return None;
             };
             self.pending_turns.remove(&pending_id);
+            self.clear_working_state_if_idle();
             log_event(format!(
                 "turn final message_id mismatch final={message_id} pending={pending_id}"
             ));
@@ -1502,6 +1594,48 @@ impl App {
                 .turns
                 .last()
                 .is_some_and(|turn| turn.footer.contains("streaming"))
+    }
+
+    fn mark_working_started(&mut self) {
+        if self.working_started_at_ms.is_none() {
+            self.working_started_at_ms = Some(now_millis());
+        }
+    }
+
+    fn clear_working_state_if_idle(&mut self) {
+        if self.pending_turns.is_empty() {
+            self.working_started_at_ms = None;
+            self.esc_interrupt_armed_at_ms = None;
+            if matches!(self.composer_notice, Some(ComposerNotice::InterruptHint)) {
+                self.composer_notice = None;
+            }
+        }
+    }
+
+    fn interrupt_pending_turns(&mut self) {
+        if self.pending_turns.is_empty() {
+            self.clear_working_state_if_idle();
+            return;
+        }
+        let message_ids = self.pending_turns.keys().cloned().collect::<Vec<_>>();
+        for message_id in &message_ids {
+            let _ = self.socket_tx.send(SocketCommand::InterruptMessage {
+                message_id: message_id.clone(),
+            });
+        }
+        for message_id in message_ids {
+            if let Some(turn_index) = self.pending_turns.remove(&message_id)
+                && let Some(turn) = self.turns.get_mut(turn_index)
+            {
+                if turn.answer.trim().is_empty() {
+                    turn.answer = ui_text_key("interrupt.completed");
+                }
+                turn.footer = "flyflor · interrupted".to_string();
+            }
+        }
+        self.right_source.blackboard_status = ui_text_key("interrupt.completed");
+        self.left.stick_to_bottom = true;
+        self.clear_working_state_if_idle();
     }
 
     fn fork_session_label(&self) -> String {
@@ -1521,7 +1655,13 @@ impl App {
         self.yolo_mode = self.interaction_mode.yolo();
     }
 
-    fn close_menus(&mut self) {
+    fn approve_tools_for_next_send(&mut self) -> bool {
+        let approved = self.yolo_mode || self.tool_approval_next_turn;
+        self.tool_approval_next_turn = false;
+        approved
+    }
+
+    fn close_menus(&mut self) -> bool {
         if let Some(menu) = &mut self.ask_menu {
             if menu.is_editing_other() {
                 self.input.clear();
@@ -1530,10 +1670,36 @@ impl App {
         }
         if self.ask_menu.is_some() {
             self.ask_menu = None;
-            return;
+            return true;
         }
+        if self.undo_menu.is_some() {
+            self.undo_menu = None;
+            return true;
+        }
+        let had_menu = self.command_palette.is_some() || self.plan_menu.is_some();
         self.command_palette = None;
         self.plan_menu = None;
+        had_menu
+    }
+
+    fn handle_escape(&mut self) {
+        if self.close_menus() {
+            return;
+        }
+        if !self.is_working() {
+            self.esc_interrupt_armed_at_ms = None;
+            return;
+        }
+        let now = now_millis();
+        let armed = self
+            .esc_interrupt_armed_at_ms
+            .is_some_and(|armed_at| now.saturating_sub(armed_at) <= ESC_INTERRUPT_WINDOW_MS);
+        if armed {
+            self.interrupt_pending_turns();
+        } else {
+            self.esc_interrupt_armed_at_ms = Some(now);
+            self.composer_notice = Some(ComposerNotice::InterruptHint);
+        }
     }
 
     fn input_cursor_index(&self) -> usize {
@@ -1677,6 +1843,10 @@ impl App {
             menu.selected = move_index(menu.selected, menu.items.len(), delta);
             return true;
         }
+        if let Some(menu) = &mut self.undo_menu {
+            menu.selected = move_index(menu.selected, menu.items.len(), delta);
+            return true;
+        }
         if let Some(menu) = &mut self.command_palette {
             menu.selected = move_index(menu.selected, menu.items.len(), delta);
             return true;
@@ -1701,6 +1871,13 @@ impl App {
                 self.right_source.blackboard_status = "请输入 ASK Other 回答后发送".to_string();
             }
             return true;
+        }
+        if let Some(menu) = &mut self.undo_menu {
+            let index = digit as usize - 1;
+            if index < menu.items.len() {
+                menu.selected = index;
+                return true;
+            }
         }
         false
     }
@@ -1732,6 +1909,14 @@ impl App {
             }
             return true;
         }
+        if self.undo_menu.is_some() {
+            if confirm {
+                self.confirm_undo_menu_selection();
+            } else {
+                self.move_active_menu(1);
+            }
+            return true;
+        }
         if self.command_palette.is_some() {
             if confirm {
                 self.confirm_command_palette_selection();
@@ -1750,6 +1935,9 @@ impl App {
         if let Some(menu) = &self.plan_menu {
             return Some(render_plan_menu_lines(menu, theme));
         }
+        if let Some(menu) = &self.undo_menu {
+            return Some(render_undo_menu_lines(menu, theme));
+        }
         self.command_palette
             .as_ref()
             .map(|menu| render_command_palette_lines(menu, theme))
@@ -1760,7 +1948,7 @@ impl App {
             .command_palette
             .as_ref()
             .and_then(|menu| menu.items.get(menu.selected))
-            .copied()
+            .cloned()
         else {
             return;
         };
@@ -1784,7 +1972,7 @@ impl App {
             .command_palette
             .as_ref()
             .and_then(|menu| menu.items.get(menu.selected))
-            .copied()
+            .cloned()
         else {
             let command = self.input.clone();
             self.command_palette = None;
@@ -1802,10 +1990,17 @@ impl App {
             SlashCommandKind::Exit => self.should_quit = true,
             SlashCommandKind::ExitFork => self.exit_fork_session(),
             SlashCommandKind::Help => {
-                self.right_source.blackboard_status =
-                    "命令：/help /yolo /model /status /history /fork /ask /blackboard /todo /memory · fork 中可用 /exit fork · /yolo 危险：外模式会绕过沙箱/高权限执行"
-                        .to_string();
+                self.right_source.blackboard_status = ui_text(CopyKey::HelpCommandText);
             }
+            SlashCommandKind::Approve => {
+                self.tool_approval_next_turn = !self.tool_approval_next_turn;
+                self.right_source.blackboard_status = if self.tool_approval_next_turn {
+                    ui_text(CopyKey::ApprovalEnabled)
+                } else {
+                    ui_text(CopyKey::ApprovalCancelled)
+                };
+            }
+            SlashCommandKind::Undo => self.open_undo_menu(),
             SlashCommandKind::Yolo => {
                 self.interaction_mode = if self.interaction_mode == InteractionMode::Yolo {
                     InteractionMode::Act
@@ -1898,6 +2093,64 @@ impl App {
         }
     }
 
+    fn open_undo_menu(&mut self) {
+        let Some(menu) = undo_menu_from_turns(&self.turns) else {
+            self.right_source.blackboard_status = ui_text_key("undo.empty");
+            return;
+        };
+        self.ask_menu = None;
+        self.plan_menu = None;
+        self.command_palette = None;
+        self.undo_menu = Some(menu);
+        self.right_source.blackboard_status = ui_text_key("undo.opened");
+    }
+
+    fn confirm_undo_menu_selection(&mut self) {
+        let Some(menu) = self.undo_menu.take() else {
+            return;
+        };
+        let Some(item) = menu.items.get(menu.selected).cloned() else {
+            self.right_source.blackboard_status = ui_text_key("undo.empty");
+            return;
+        };
+        let _ = self.socket_tx.send(SocketCommand::UndoMessage {
+            anchor_event_id: item.event_id.clone(),
+            anchor_message_id: item.message_id.clone(),
+            turn_index: item.turn_index,
+        });
+        self.rollback_to_before_turn(item.turn_index);
+        self.right_source.blackboard_status =
+            format!("{}: {}", ui_text_key("undo.completed"), item.label);
+    }
+
+    fn rollback_to_before_turn(&mut self, turn_index: usize) {
+        if turn_index >= self.turns.len() {
+            return;
+        }
+        self.turns.truncate(turn_index);
+        self.pending_turns.retain(|_, index| *index < turn_index);
+        self.clear_working_state_if_idle();
+        self.ask_menu = None;
+        self.plan_menu = None;
+        self.command_palette = None;
+        self.pending_plan_action = None;
+        self.pending_fork_create = false;
+        self.run_timeline = RunTimeline::new();
+        self.chat_render_key = None;
+        self.chat_context_regions.clear();
+        self.context_row_hitboxes.clear();
+        self.selection.clear();
+        self.left.stick_to_bottom = true;
+        self.active_context_fork_id = if let Some(active_fork) = &self.active_fork {
+            Some(active_fork.fork_id.clone())
+        } else {
+            self.turns
+                .iter()
+                .rev()
+                .find_map(|turn| latest_context_fork_id(&turn.metadata))
+        };
+    }
+
     fn exit_fork_session(&mut self) {
         let Some(fork) = self.active_fork.take() else {
             self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
@@ -1916,6 +2169,7 @@ impl App {
             self.right_source.blackboard_status = "已退出 fork，回到父级/root 对话".to_string();
         }
         self.pending_turns.clear();
+        self.clear_working_state_if_idle();
         self.chat_render_key = None;
         self.left.initial_scroll_applied = false;
         self.left.stick_to_bottom = true;
@@ -2073,6 +2327,8 @@ impl App {
         }
         self.pending_turns
             .insert(message_id.clone(), new_turn_index);
+        self.mark_working_started();
+        let approve_tools = self.approve_tools_for_next_send();
         if self
             .socket_tx
             .send(SocketCommand::SendMessage {
@@ -2082,6 +2338,7 @@ impl App {
                 metadata: Some(metadata),
                 mode: self.interaction_mode,
                 yolo: self.yolo_mode,
+                approve_tools,
             })
             .is_err()
         {
@@ -2377,6 +2634,8 @@ impl App {
         }
         self.pending_turns
             .insert(message_id.clone(), new_turn_index);
+        self.mark_working_started();
+        let approve_tools = self.approve_tools_for_next_send();
         if self
             .socket_tx
             .send(SocketCommand::SendMessage {
@@ -2386,6 +2645,7 @@ impl App {
                 metadata: Some(json!({ "continuation": continuation })),
                 mode: self.interaction_mode,
                 yolo: self.yolo_mode,
+                approve_tools,
             })
             .is_err()
         {
@@ -2442,6 +2702,7 @@ impl App {
             || self.command_palette.is_some()
             || self.ask_menu.is_some()
             || self.plan_menu.is_some()
+            || self.undo_menu.is_some()
     }
 
     fn finish_selection_at(&mut self, x: u16, y: u16) {
@@ -2600,6 +2861,21 @@ impl App {
         visible_line_slice(&self.right_lines, 0, height)
     }
 
+    fn metadata_for_pending_ask_answer(&self, text: &str) -> Option<Value> {
+        let continuation = self.turns.iter().rev().find_map(continuation_from_turn)?;
+        let answer = AskAnswer {
+            question_id: None,
+            choice_id: "freeform".to_string(),
+            text: text.to_string(),
+            value: Some(text.to_string()),
+            is_other: true,
+        };
+        Some(tui::ask::command::ask_message_metadata_many(
+            continuation,
+            &[answer],
+        ))
+    }
+
     fn submit_input(&mut self) {
         let text = self.input.trim().to_string();
         if let Some(mut menu) = self.ask_menu.take_if(|menu| menu.is_editing_other()) {
@@ -2659,27 +2935,31 @@ impl App {
             return;
         }
         let turn_index = self.turns.len();
+        let metadata = self.metadata_for_pending_ask_answer(&text);
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
             user: text.clone(),
             thought: None,
             answer: String::new(),
-            metadata: None,
-            context_rows: context_rows_from_metadata(&None),
+            metadata: metadata.clone(),
+            context_rows: context_rows_from_metadata(&metadata),
             pending_continuation: None,
             footer: "flyflor · sending".to_string(),
         });
         self.pending_turns.insert(message_id.clone(), turn_index);
+        self.mark_working_started();
+        let approve_tools = self.approve_tools_for_next_send();
         if self
             .socket_tx
             .send(SocketCommand::SendMessage {
                 message_id,
                 text,
                 context_fork_id: self.active_context_fork_id.clone(),
-                metadata: None,
+                metadata,
                 mode: self.interaction_mode,
                 yolo: self.yolo_mode,
+                approve_tools,
             })
             .is_err()
         {
@@ -2887,6 +3167,7 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme, phase: usize) -> Le
             turn_index,
             width,
             theme,
+            phase,
             |row| row.kind != ContextRowKind::Execution,
             &mut lines,
             &mut context_row_regions,
@@ -2899,6 +3180,7 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme, phase: usize) -> Le
                 summary: thought_summary(thought),
                 detail: thought.content.clone(),
                 expanded: thought.expanded,
+                status: ContextRowStatus::Completed,
             };
             let line_index = lines.len();
             let block_start = line_index;
@@ -2951,6 +3233,7 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme, phase: usize) -> Le
             turn_index,
             width,
             theme,
+            phase,
             |row| row.kind == ContextRowKind::Execution,
             &mut lines,
             &mut context_row_regions,
@@ -2981,6 +3264,7 @@ fn render_context_rows_for_turn(
     turn_index: usize,
     width: usize,
     theme: &Theme,
+    phase: usize,
     include: impl Fn(&ContextRow) -> bool,
     lines: &mut Vec<Line<'static>>,
     context_row_regions: &mut Vec<ContextRowRegion>,
@@ -2992,7 +3276,9 @@ fn render_context_rows_for_turn(
         }
         let line_index = lines.len();
         let block_start = line_index;
-        lines.push(render_context_row_header(row, width, theme));
+        lines.push(render_context_row_header_with_phase(
+            row, width, theme, phase,
+        ));
         context_row_regions.push(ContextRowRegion {
             turn_index,
             row_index,
@@ -3045,7 +3331,7 @@ fn chat_render_key(turns: &[Turn], width: usize, phase: usize) -> ChatRenderKey 
     ChatRenderKey {
         width,
         animation_phase: if turns_have_running_execution_rows(turns) {
-            phase % 4
+            phase % WORKING_SHIMMER_PHASES
         } else {
             0
         },
@@ -3056,11 +3342,9 @@ fn chat_render_key(turns: &[Turn], width: usize, phase: usize) -> ChatRenderKey 
 }
 
 fn turns_have_running_execution_rows(turns: &[Turn]) -> bool {
-    turns.iter().any(|turn| {
-        turn.context_rows
-            .iter()
-            .any(|row| row.kind == ContextRowKind::Execution && row_is_running(row))
-    })
+    turns
+        .iter()
+        .any(|turn| turn.context_rows.iter().any(row_is_running))
 }
 
 fn hash_turn_render_inputs(turn: &Turn) -> u64 {
@@ -3135,6 +3419,7 @@ fn render_user_block(text: &str, width: usize, theme: &Theme) -> Vec<Line<'stati
     lines
 }
 
+#[cfg(test)]
 fn render_context_row_header(row: &ContextRow, width: usize, theme: &Theme) -> Line<'static> {
     render_context_row_header_with_phase(row, width, theme, 0)
 }
@@ -3151,30 +3436,38 @@ fn render_context_row_header_with_phase(
         &format!("{marker} {} {}", context_row_label(row.kind), row.summary),
         body_width,
     );
-    let style = if row_is_running(row) {
-        working_shimmer_style(0, phase, theme).add_modifier(Modifier::BOLD)
+    let content = pad_to_width(&label, body_width);
+    let spans = if row_is_running(row) {
+        running_context_header_spans(&content, phase, theme)
     } else {
-        Style::default()
-            .fg(theme.thought_text)
-            .add_modifier(Modifier::BOLD)
+        vec![Span::styled(
+            content,
+            Style::default()
+                .fg(theme.thought_text)
+                .add_modifier(Modifier::BOLD),
+        )]
     };
-    thread_line(
-        Line::from(vec![Span::styled(pad_to_width(&label, body_width), style)]),
-        width,
-        theme,
-        ThreadTone::Thought,
-    )
+    thread_line(Line::from(spans), width, theme, ThreadTone::Thought)
+}
+
+fn running_context_header_spans(label: &str, phase: usize, theme: &Theme) -> Vec<Span<'static>> {
+    label
+        .chars()
+        .enumerate()
+        .map(|(index, ch)| {
+            Span::styled(
+                ch.to_string(),
+                working_shimmer_style(index, phase, theme).add_modifier(Modifier::BOLD),
+            )
+        })
+        .collect()
 }
 
 fn row_is_running(row: &ContextRow) -> bool {
-    row.detail.contains("状态：running")
-        || row.detail.contains("状态：streaming")
-        || row.detail.contains("状态：thinking")
-        || row.summary.contains("运行中")
-        || row.summary.contains("思考中")
-        || row.summary.contains("回忆中")
-        || row.summary.contains("黑板")
-        || row.summary.contains("讨论")
+    matches!(
+        row.status,
+        ContextRowStatus::Pending | ContextRowStatus::Running
+    )
 }
 
 fn thought_summary(thought: &ThoughtData) -> String {
@@ -3191,11 +3484,10 @@ fn context_row_marker(row: &ContextRow, phase: usize) -> &'static str {
     match row.kind {
         ContextRowKind::AskResume => "◎",
         ContextRowKind::CreateFork => "⊕",
-        ContextRowKind::Execution if row.expanded => "◼",
         ContextRowKind::Execution if row_is_running(row) => {
-            const FRAMES: [&str; 8] = ["⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"];
-            FRAMES[phase % FRAMES.len()]
+            EXO_ACTIVITY_FRAMES[phase % EXO_ACTIVITY_FRAMES.len()]
         }
+        ContextRowKind::Execution if row.expanded => "⣿⣿",
         ContextRowKind::Execution => "⣷",
         ContextRowKind::Blackboard if row_is_running(row) => {
             const FRAMES: [&str; 4] = ["◢", "◣", "◤", "◥"];
@@ -4168,7 +4460,13 @@ fn right_run_summary_rows(timeline: &RunTimeline) -> Vec<String> {
     if timeline.items.is_empty() && timeline.subagents.batches.is_empty() {
         return vec!["waiting for run events".to_string()];
     }
-    let mut rows = vec![execution_context_summary(timeline)];
+    let mut rows = vec![
+        build_execution_context_rows(timeline)
+            .into_iter()
+            .next()
+            .map(|row| row.summary)
+            .unwrap_or_else(|| "waiting for run events".to_string()),
+    ];
     rows.extend(
         run_panel_lines(timeline)
             .into_iter()
@@ -4707,6 +5005,10 @@ fn footer_mode_text(app: &App) -> String {
 }
 
 fn composer_footer_line(app: &App, theme: &Theme) -> Line<'static> {
+    if app.is_working() {
+        return working_status_footer_line(app, theme);
+    }
+
     if matches!(app.composer_notice, Some(ComposerNotice::ExitHint)) {
         return Line::from(vec![Span::styled(
             "输入 /exit 退出",
@@ -4714,21 +5016,96 @@ fn composer_footer_line(app: &App, theme: &Theme) -> Line<'static> {
         )]);
     }
 
-    Line::from(vec![
-        Span::styled(
-            format!("{}{}", footer_mode_text(app), fork_footer_suffix(app)),
+    let mut spans = vec![Span::styled(
+        format!("{}{}", footer_mode_text(app), fork_footer_suffix(app)),
+        Style::default()
+            .fg(app.interaction_mode.color(theme))
+            .add_modifier(Modifier::BOLD),
+    )];
+    if app.tool_approval_next_turn && !app.yolo_mode {
+        spans.push(Span::styled(" · ", Style::default().fg(theme.muted)));
+        spans.push(Span::styled(
+            ui_text(CopyKey::ApprovalNextTurn),
             Style::default()
-                .fg(app.interaction_mode.color(theme))
+                .fg(theme.danger)
                 .add_modifier(Modifier::BOLD),
+        ));
+    }
+    spans.extend([
+        Span::styled(
+            format!(" · {}   ", ui_text(CopyKey::EnterSend)),
+            Style::default().fg(theme.muted),
         ),
-        Span::styled(" · Enter 发送   ", Style::default().fg(theme.muted)),
+        Span::styled(
+            ui_text(CopyKey::ShiftEnterNewline),
+            Style::default().fg(theme.text),
+        ),
+        Span::styled("  ", Style::default().fg(theme.muted)),
         Span::styled("Shift + Tab", Style::default().fg(theme.text)),
-        Span::styled(" 切换模式  ", Style::default().fg(theme.muted)),
+        Span::styled(
+            format!(" {}  ", ui_text(CopyKey::ToggleMode)),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled("←/→", Style::default().fg(theme.text)),
-        Span::styled(" 移动光标", Style::default().fg(theme.muted)),
+        Span::styled(
+            format!(" {}", ui_text(CopyKey::MoveCursor)),
+            Style::default().fg(theme.muted),
+        ),
         Span::styled("y", Style::default().fg(theme.text)),
-        Span::styled(" 复制选择", Style::default().fg(theme.muted)),
-    ])
+        Span::styled(
+            format!(" {}", ui_text(CopyKey::CopySelection)),
+            Style::default().fg(theme.muted),
+        ),
+    ]);
+    Line::from(spans)
+}
+
+fn working_status_footer_line(app: &App, theme: &Theme) -> Line<'static> {
+    let now = now_millis();
+    let phase = working_light_phase(now);
+    let elapsed = app
+        .working_started_at_ms
+        .map(|started| now.saturating_sub(started) / 1000)
+        .unwrap_or(0);
+    let hint = if matches!(app.composer_notice, Some(ComposerNotice::InterruptHint)) {
+        ui_text_key("interrupt.armed")
+    } else {
+        ui_text_key("interrupt.hint")
+    };
+    let label = format!(
+        "{} {} ({} · {})",
+        EXO_ACTIVITY_FRAMES[phase % EXO_ACTIVITY_FRAMES.len()],
+        ui_text_key("working"),
+        format_elapsed_compact(elapsed),
+        hint
+    );
+    Line::from(
+        label
+            .chars()
+            .enumerate()
+            .map(|(index, ch)| {
+                Span::styled(
+                    ch.to_string(),
+                    working_shimmer_style(index, phase, theme).add_modifier(Modifier::BOLD),
+                )
+            })
+            .collect::<Vec<_>>(),
+    )
+}
+
+fn format_elapsed_compact(seconds: u64) -> String {
+    if seconds < 60 {
+        return format!("{seconds}s");
+    }
+    if seconds < 3600 {
+        return format!("{}m {:02}s", seconds / 60, seconds % 60);
+    }
+    format!(
+        "{}h {:02}m {:02}s",
+        seconds / 3600,
+        (seconds % 3600) / 60,
+        seconds % 60
+    )
 }
 
 fn input_cursor_position(
@@ -5028,6 +5405,15 @@ enum SocketCommand {
         metadata: Option<Value>,
         mode: InteractionMode,
         yolo: bool,
+        approve_tools: bool,
+    },
+    InterruptMessage {
+        message_id: String,
+    },
+    UndoMessage {
+        anchor_event_id: Option<String>,
+        anchor_message_id: Option<String>,
+        turn_index: usize,
     },
     ForkCreate {
         request_id: String,
@@ -5170,6 +5556,7 @@ fn run_socket_session(
                     metadata,
                     mode,
                     yolo,
+                    approve_tools,
                 } => {
                     log_event(format!(
                         "send gateway.message.send message_id={message_id} chars={}",
@@ -5186,6 +5573,7 @@ fn run_socket_session(
                                     metadata.as_ref(),
                                     mode,
                                     yolo,
+                                    approve_tools,
                                 ),
                             )
                             .into_value()
@@ -5196,6 +5584,47 @@ fn run_socket_session(
                             message_id,
                             message: error.to_string(),
                         });
+                        return Err(error.to_string());
+                    }
+                }
+                SocketCommand::InterruptMessage { message_id } => {
+                    let now = now_millis();
+                    log_event(format!(
+                        "send gateway.message.interrupt message_id={message_id}"
+                    ));
+                    if let Err(error) = socket.send(Message::text(
+                        gateway
+                            .gateway_message_interrupt(now, &message_id)
+                            .into_value()
+                            .to_string(),
+                    )) {
+                        log_event(format!(
+                            "gateway.message.interrupt failed message_id={message_id} error={error}"
+                        ));
+                        let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
+                        return Err(error.to_string());
+                    }
+                }
+                SocketCommand::UndoMessage {
+                    anchor_event_id,
+                    anchor_message_id,
+                    turn_index,
+                } => {
+                    let now = now_millis();
+                    log_event(format!("send gateway.message.undo turn_index={turn_index}"));
+                    if let Err(error) = socket.send(Message::text(
+                        gateway
+                            .gateway_message_undo(
+                                now,
+                                anchor_event_id.as_deref(),
+                                anchor_message_id.as_deref(),
+                                turn_index,
+                            )
+                            .into_value()
+                            .to_string(),
+                    )) {
+                        log_event(format!("gateway.message.undo failed error={error}"));
+                        let _ = event_tx.send(SocketEvent::Disconnected(error.to_string()));
                         return Err(error.to_string());
                     }
                 }
@@ -5364,6 +5793,7 @@ fn gateway_message_payload(
     metadata: Option<&Value>,
     mode: InteractionMode,
     yolo: bool,
+    approve_tools: bool,
 ) -> GatewayMessagePayload {
     let mut payload = GatewayMessagePayload::new(message_id, text)
         .mode(mode.as_str(), yolo)
@@ -5378,6 +5808,9 @@ fn gateway_message_payload(
     }
     if let Some(metadata) = metadata {
         payload = payload.metadata(metadata.clone());
+    }
+    if yolo || approve_tools {
+        payload = payload.tool_approvals(true, true);
     }
     payload
 }
@@ -6140,6 +6573,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
             summary: "从本轮创建 context fork".to_string(),
             detail: String::new(),
             expanded: false,
+            status: ContextRowStatus::Completed,
         });
         return rows;
     };
@@ -6152,6 +6586,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
                 summary,
                 detail: format_ask_detail(ask),
                 expanded: false,
+                status: ContextRowStatus::NeedsUser,
             });
         }
     }
@@ -6167,15 +6602,20 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
                 .unwrap_or_else(|| "继续未完成回答".to_string()),
             detail: format_ask_detail(continuation),
             expanded: false,
+            status: ContextRowStatus::NeedsUser,
         });
     }
 
-    if let Some(blackboard) = metadata.get("blackboard") {
+    if let Some(blackboard) = metadata
+        .get("blackboard")
+        .filter(|value| valuable_blackboard(value))
+    {
         rows.push(ContextRow {
             kind: ContextRowKind::Blackboard,
             summary: blackboard_summary(blackboard),
             detail: format_blackboard_discussion(blackboard),
             expanded: true,
+            status: metadata_row_status(blackboard),
         });
     }
 
@@ -6184,12 +6624,14 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
         .or_else(|| metadata.get("thinking"))
         .or_else(|| metadata.get("directWithWatch"))
         .or_else(|| metadata.get("direct-with-watch"))
+        .filter(|value| valuable_thought(value))
     {
         rows.push(ContextRow {
             kind: ContextRowKind::Thought,
             summary: context_value_summary(thought, "思考详情"),
             detail: format_thought_detail(thought),
             expanded: false,
+            status: metadata_row_status(thought),
         });
     }
 
@@ -6197,12 +6639,14 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
         .get("recall")
         .or_else(|| metadata.get("memory"))
         .or_else(|| metadata.get("scopeMemory"))
+        .filter(|value| valuable_recall(value))
     {
         rows.push(ContextRow {
             kind: ContextRowKind::Recall,
             summary: context_value_summary(recall, "召回记忆"),
             detail: format_recall_detail(recall),
             expanded: false,
+            status: metadata_row_status(recall),
         });
     }
 
@@ -6246,9 +6690,103 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
         summary: "从本轮创建 context fork".to_string(),
         detail: String::new(),
         expanded: false,
+        status: ContextRowStatus::Completed,
     });
 
     rows
+}
+
+fn valuable_blackboard(value: &Value) -> bool {
+    let text = [
+        value_string(value, "summary"),
+        value_string(value, "content"),
+        value_string(value, "reason"),
+        value_string(value, "plan"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+    if text.trim().is_empty() {
+        return false;
+    }
+    !is_low_value_context_text(&text)
+}
+
+fn valuable_thought(value: &Value) -> bool {
+    let text = [
+        value_string(value, "summary"),
+        value_string(value, "detail"),
+        value_string(value, "content"),
+        value_string(value, "reason"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+    if text.trim().is_empty() {
+        return false;
+    }
+    !is_low_value_context_text(&text)
+}
+
+fn valuable_recall(value: &Value) -> bool {
+    if value
+        .get("items")
+        .and_then(Value::as_array)
+        .is_some_and(|items| !items.is_empty())
+    {
+        return true;
+    }
+    let text = [
+        value_string(value, "summary"),
+        value_string(value, "content"),
+        value_string(value, "detail"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ");
+    if text.trim().is_empty() {
+        return false;
+    }
+    !is_low_value_context_text(&text)
+}
+
+fn is_low_value_context_text(text: &str) -> bool {
+    let normalized = text.to_ascii_lowercase();
+    normalized
+        .contains("single-intent project analysis request without explicit conflicting constraints")
+        || normalized.contains("direct reading can start")
+        || normalized.contains("没有找到可装配的 scope 记忆")
+        || normalized.contains("no attachable scope memory")
+}
+
+fn metadata_row_status(value: &Value) -> ContextRowStatus {
+    match value_string(value, "status")
+        .or_else(|| value_string(value, "state"))
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "running" | "started" | "thinking" | "streaming" | "in_progress" | "in-progress" => {
+            ContextRowStatus::Running
+        }
+        "needs_user" | "needs-user" | "paused" | "waiting_for_user" => ContextRowStatus::NeedsUser,
+        "failed" | "error" | "cancelled" | "canceled" => ContextRowStatus::Failed,
+        "pending" | "queued" => ContextRowStatus::Pending,
+        _ => ContextRowStatus::Completed,
+    }
+}
+
+fn context_status_from_execution(status: ExecutionRowStatus) -> ContextRowStatus {
+    match status {
+        ExecutionRowStatus::Pending => ContextRowStatus::Pending,
+        ExecutionRowStatus::Running => ContextRowStatus::Running,
+        ExecutionRowStatus::NeedsUser => ContextRowStatus::NeedsUser,
+        ExecutionRowStatus::Completed => ContextRowStatus::Completed,
+        ExecutionRowStatus::Failed => ContextRowStatus::Failed,
+    }
 }
 
 fn execution_context_row_from_metadata(metadata: &Value) -> Option<ContextRow> {
@@ -6298,7 +6836,12 @@ fn execution_context_row_from_metadata(metadata: &Value) -> Option<ContextRow> {
         kind: ContextRowKind::Execution,
         summary: execution_metadata_summary(ask_loop, tool_executions),
         detail: detail.join("\n"),
-        expanded: false,
+        expanded: true,
+        status: if ask_loop.is_some() {
+            ContextRowStatus::NeedsUser
+        } else {
+            ContextRowStatus::Completed
+        },
     })
 }
 
@@ -6318,290 +6861,65 @@ fn execution_metadata_summary(
 }
 
 fn compact_tool_execution_label(value: &Value, width: usize) -> String {
-    let label = value_string(value, "tool")
+    let label = value_string(value, "displayName")
+        .or_else(|| value_string(value, "key").map(|key| key.replace('.', "/")))
+        .or_else(|| {
+            let server = value_string(value, "server").or_else(|| {
+                value
+                    .get("call")
+                    .and_then(|call| value_string(call, "server"))
+            });
+            let tool = value_string(value, "tool").or_else(|| {
+                value
+                    .get("call")
+                    .and_then(|call| value_string(call, "tool"))
+            });
+            match (server, tool) {
+                (Some(server), Some(tool)) => Some(format!("{server}/{tool}")),
+                (None, Some(tool)) => Some(tool),
+                (Some(server), None) => Some(server),
+                (None, None) => None,
+            }
+        })
         .or_else(|| value_string(value, "name"))
         .or_else(|| value_string(value, "command"))
         .or_else(|| value_string(value, "id"))
         .unwrap_or_else(|| "tool".to_string());
     let status = value_string(value, "status")
         .or_else(|| value_string(value, "state"))
-        .unwrap_or_else(|| "unknown".to_string());
+        .unwrap_or_else(|| {
+            if value.get("ok").and_then(Value::as_bool) == Some(false) {
+                "failed"
+            } else {
+                "completed"
+            }
+            .to_string()
+        });
     truncate_to_width(&format!("{label} · {status}"), width)
 }
 
 fn execution_context_rows(timeline: &RunTimeline) -> Vec<ContextRow> {
-    let mut children = Vec::new();
-    for batch in &timeline.subagents.batches {
-        for child in &batch.children {
-            children.push((Some(batch.name.as_str()), child));
-        }
-    }
-    for child in &timeline.subagents.loose_children {
-        children.push((None, child));
-    }
-
-    let total = children.len();
-    if total == 0 {
-        if timeline.items.is_empty() {
-            return Vec::new();
-        }
-        return vec![ContextRow {
-            kind: ContextRowKind::Execution,
-            summary: execution_context_summary(timeline),
-            detail: execution_context_detail(timeline),
-            expanded: false,
-        }];
-    }
-
-    children
+    build_execution_context_rows(timeline)
         .into_iter()
-        .enumerate()
-        .map(|(index, (batch_name, child))| ContextRow {
+        .map(|row| ContextRow {
             kind: ContextRowKind::Execution,
-            summary: subagent_execution_summary(index + 1, total, child),
-            detail: subagent_execution_detail(batch_name, child),
-            expanded: false,
+            summary: row.summary,
+            detail: row.detail,
+            expanded: row.expanded,
+            status: context_status_from_execution(row.status),
         })
         .collect()
-}
-
-fn subagent_execution_summary(
-    index: usize,
-    total: usize,
-    child: &tui::subagent::state::SubagentChild,
-) -> String {
-    let task = child
-        .task
-        .as_deref()
-        .filter(|task| !task.trim().is_empty())
-        .unwrap_or(child.name.as_str());
-    let tool_count = child.tool_calls.len();
-    let process_count = child.processes.len()
-        + child
-            .tool_calls
-            .iter()
-            .map(|tool| tool.processes.len())
-            .sum::<usize>();
-    let limited = if child.limited { " · partial" } else { "" };
-    format!(
-        "({index}/{total}) {} | {} · {}{limited} · 工具 {tool_count} · 子进程 {process_count}",
-        truncate_to_width(&child.name, 24),
-        truncate_to_width(task, 42),
-        child.status.as_str()
-    )
-}
-
-fn subagent_execution_detail(
-    batch_name: Option<&str>,
-    child: &tui::subagent::state::SubagentChild,
-) -> String {
-    let mut lines = vec![format!("子代理ID: {}", child.id)];
-    if let Some(batch_name) = batch_name {
-        lines.push(format!("batch: {batch_name}"));
-    }
-    lines.push(format!("状态: {}", child.status.as_str()));
-    if child.limited || child.suppressed_ask_required {
-        lines.push(format!(
-            "限制: {}{}",
-            child.limit_reason.as_deref().unwrap_or("partial-result"),
-            if child.suppressed_ask_required {
-                " · ASK suppressed"
-            } else {
-                ""
-            }
-        ));
-    }
-    if let Some(job_id) = &child.job_id {
-        lines.push(format!("jobId: {job_id}"));
-    }
-    if let Some(task) = &child.task {
-        lines.push(format!("任务: {task}"));
-    }
-    if let Some(model) = &child.model {
-        lines.push(format!("模型: {}", model_allocation_label(model)));
-        if let Some(reason) = &model.reason {
-            lines.push(format!("模型分配: {reason}"));
-        }
-    }
-    if !child.allowed_tools.is_empty() {
-        lines.push(format!("allowed tools: {}", child.allowed_tools.join(", ")));
-    }
-    if child.tool_calls.is_empty() && child.processes.is_empty() {
-        lines.push("执行过程: 暂无工具/子进程事件".to_string());
-    }
-    for tool in &child.tool_calls {
-        lines.push(format!(
-            "- tool {} · {}",
-            subagent_tool_label(tool),
-            tool.status.as_str()
-        ));
-        if let Some(args) = &tool.args_preview {
-            lines.push(format!("  args: {}", truncate_to_width(args, 120)));
-        }
-        if let Some(output_path) = &tool.output_path {
-            lines.push(format!("  output: {output_path}"));
-        }
-        if let Some(error) = &tool.error {
-            lines.push(format!("  error: {}", truncate_to_width(error, 120)));
-        }
-        for process in &tool.processes {
-            lines.push(format!(
-                "  - process {} · {}",
-                subagent_process_label(process),
-                process.status.as_str()
-            ));
-        }
-    }
-    for process in &child.processes {
-        lines.push(format!(
-            "- process {} · {}",
-            subagent_process_label(process),
-            process.status.as_str()
-        ));
-    }
-    if let Some(ask) = &child.ask {
-        lines.push(format!("ASK: {} · {}", ask.id, ask.status.as_str()));
-        if let Some(reason) = &ask.reason {
-            lines.push(format!("ASK reason: {reason}"));
-        }
-        if let Some(crystal) = &ask.crystal_candidate {
-            lines.push(format!("crystal candidate: {crystal}"));
-        }
-    }
-    if let Some(crystal) = &child.crystal {
-        lines.push(format!("crystal: {crystal}"));
-    }
-    lines.join("\n")
-}
-
-fn model_allocation_label(model: &tui::subagent::state::ModelAllocation) -> String {
-    match (&model.provider_id, &model.model_id) {
-        (Some(provider), Some(model_id)) => format!("{provider}/{model_id}"),
-        (None, Some(model_id)) => model_id.clone(),
-        (Some(provider), None) => provider.clone(),
-        (None, None) => model.id.clone(),
-    }
-}
-
-fn subagent_tool_label(tool: &tui::subagent::state::SubagentToolCall) -> String {
-    let name = tool
-        .tool
-        .clone()
-        .or_else(|| tool.command.clone())
-        .unwrap_or_else(|| tool.name.clone());
-    tool.server
-        .as_ref()
-        .map(|server| format!("{server}/{name}"))
-        .unwrap_or(name)
-}
-
-fn subagent_process_label(process: &tui::subagent::state::SubagentProcess) -> String {
-    process
-        .command
-        .clone()
-        .or_else(|| process.output_path.clone())
-        .unwrap_or_else(|| process.id.clone())
 }
 
 fn execution_row_identity(row: &ContextRow) -> Option<String> {
     row.detail
         .lines()
-        .find_map(|line| line.strip_prefix("子代理ID: ").map(str::to_string))
+        .find_map(|line| {
+            line.strip_prefix("子代理ID: ")
+                .or_else(|| line.strip_prefix("child id: "))
+                .map(str::to_string)
+        })
         .or_else(|| Some(row.summary.clone()))
-}
-
-fn execution_context_summary(timeline: &RunTimeline) -> String {
-    let model_count = timeline.subagents.models.len();
-    let batch_count = timeline.subagents.batches.len();
-    let child_count = timeline
-        .subagents
-        .batches
-        .iter()
-        .map(|batch| batch.children.len())
-        .sum::<usize>()
-        + timeline.subagents.loose_children.len();
-    let tool_count = timeline.subagents.loose_tool_calls.len()
-        + timeline
-            .subagents
-            .batches
-            .iter()
-            .map(|batch| {
-                batch
-                    .children
-                    .iter()
-                    .map(|child| child.tool_calls.len())
-                    .sum::<usize>()
-            })
-            .sum::<usize>()
-        + timeline
-            .subagents
-            .loose_children
-            .iter()
-            .map(|child| child.tool_calls.len())
-            .sum::<usize>();
-    let process_count = timeline.subagents.loose_processes.len()
-        + timeline
-            .subagents
-            .batches
-            .iter()
-            .map(|batch| {
-                batch
-                    .children
-                    .iter()
-                    .map(|child| child.processes.len())
-                    .sum::<usize>()
-            })
-            .sum::<usize>()
-        + timeline
-            .subagents
-            .loose_children
-            .iter()
-            .map(|child| child.processes.len())
-            .sum::<usize>();
-    let ask_count = timeline.subagents.loose_asks.len()
-        + timeline
-            .subagents
-            .batches
-            .iter()
-            .map(|batch| {
-                batch
-                    .children
-                    .iter()
-                    .filter(|child| child.ask.is_some())
-                    .count()
-            })
-            .sum::<usize>()
-        + timeline
-            .subagents
-            .loose_children
-            .iter()
-            .filter(|child| child.ask.is_some())
-            .count();
-    let status = if ask_count > 0 {
-        "等待 ASK"
-    } else if timeline.items.iter().any(|item| {
-        matches!(
-            item.status,
-            tui::run_timeline::state::RunTimelineItemStatus::Running
-        )
-    }) {
-        "进行中"
-    } else {
-        "已记录"
-    };
-    format!(
-        "{status} · 模型 {model_count} · 子代理 {batch_count}/{child_count} · 工具 {tool_count} · 子进程 {process_count}"
-    )
-}
-
-fn execution_context_detail(timeline: &RunTimeline) -> String {
-    run_panel_lines(timeline)
-        .into_iter()
-        .skip(1)
-        .take(18)
-        .map(|line| line_plain_text(&line))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn aggregate_context_row(
@@ -6623,6 +6941,7 @@ fn aggregate_context_row(
         summary,
         detail: format_context_detail(kind, &deduped, fallback_label, merged_count),
         expanded: false,
+        status: ContextRowStatus::Completed,
     })
 }
 
@@ -6959,6 +7278,36 @@ fn ask_menu_from_turn(turn_index: usize, turn: &Turn) -> Option<(usize, AskMenu)
     ask_menu_from_turn_metadata(turn_index, metadata)
 }
 
+fn undo_menu_from_turns(turns: &[Turn]) -> Option<UndoMenu> {
+    let items = turns
+        .iter()
+        .enumerate()
+        .rev()
+        .filter_map(|(turn_index, turn)| {
+            let user = turn.user.trim();
+            if user.is_empty() {
+                return None;
+            }
+            Some(UndoMenuItem {
+                event_id: turn.event_id.clone(),
+                message_id: turn.message_id.clone(),
+                turn_index,
+                label: format!(
+                    "#{} {}",
+                    turn_index + 1,
+                    truncate_to_width(&user.replace('\n', " "), 72)
+                ),
+            })
+        })
+        .take(9)
+        .collect::<Vec<_>>();
+    if items.is_empty() {
+        None
+    } else {
+        Some(UndoMenu { selected: 0, items })
+    }
+}
+
 fn latest_context_summary(turns: &[Turn], kind: ContextRowKind, fallback: &str) -> String {
     turns
         .iter()
@@ -7079,6 +7428,16 @@ struct ContextRow {
     summary: String,
     detail: String,
     expanded: bool,
+    status: ContextRowStatus,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ContextRowStatus {
+    Pending,
+    Running,
+    NeedsUser,
+    Completed,
+    Failed,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -7968,36 +8327,42 @@ mod tests {
                 summary: "摘要".to_string(),
                 detail: String::new(),
                 expanded: true,
+                status: ContextRowStatus::Completed,
             },
             ContextRow {
                 kind: ContextRowKind::Recall,
                 summary: "摘要".to_string(),
                 detail: String::new(),
                 expanded: true,
+                status: ContextRowStatus::Completed,
             },
             ContextRow {
                 kind: ContextRowKind::Fork,
                 summary: "摘要".to_string(),
                 detail: String::new(),
                 expanded: true,
+                status: ContextRowStatus::Completed,
             },
             ContextRow {
                 kind: ContextRowKind::Blackboard,
                 summary: "摘要".to_string(),
                 detail: String::new(),
                 expanded: true,
+                status: ContextRowStatus::Completed,
             },
             ContextRow {
                 kind: ContextRowKind::AskResume,
                 summary: "摘要".to_string(),
                 detail: String::new(),
                 expanded: false,
+                status: ContextRowStatus::NeedsUser,
             },
             ContextRow {
                 kind: ContextRowKind::CreateFork,
                 summary: "摘要".to_string(),
                 detail: String::new(),
                 expanded: false,
+                status: ContextRowStatus::Completed,
             },
         ];
         let text = rows
@@ -8015,34 +8380,64 @@ mod tests {
     }
 
     #[test]
+    fn low_value_context_metadata_is_not_rendered() {
+        let rows = context_rows_from_metadata(&Some(json!({
+            "blackboard": {
+                "summary": "Single-intent project analysis request without explicit conflicting constraints or need for multi-perspective debate."
+            },
+            "directWithWatch": {
+                "summary": "A direct reading can start, but can escalate if complexity or contradictions are encountered."
+            },
+            "scopeMemory": {
+                "summary": "没有找到可装配的 Scope 记忆"
+            }
+        })));
+
+        assert!(!rows.iter().any(|row| matches!(
+            row.kind,
+            ContextRowKind::Blackboard | ContextRowKind::Thought | ContextRowKind::Recall
+        )));
+        assert!(
+            rows.iter()
+                .any(|row| row.kind == ContextRowKind::CreateFork)
+        );
+    }
+
+    #[test]
     fn running_context_rows_use_distinct_spinner_sets() {
         let execution = ContextRow {
             kind: ContextRowKind::Execution,
             summary: "工具运行中".to_string(),
             detail: String::new(),
             expanded: false,
+            status: ContextRowStatus::Running,
         };
         let thought = ContextRow {
             kind: ContextRowKind::Thought,
             summary: "思考中 摘要".to_string(),
             detail: String::new(),
             expanded: false,
+            status: ContextRowStatus::Running,
         };
         let recall = ContextRow {
             kind: ContextRowKind::Recall,
             summary: "回忆中 摘要".to_string(),
             detail: String::new(),
             expanded: false,
+            status: ContextRowStatus::Running,
         };
         let blackboard = ContextRow {
             kind: ContextRowKind::Blackboard,
             summary: "黑板讨论 摘要".to_string(),
             detail: String::new(),
             expanded: false,
+            status: ContextRowStatus::Running,
         };
 
-        assert_eq!(context_row_marker(&execution, 0), "⣾");
-        assert_eq!(context_row_marker(&execution, 1), "⣽");
+        assert_eq!(context_row_marker(&execution, 0), "⣏⣹");
+        assert_eq!(context_row_marker(&execution, 1), "⣇⣸");
+        assert_eq!(context_row_marker(&execution, 4), "⣿⣿");
+        assert_eq!(context_row_marker(&execution, 7), "⡇⡇");
         assert_eq!(context_row_marker(&thought, 0), "◐");
         assert_eq!(context_row_marker(&thought, 1), "◑");
         assert_eq!(context_row_marker(&recall, 0), "▖");
@@ -8198,6 +8593,7 @@ mod tests {
             summary: "运行中".to_string(),
             detail: "状态：running".to_string(),
             expanded: false,
+            status: ContextRowStatus::Running,
         };
         let line_a = render_context_row_header_with_phase(&row, 96, &theme, 0);
         let line_b = render_context_row_header_with_phase(&row, 96, &theme, 1);
@@ -8212,23 +8608,52 @@ mod tests {
             .filter_map(|span| span.style.fg)
             .collect::<Vec<_>>();
         assert_ne!(colors_a, colors_b);
+        assert!(colors_a.iter().any(|color| {
+            matches!(color, Color::Rgb(r, g, b) if (*r as i16 - *g as i16).abs() <= 8 && (*g as i16 - *b as i16).abs() <= 16)
+        }));
+        assert!(
+            !colors_a.iter().any(|color| *color == theme.pink
+                || *color == theme.purple
+                || *color == theme.blue)
+        );
     }
 
     #[test]
-    fn execution_context_row_uses_braille_marker() {
+    fn execution_context_row_uses_exo_fill_frames_even_when_expanded() {
         let theme = Theme::default();
         let row = ContextRow {
             kind: ContextRowKind::Execution,
             summary: "子代理 1/2 · 运行中".to_string(),
             detail: "状态：running".to_string(),
-            expanded: false,
+            expanded: true,
+            status: ContextRowStatus::Running,
         };
         let line_a = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 0));
         let line_b = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 1));
 
-        assert!(line_a.contains("⣾"));
-        assert!(line_b.contains("⣽"));
+        assert!(line_a.contains("⣏⣹"));
+        assert!(line_b.contains("⣇⣸"));
         assert!(!line_a.contains("▶"));
+        assert!(!line_a.contains("◼"));
+    }
+
+    #[test]
+    fn execution_context_row_cache_keeps_smooth_shimmer_phase() {
+        let mut turn = test_turn("run", "answer");
+        turn.context_rows = vec![ContextRow {
+            kind: ContextRowKind::Execution,
+            summary: "工具/子进程 1 · running".to_string(),
+            detail: String::new(),
+            expanded: true,
+            status: ContextRowStatus::Running,
+        }];
+
+        let key_a = chat_render_key(&[turn.clone()], 96, 0);
+        let key_b = chat_render_key(&[turn], 96, EXO_ACTIVITY_FRAMES.len());
+
+        assert_ne!(key_a.animation_phase, key_b.animation_phase);
+        assert_eq!(key_a.animation_phase, 0);
+        assert_eq!(key_b.animation_phase, EXO_ACTIVITY_FRAMES.len());
     }
 
     #[test]
@@ -8239,6 +8664,7 @@ mod tests {
             summary: "讨论".to_string(),
             detail: String::new(),
             expanded: false,
+            status: ContextRowStatus::Running,
         };
         let line = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 2));
 
@@ -8374,6 +8800,34 @@ mod tests {
     }
 
     #[test]
+    fn slash_commands_have_localized_titles_and_remarks() {
+        let commands = slash_commands_for_fork(true);
+        assert!(!commands.is_empty());
+        for command in commands {
+            assert!(
+                !command.title.trim().is_empty(),
+                "{} title is required",
+                command.name
+            );
+            assert!(
+                !command.detail.trim().is_empty(),
+                "{} detail remark is required",
+                command.name
+            );
+            assert!(
+                !command.title.starts_with("slash."),
+                "{} title is missing from i18n catalog",
+                command.name
+            );
+            assert!(
+                !command.detail.starts_with("slash."),
+                "{} detail remark is missing from i18n catalog",
+                command.name
+            );
+        }
+    }
+
+    #[test]
     fn slash_command_palette_filters_and_executes_help() {
         let mut app = App::new();
         app.input = "/he".to_string();
@@ -8390,8 +8844,73 @@ mod tests {
         app.confirm_command_palette_selection();
         assert!(app.input.is_empty());
         assert!(app.right_source.blackboard_status.contains("/help"));
+        assert!(app.right_source.blackboard_status.contains("/approve"));
+        assert!(app.right_source.blackboard_status.contains("/undo"));
         assert!(app.right_source.blackboard_status.contains("/yolo"));
-        assert!(app.right_source.blackboard_status.contains("危险"));
+        assert!(app.right_source.blackboard_status.contains("下一轮工具"));
+    }
+
+    #[test]
+    fn slash_command_undo_opens_menu_and_rolls_back_selected_user_message() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.turns = vec![
+            test_turn("first request", "first answer"),
+            test_turn("second request", "second answer"),
+            test_turn("third request", ""),
+        ];
+        app.turns[1].event_id = Some("event-second".to_string());
+        let expected_message_id = app.turns[1].message_id.clone();
+        app.turns[2].message_id = Some("pending-third".to_string());
+        app.pending_turns.insert("pending-third".to_string(), 2);
+
+        app.input = "/undo".to_string();
+        app.refresh_command_palette();
+        app.confirm_command_palette_selection();
+
+        let menu = app.undo_menu.as_ref().expect("undo menu");
+        assert_eq!(menu.items.len(), 3);
+        assert_eq!(menu.items[0].turn_index, 2);
+        assert!(menu.items[0].label.contains("third request"));
+
+        assert!(app.move_active_menu(1));
+        app.confirm_undo_menu_selection();
+
+        match rx.try_recv().expect("undo command") {
+            SocketCommand::UndoMessage {
+                anchor_event_id,
+                anchor_message_id,
+                turn_index,
+            } => {
+                assert_eq!(anchor_event_id, Some("event-second".to_string()));
+                assert_eq!(anchor_message_id, expected_message_id);
+                assert_eq!(turn_index, 1);
+            }
+            _ => panic!("unexpected command"),
+        }
+        assert_eq!(app.turns.len(), 1);
+        assert_eq!(app.turns[0].user, "first request");
+        assert!(app.pending_turns.is_empty());
+        assert!(app.undo_menu.is_none());
+        assert!(
+            app.right_source
+                .blackboard_status
+                .contains("已回滚到用户消息之前")
+        );
+    }
+
+    #[test]
+    fn slash_command_undo_reports_empty_without_user_messages() {
+        let mut app = App::new();
+        app.turns.clear();
+
+        app.input = "/undo".to_string();
+        app.refresh_command_palette();
+        app.confirm_command_palette_selection();
+
+        assert!(app.undo_menu.is_none());
+        assert!(app.right_source.blackboard_status.contains("暂无可回滚"));
     }
 
     #[test]
@@ -8824,6 +9343,26 @@ mod tests {
     }
 
     #[test]
+    fn modified_enter_inserts_newline_without_submitting() {
+        let mut app = App::new();
+        app.socket_connected = true;
+        let initial_turns = app.turns.len();
+        app.input = "第一行".to_string();
+        app.input_cursor = Some(app.input.len());
+
+        handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT));
+        app.insert_input_text("第二行");
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::CONTROL),
+        );
+        app.insert_input_text("第三行");
+
+        assert_eq!(app.input, "第一行\n第二行\n第三行");
+        assert_eq!(app.turns.len(), initial_turns);
+    }
+
+    #[test]
     fn submit_without_socket_keeps_draft_editable_and_does_not_create_sending_turn() {
         let mut app = App::new();
         app.socket_connected = false;
@@ -8974,6 +9513,7 @@ mod tests {
             summary: "进行中 · 模型 1 · 子代理 1/2 · 工具 3 · 子进程 1".to_string(),
             detail: "tool read completed".to_string(),
             expanded: false,
+            status: ContextRowStatus::Running,
         });
 
         let rendered = render_turns(&[turn], 96, &theme, 0)
@@ -9076,7 +9616,7 @@ mod tests {
             .find(|row| row.detail.contains("子代理ID: child-b"))
             .expect("second execution row");
         assert!(first.expanded);
-        assert!(!second.expanded);
+        assert!(second.expanded);
     }
 
     #[test]
@@ -9182,6 +9722,56 @@ mod tests {
             continuation.get("continuationId").and_then(Value::as_str),
             Some("continuation-1")
         );
+    }
+
+    #[test]
+    fn submit_input_attaches_latest_pending_ask_continuation_to_plain_answer() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.socket_connected = true;
+        app.turns.push(Turn {
+            message_id: Some("ask-message-1".to_string()),
+            event_id: Some("event-1".to_string()),
+            user: "请添加 lint:fix".to_string(),
+            thought: None,
+            answer: "请选择 lint fix 方案".to_string(),
+            metadata: Some(json!({
+                "ask": {
+                    "prompt": "使用哪个 fix lint 命令？",
+                    "snapshotId": "ask-snapshot-1",
+                    "choices": [{ "label": "Prettier", "value": "prettier:all" }]
+                }
+            })),
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+
+        app.input = "prettier:all".to_string();
+        app.submit_input();
+
+        match rx.try_recv().expect("send command") {
+            SocketCommand::SendMessage { metadata, text, .. } => {
+                assert_eq!(text, "prettier:all");
+                let metadata = metadata.expect("continuation metadata");
+                assert_eq!(
+                    metadata
+                        .get("continuation")
+                        .and_then(|value| value.get("snapshotId"))
+                        .and_then(Value::as_str),
+                    Some("ask-snapshot-1")
+                );
+                assert_eq!(
+                    metadata
+                        .get("askAnswer")
+                        .and_then(|value| value.get("text"))
+                        .and_then(Value::as_str),
+                    Some("prettier:all")
+                );
+            }
+            _ => panic!("unexpected command"),
+        }
     }
 
     #[test]
@@ -10062,6 +10652,38 @@ mod tests {
     }
 
     #[test]
+    fn slash_command_approve_sets_one_turn_tool_approval_without_yolo() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.socket_connected = true;
+
+        app.input = "/approve".to_string();
+        app.refresh_command_palette();
+        app.confirm_command_palette_selection();
+
+        assert!(app.tool_approval_next_turn);
+        assert!(!app.yolo_mode);
+        assert_eq!(app.interaction_mode, InteractionMode::Act);
+
+        app.input = "use a tool if needed".to_string();
+        app.submit_input();
+
+        assert!(!app.tool_approval_next_turn);
+        match rx.try_recv().expect("send message command") {
+            SocketCommand::SendMessage {
+                approve_tools,
+                yolo,
+                ..
+            } => {
+                assert!(approve_tools);
+                assert!(!yolo);
+            }
+            _ => panic!("unexpected command"),
+        }
+    }
+
+    #[test]
     fn shift_tab_mode_is_visible_in_right_panel() {
         let mut app = App::new();
         handle_key(
@@ -10779,8 +11401,8 @@ mod tests {
 
     #[test]
     fn working_light_phase_changes_on_reduced_tick() {
-        assert_eq!(working_light_phase(0), working_light_phase(119));
-        assert_ne!(working_light_phase(0), working_light_phase(120));
+        assert_eq!(working_light_phase(0), working_light_phase(34));
+        assert_ne!(working_light_phase(0), working_light_phase(35));
     }
 
     #[test]
@@ -10789,6 +11411,41 @@ mod tests {
         app.pending_turns.insert("message-1".to_string(), 0);
 
         assert!(app.is_working());
+    }
+
+    #[test]
+    fn working_footer_shows_exo_activity_and_interrupt_hint() {
+        let theme = Theme::default();
+        let mut app = App::new();
+        app.pending_turns.insert("message-1".to_string(), 0);
+        app.working_started_at_ms = Some(now_millis().saturating_sub(61_000));
+
+        let text = line_text(&composer_footer_line(&app, &theme));
+
+        assert!(EXO_ACTIVITY_FRAMES.iter().any(|frame| text.contains(frame)));
+        assert!(text.contains("Working (1m 01s"));
+        assert!(text.contains("esc esc"));
+    }
+
+    #[test]
+    fn double_escape_interrupts_pending_turn() {
+        let mut app = App::new();
+        app.turns = vec![test_turn("run long task", "")];
+        app.pending_turns.insert("message-1".to_string(), 0);
+        app.mark_working_started();
+
+        handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert!(app.pending_turns.contains_key("message-1"));
+        assert!(matches!(
+            app.composer_notice,
+            Some(ComposerNotice::InterruptHint)
+        ));
+
+        handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(app.pending_turns.is_empty());
+        assert_eq!(app.turns[0].footer, "flyflor · interrupted");
+        assert!(!app.turns[0].answer.trim().is_empty());
     }
 
     #[test]
@@ -10808,6 +11465,7 @@ mod tests {
                     })),
                     InteractionMode::Plan,
                     true,
+                    false,
                 ),
             )
             .into_value();
@@ -11039,6 +11697,7 @@ mod tests {
                     None,
                     InteractionMode::Act,
                     false,
+                    false,
                 ),
             )
             .into_value();
@@ -11075,6 +11734,69 @@ mod tests {
                 .get("payload")
                 .and_then(|payload| payload.get("contextForkId"))
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn gateway_message_builder_can_approve_tools_without_yolo() {
+        let message = gateway_command_builder()
+            .gateway_message_send(
+                1,
+                gateway_message_payload(
+                    "message-approve",
+                    "use tools if needed",
+                    None,
+                    None,
+                    InteractionMode::Act,
+                    false,
+                    true,
+                ),
+            )
+            .into_value();
+
+        let payload = message.get("payload").expect("payload");
+        assert_eq!(
+            payload
+                .get("metadata")
+                .and_then(|metadata| metadata.get("interaction"))
+                .and_then(|interaction| interaction.get("yolo"))
+                .and_then(Value::as_bool),
+            Some(false)
+        );
+        assert_eq!(
+            payload
+                .get("context")
+                .and_then(|context| context.get("toolApprovals"))
+                .and_then(|approval| approval.get("mcpToolCalls"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+        assert_eq!(
+            payload
+                .get("context")
+                .and_then(|context| context.get("toolApprovals"))
+                .and_then(|approval| approval.get("userToolCalls"))
+                .and_then(Value::as_bool),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn gateway_message_builder_emits_interrupt_command_with_message_id() {
+        let message = gateway_command_builder()
+            .gateway_message_interrupt(7, "message-interrupt-1")
+            .into_value();
+
+        assert_eq!(
+            message.get("type").and_then(Value::as_str),
+            Some("gateway.message.interrupt")
+        );
+        assert_eq!(
+            message
+                .get("payload")
+                .and_then(|payload| payload.get("messageId"))
+                .and_then(Value::as_str),
+            Some("message-interrupt-1")
         );
     }
 
