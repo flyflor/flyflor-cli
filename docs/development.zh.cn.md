@@ -10,7 +10,7 @@ git branch --show-current
 git status --short --branch
 ```
 
-对于 tmux-managed CLI worktree，预期分支是 `codex/tmux-managed-flyflor-cli`。
+对于当前 tmux-managed integration worktree，预期分支是 `feat/cli-ws-event-tui-integration`。
 
 ## 运行命令
 

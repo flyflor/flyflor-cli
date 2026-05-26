@@ -10,8 +10,8 @@ git branch --show-current
 git status --short --branch
 ```
 
-For the tmux-managed CLI worktree, the expected branch is
-`codex/tmux-managed-flyflor-cli`.
+For the current tmux-managed integration worktree, the expected branch is
+`feat/cli-ws-event-tui-integration`.
 
 ## Run Commands
 

@@ -12,7 +12,8 @@ The main screen has:
 - A left transcript with user prompts, assistant answers, context rows, ASK
   continuation rows, blackboard/replay rows, recall/thought rows, and create
   fork affordances.
-- A right panel with TODO, model/status, context window, and fork/memory.
+- A right panel with TODO, Run timeline, model/status, context window, and
+  fork/memory.
 - A composer footer with interaction mode, active fork label, and local command
   hints.
 
@@ -73,15 +74,27 @@ Blackboard data can arrive through metadata, snapshots, or subscription events:
 
 - Turn metadata may create blackboard context rows in the left transcript.
 - `blackboard.snapshot` becomes a synthetic display turn.
-- The parser still understands compatible blackboard runtime events if the
-  kernel emits them, but the CLI does not currently subscribe to provisional
-  blackboard event type names.
+- The fixed gateway subscription includes stable `blackboard.*` runtime events.
+  Those events are shown in Run so the process is visible instead of hidden
+  behind snapshots.
 - `/blackboard` copies the latest blackboard summary into the right-panel status
   line.
 
-The right-side lower panel no longer renders a separate blackboard stream as an
-independent section. Tests protect the current right-panel section set: TODO,
-Model / Status, Context Window, and Fork / Memory.
+The right-side lower panel renders Run as the event/process timeline. Tests
+protect the current right-panel section set: TODO, Run, Model / Status, Context
+Window, and Fork / Memory.
+
+## Run Timeline
+
+Run is the visible execution spine for gateway events. It consumes
+`event.publish`, `event.snapshot`, `event`, and `execution.job.snapshot` data and
+renders route decisions, scope recall, blackboard turns, tool calls, ASK pauses,
+plan writes, forks, Executive loop transitions, and subagent lifecycle updates.
+
+Subagent events are merged into a batch/child tree. Loose child events are
+attached to their batch when a later snapshot or batch event arrives, and
+repeated snapshots update existing rows instead of duplicating them. This keeps
+subagents visible without making the CLI responsible for runtime scheduling.
 
 ## Status Model
 
@@ -104,7 +117,8 @@ The right panel has a sticky layout:
 
 - TODO occupies the flexible top area and owns the right scroll state.
 - A separator divides TODO from the fixed lower status area.
-- The lower area displays Model / Status, Context Window, and Fork / Memory.
+- The lower area displays Run, Model / Status, Context Window, and Fork /
+  Memory.
 
 Left/right arrows move focus across copyable right-panel sections. Pressing `y`
 copies the active selection when one exists; otherwise it copies the focused
