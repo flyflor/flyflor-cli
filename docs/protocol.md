@@ -7,6 +7,11 @@ The CLI connects to `FLYFLOR_WS_URL` or, by default,
 communicates with the UI thread through `SocketCommand` and `SocketEvent`
 channels.
 
+The WebSocket gateway and event stream are the vascular boundary between the
+CLI and kernel: commands and observations flow through `flyflor.ws.v1`
+envelopes and subscription events. The CLI does not call kernel-private APIs or
+reach into kernel runtime internals.
+
 When `FLYFLOR_HISTORY=0`, `false`, `FALSE`, `off`, or `OFF`, the socket worker is
 disabled and the UI stays in mock/offline history mode. Demo mode also disables
 history/socket usage.
@@ -45,13 +50,11 @@ state.
 
 ## Subscriptions
 
-The current `event.subscribe` payload requests:
-
-- `memory.task_plan.written`
-
-The CLI deliberately does not subscribe to `fork.memory.*` or provisional
-blackboard event names because unknown runtime event types make the gateway
-reject the subscription with `invalid-payload`. Fork memory refreshes continue
+The current `event.subscribe` payload requests a fixed, source-controlled list
+of stable runtime events. The list lives in `src/tui/gateway/subscription.rs`
+and covers plan, ASK, route/recall, blackboard, tool, Executive loop, and
+subagent lifecycle events. It deliberately does not subscribe to nonexistent or
+provisional event names, such as `fork.memory.*`; fork memory refreshes continue
 through `fork.memory.get` after final turns and explicit commands.
 
 ## Outgoing Commands
@@ -65,6 +68,9 @@ The UI can send these socket commands:
 - `fork.memory.get`: recent fork memory refresh.
 - `task.plan.decide`: plan confirm, revise, or abandon.
 - `fork.create`: create a context fork from a structured turn anchor.
+- `execution.job.detail.get`: fetch execution job detail snapshots for display.
+- `ask.detail.get`: fetch ASK detail snapshots for display.
+- `blackboard.detail.get`: fetch blackboard detail snapshots for display.
 
 `gateway.message.send` includes conversation, thread, user identity, optional
 `context.contextForkId`, optional continuation metadata, and TUI mode metadata:
@@ -99,8 +105,13 @@ The CLI parses turn and subscription events:
   rows, discovers latest context fork id, and requests `fork.memory.get`.
 - `turn.error`: marks the pending turn or right-panel status as failed.
 - `event.publish`, `event.snapshot`, or `event`: unwraps subscription events.
-- `memory.task_plan.written`: marks plan data as updated and requests
-  `task.list`.
+- `memory.task_plan.written` and `memory.task_plan.decided`: mark plan data as
+  updated and request `task.list`.
+- `executive.loop.paused` and `executive.loop.resumed`: update ASK/run-loop
+  process visibility.
+- `blackboard.*`, `tool.*`, `mcp.tool.call.executed`, `route.escalated`,
+  `scope.recall.*`, and `subagent.*`: become run-timeline rows or trigger
+  detail snapshot fetches.
 - `error`: becomes `SocketEvent::Disconnected`.
 
 Socket read errors and close frames are logged and cause the worker to retry
@@ -110,7 +121,8 @@ after a short delay.
 
 Protocol messages are commands and observations. They do not transfer ownership
 of kernel responsibilities to the CLI. The CLI should never write directly to
-kernel ledger storage or treat local UI state as durable state.
+kernel ledger storage, call kernel-private APIs, or treat local UI state as
+durable state.
 
 `brain.db` is kernel-side storage for ledger/query/replay/audit/detail. The CLI
 only displays `brain.db` summary fields carried by fork memory responses, such
