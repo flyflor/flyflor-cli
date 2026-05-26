@@ -7,7 +7,7 @@ use crate::tui::{
     run_timeline::state::{
         RunTimeline, RunTimelineItem, RunTimelineItemKind, RunTimelineItemStatus,
     },
-    subagent::view::subagent_tree_lines,
+    subagent::view::{model_lines, subagent_tree_lines, truncate},
 };
 
 pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
@@ -19,19 +19,28 @@ pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
     )];
 
     if timeline.items.is_empty() && timeline.subagents.batches.is_empty() {
-        let tree_lines = subagent_tree_lines(&timeline.subagents);
-        if tree_lines.is_empty() {
-            lines.push(Line::styled(
-                "waiting for run events",
-                Style::default().fg(Color::Rgb(126, 139, 170)),
-            ));
-            return lines;
-        }
-        lines.extend(tree_lines);
+        lines.push(Line::styled(
+            "waiting for run events",
+            Style::default().fg(Color::Rgb(126, 139, 170)),
+        ));
         return lines;
     }
 
-    for item in &timeline.items {
+    lines.push(summary_line(timeline));
+
+    for model in &timeline.subagents.models {
+        lines.extend(model_lines(model, ""));
+    }
+
+    for item in timeline.items.iter().filter(|item| {
+        !matches!(
+            item.kind,
+            RunTimelineItemKind::Subagent
+                | RunTimelineItemKind::Tool
+                | RunTimelineItemKind::Process
+                | RunTimelineItemKind::Model
+        )
+    }) {
         lines.extend(item_lines(item));
     }
 
@@ -62,12 +71,99 @@ fn item_lines(item: &RunTimelineItem) -> Vec<Line<'static>> {
         lines.push(Line::from(vec![
             Span::raw("  "),
             Span::styled(
-                detail.clone(),
+                truncate(detail, 120),
                 Style::default().fg(Color::Rgb(170, 180, 205)),
             ),
         ]));
     }
     lines
+}
+
+fn summary_line(timeline: &RunTimeline) -> Line<'static> {
+    let count = |kind: RunTimelineItemKind| {
+        timeline
+            .items
+            .iter()
+            .filter(|item| item.kind == kind)
+            .count()
+    };
+    let tool_count = timeline.subagents.loose_tool_calls.len()
+        + timeline
+            .subagents
+            .batches
+            .iter()
+            .map(|batch| {
+                batch
+                    .children
+                    .iter()
+                    .map(|child| child.tool_calls.len())
+                    .sum::<usize>()
+            })
+            .sum::<usize>()
+        + timeline
+            .subagents
+            .loose_children
+            .iter()
+            .map(|child| child.tool_calls.len())
+            .sum::<usize>();
+    let process_count = timeline.subagents.loose_processes.len()
+        + timeline
+            .subagents
+            .batches
+            .iter()
+            .map(|batch| {
+                batch
+                    .children
+                    .iter()
+                    .map(|child| {
+                        child.processes.len()
+                            + child
+                                .tool_calls
+                                .iter()
+                                .map(|call| call.processes.len())
+                                .sum::<usize>()
+                    })
+                    .sum::<usize>()
+            })
+            .sum::<usize>()
+        + timeline
+            .subagents
+            .loose_children
+            .iter()
+            .map(|child| {
+                child.processes.len()
+                    + child
+                        .tool_calls
+                        .iter()
+                        .map(|call| call.processes.len())
+                        .sum::<usize>()
+            })
+            .sum::<usize>();
+    let subagent_count = timeline.subagents.batches.len() + timeline.subagents.loose_children.len();
+    let parts = [
+        format!(
+            "Model {}",
+            timeline
+                .subagents
+                .models
+                .len()
+                .max(count(RunTimelineItemKind::Model))
+        ),
+        format!("Route {}", count(RunTimelineItemKind::Route)),
+        format!("Blackboard {}", count(RunTimelineItemKind::Blackboard)),
+        format!("Tools {tool_count}"),
+        format!("Subagents {subagent_count}"),
+        format!("Processes {process_count}"),
+        format!(
+            "ASK {}",
+            count(RunTimelineItemKind::Ask) + timeline.subagents.loose_asks.len()
+        ),
+        format!("Crystal {}", count(RunTimelineItemKind::Crystal)),
+    ];
+    Line::styled(
+        parts.join(" · "),
+        Style::default().fg(Color::Rgb(126, 139, 170)),
+    )
 }
 
 fn status_marker(status: &RunTimelineItemStatus) -> &'static str {
@@ -95,9 +191,11 @@ fn marker_style(status: &RunTimelineItemStatus) -> Style {
 
 fn kind_label(kind: &RunTimelineItemKind) -> &'static str {
     match kind {
+        RunTimelineItemKind::Model => "model",
         RunTimelineItemKind::Route => "route",
         RunTimelineItemKind::Recall => "recall",
         RunTimelineItemKind::Tool => "tool",
+        RunTimelineItemKind::Process => "process",
         RunTimelineItemKind::Blackboard => "blackboard",
         RunTimelineItemKind::Subagent => "subagent",
         RunTimelineItemKind::Ask => "ASK",
@@ -105,6 +203,7 @@ fn kind_label(kind: &RunTimelineItemKind) -> &'static str {
         RunTimelineItemKind::Fork => "fork",
         RunTimelineItemKind::Loop => "loop",
         RunTimelineItemKind::Snapshot => "snapshot",
+        RunTimelineItemKind::Crystal => "crystal",
     }
 }
 
@@ -152,20 +251,67 @@ mod tests {
     }
 
     #[test]
-    fn run_panel_shows_loose_subagent_child() {
+    fn run_panel_shows_waiting_without_events() {
+        let timeline = RunTimeline::new();
+        let rendered = run_panel_lines(&timeline)
+            .into_iter()
+            .map(|line| {
+                line.spans
+                    .into_iter()
+                    .map(|span| span.content.into_owned())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("waiting for run events"));
+    }
+
+    #[test]
+    fn run_panel_shows_model_tool_process_and_crystal_tree() {
         let mut timeline = RunTimeline::new();
-        timeline
-            .subagents
-            .loose_children
-            .push(crate::tui::subagent::state::SubagentChild {
-                id: "child-1".to_string(),
-                batch_id: Some("batch-1".to_string()),
-                name: "child-1".to_string(),
-                task: Some("Need approval".to_string()),
-                status: crate::tui::subagent::state::SubagentStatus::NeedsUser,
-                allowed_tools: Vec::new(),
-                tool_calls: Vec::new(),
-            });
+        timeline.apply_event_publish(&json!({
+            "type": "model.allocation.selected",
+            "payload": {
+                "childId": "child-1",
+                "providerId": "openai",
+                "modelId": "gpt-5",
+                "scope": "subagent-child"
+            }
+        }));
+        timeline.apply_event_publish(&json!({
+            "type": "subagent.child.start",
+            "payload": { "childId": "child-1", "task": "inspect tool flow" }
+        }));
+        timeline.apply_event_publish(&json!({
+            "type": "tool.started",
+            "payload": {
+                "childId": "child-1",
+                "callId": "call-1",
+                "server": "shell",
+                "tool": "exec",
+                "argsPreview": "rg model"
+            }
+        }));
+        timeline.apply_event_publish(&json!({
+            "type": "process.output",
+            "payload": {
+                "childId": "child-1",
+                "callId": "call-1",
+                "processId": "proc-1",
+                "command": "rg model",
+                "outputPreview": "model.allocation.selected"
+            }
+        }));
+        timeline.apply_event_publish(&json!({
+            "type": "executive.loop.paused",
+            "payload": {
+                "childId": "child-1",
+                "askId": "ask-1",
+                "reason": "needs decision",
+                "crystalCandidate": "save learned route"
+            }
+        }));
 
         let rendered = run_panel_lines(&timeline)
             .into_iter()
@@ -178,7 +324,11 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(rendered.contains("Need approval"));
-        assert!(!rendered.contains("waiting for run events"));
+        assert!(rendered.contains("Model 1"));
+        assert!(rendered.contains("openai/gpt-5"));
+        assert!(rendered.contains("tool shell/exec"));
+        assert!(rendered.contains("process rg model"));
+        assert!(rendered.contains("ASK ask-1"));
+        assert!(rendered.contains("crystal save learned route"));
     }
 }

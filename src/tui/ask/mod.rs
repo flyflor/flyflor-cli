@@ -3,4 +3,4 @@ pub mod parser;
 pub mod state;
 pub mod view;
 
-pub use command::{AskAnswer, ask_message_metadata};
+pub use command::{AskAnswer, ask_message_metadata, ask_message_metadata_many};

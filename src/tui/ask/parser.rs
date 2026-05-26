@@ -19,13 +19,14 @@ pub fn ask_menu_from_metadata(turn_index: usize, metadata: &Value) -> Option<Ask
         .or_else(|| metadata.get("continuation"))?;
     let mut questions = questions_from_ask(ask);
     if questions.is_empty() {
-        let choices = choices_from_value(ask, None, None);
+        let id = value_string(ask, "id")
+            .or_else(|| value_string(ask, "askId"))
+            .or_else(|| value_string(ask, "snapshotId"))
+            .unwrap_or_else(|| "ask".to_string());
+        let choices = choices_from_value(ask, Some(&id), recommended_choice_id(ask).as_deref());
         if !choices.is_empty() {
             questions.push(AskQuestion {
-                id: value_string(ask, "id")
-                    .or_else(|| value_string(ask, "askId"))
-                    .or_else(|| value_string(ask, "snapshotId"))
-                    .unwrap_or_else(|| "ask".to_string()),
+                id,
                 prompt: value_string(ask, "prompt")
                     .or_else(|| value_string(ask, "question"))
                     .unwrap_or_else(|| "ASK".to_string()),
@@ -34,16 +35,10 @@ pub fn ask_menu_from_metadata(turn_index: usize, metadata: &Value) -> Option<Ask
             });
         }
     }
-
-    let items = flatten_questions(&questions);
-    let selected = items.iter().position(|item| item.recommended).unwrap_or(0);
-    Some(AskMenu {
-        turn_index,
-        selected,
-        continuation,
-        questions,
-        items,
-    })
+    for question in &mut questions {
+        ensure_other_choice(question);
+    }
+    Some(AskMenu::new(turn_index, continuation, questions))
 }
 
 pub fn continuation_from_metadata(metadata: &Value) -> Option<Value> {
@@ -84,7 +79,7 @@ fn question_from_value((index, value): (usize, &Value)) -> Option<AskQuestion> {
             id: format!("question-{}", index + 1),
             prompt: prompt.clone(),
             recommended_choice_id: None,
-            choices: Vec::new(),
+            choices: vec![other_choice(Some(&format!("question-{}", index + 1)))],
         }),
         Value::Object(_) => {
             let id = value_string(value, "id")
@@ -106,17 +101,11 @@ fn question_from_value((index, value): (usize, &Value)) -> Option<AskQuestion> {
     }
 }
 
-fn flatten_questions(questions: &[AskQuestion]) -> Vec<AskChoice> {
-    questions
-        .iter()
-        .flat_map(|question| {
-            let mut choices = question.choices.clone();
-            if !choices.iter().any(|choice| choice.is_other) {
-                choices.push(other_choice(Some(&question.id)));
-            }
-            choices
-        })
-        .collect()
+fn ensure_other_choice(question: &mut AskQuestion) {
+    if question.choices.iter().any(|choice| choice.is_other) {
+        return;
+    }
+    question.choices.push(other_choice(Some(&question.id)));
 }
 
 fn choices_from_value(
@@ -247,14 +236,19 @@ mod tests {
 
         assert_eq!(menu.turn_index, 7);
         assert_eq!(menu.questions.len(), 2);
-        assert_eq!(menu.items.len(), 5);
-        assert_eq!(menu.selected, 1);
-        assert_eq!(menu.items[1].id, "fast");
-        assert!(menu.items[1].recommended);
-        assert_eq!(menu.items[1].description.as_deref(), Some("Less waiting"));
-        assert!(menu.items.last().expect("other").is_other);
+        assert_eq!(menu.questions[0].choices.len(), 3);
+        assert_eq!(menu.questions[1].choices.len(), 2);
+        assert_eq!(menu.selected_by_question[0], 1);
+        assert_eq!(menu.questions[0].choices[1].id, "fast");
+        assert!(menu.questions[0].choices[1].recommended);
         assert_eq!(
-            menu.items
+            menu.questions[0].choices[1].description.as_deref(),
+            Some("Less waiting")
+        );
+        assert!(menu.questions[1].choices.last().expect("other").is_other);
+        assert_eq!(
+            menu.questions[1]
+                .choices
                 .last()
                 .and_then(|item| item.question_id.as_deref()),
             Some("q2")
@@ -276,8 +270,11 @@ mod tests {
 
         let menu = ask_menu_from_metadata(1, &metadata).expect("ask menu");
 
-        assert!(menu.items[0].is_other);
-        assert_eq!(menu.items[0].question_id.as_deref(), Some("q1"));
-        assert_eq!(menu.items.len(), 1);
+        assert!(menu.questions[0].choices[0].is_other);
+        assert_eq!(
+            menu.questions[0].choices[0].question_id.as_deref(),
+            Some("q1")
+        );
+        assert_eq!(menu.questions[0].choices.len(), 1);
     }
 }

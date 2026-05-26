@@ -4,6 +4,32 @@ use crate::tui::run_timeline::state::{
     RunTimelineItem, RunTimelineItemKind, RunTimelineItemStatus, RunTimelineSource,
 };
 
+#[cfg(test)]
+pub fn parse_timeline_input(value: &Value) -> Vec<RunTimelineItem> {
+    let message_type = value
+        .get("type")
+        .or_else(|| value.get("messageType"))
+        .and_then(Value::as_str);
+
+    if message_type == Some("execution.job.snapshot") {
+        return parse_execution_job_snapshot(value);
+    }
+
+    if let Some(payload) = value.get("payload") {
+        let payload_type = payload
+            .get("type")
+            .or_else(|| payload.get("messageType"))
+            .and_then(Value::as_str);
+        if payload_type == Some("execution.job.snapshot")
+            || message_type == Some("execution.job.snapshot")
+        {
+            return parse_execution_job_snapshot(payload);
+        }
+    }
+
+    parse_event_publish(value).into_iter().collect()
+}
+
 pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
     let event = event_value(value)?;
     let event_type = event_type(event)?;
@@ -23,6 +49,7 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
         .unwrap_or_else(|| stable_id(event_type, payload));
 
     let item = match event_type {
+        "model.allocation.selected" => model_item(id, payload),
         "route.escalated" => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Route,
@@ -36,21 +63,13 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
             )
             .unwrap_or_else(|| compact_json(payload)),
         ),
-        event_type
-            if event_type.starts_with("scope.recall.")
-                || event_type.starts_with("memory.recall.") =>
-        {
-            RunTimelineItem::new(
-                id,
-                RunTimelineItemKind::Recall,
-                status_from_event_type(event_type),
-                event_type.replace('.', " "),
-            )
-            .with_detail(
-                first_string(payload, &["query", "summary", "content", "memory"])
-                    .unwrap_or_default(),
-            )
-        }
+        event_type if event_type.starts_with("scope.recall.") => RunTimelineItem::new(
+            id,
+            RunTimelineItemKind::Recall,
+            status_from_event_type(event_type),
+            event_type.replace('.', " "),
+        )
+        .with_detail(first_string(payload, &["query", "summary", "content"]).unwrap_or_default()),
         event_type if event_type.starts_with("blackboard.") => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Blackboard,
@@ -62,24 +81,13 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
                 .unwrap_or_else(|| compact_json(payload)),
         ),
         "mcp.tool.call.executed" => tool_item(id, "mcp tool", payload),
-        event_type
-            if event_type.starts_with("tool.")
-                || event_type.starts_with("sandbox.tool.")
-                || event_type.starts_with("process.") =>
-        {
-            tool_item(id, event_type, payload)
-        }
-        event_type if event_type.starts_with("worker.task.") => RunTimelineItem::new(
-            id,
-            RunTimelineItemKind::Subagent,
-            status_from_event_type(event_type),
-            event_type.replace('.', " "),
-        )
-        .with_detail(first_string(payload, &["task", "summary", "message"]).unwrap_or_default()),
+        event_type if event_type.starts_with("sandbox.tool.") => tool_item(id, event_type, payload),
+        event_type if event_type.starts_with("tool.") => tool_item(id, event_type, payload),
+        event_type if event_type.starts_with("process.") => process_item(id, event_type, payload),
         "subagent.batch.start" | "subagent.batch.end" => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Subagent,
-            status_from_payload_or_event(payload, event_type),
+            status_from_event_type(event_type),
             format!(
                 "subagent batch {}",
                 if event_type.ends_with(".start") {
@@ -95,7 +103,7 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
         "subagent.child.start" | "subagent.child.end" => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Subagent,
-            status_from_payload_or_event(payload, event_type),
+            status_from_event_type(event_type),
             format!(
                 "subagent child {}",
                 if event_type.ends_with(".start") {
@@ -123,7 +131,17 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
                 "executive loop resumed"
             },
         )
-        .with_detail(first_string(payload, &["reason", "message", "askId"]).unwrap_or_default()),
+        .with_detail(
+            first_string(payload, &["reason", "message", "askId", "crystalCandidate"])
+                .unwrap_or_default(),
+        ),
+        "memory.ask.answered" => RunTimelineItem::new(
+            id,
+            RunTimelineItemKind::Ask,
+            RunTimelineItemStatus::Completed,
+            "ASK answered",
+        )
+        .with_detail(first_string(payload, &["answerText", "text", "askId"]).unwrap_or_default()),
         event_type if event_type.starts_with("ask.") || event_type.contains(".ask.") => {
             RunTimelineItem::new(
                 id,
@@ -165,6 +183,17 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
                 first_string(payload, &["forkId", "summary", "message"]).unwrap_or_default(),
             )
         }
+        event_type if event_type.starts_with("crystal.") || event_type.contains(".crystal.") => {
+            RunTimelineItem::new(
+                id,
+                RunTimelineItemKind::Crystal,
+                status_from_event_type(event_type),
+                event_type.replace('.', " "),
+            )
+            .with_detail(
+                first_string(payload, &["crystalId", "summary", "message"]).unwrap_or_default(),
+            )
+        }
         _ => return None,
     };
 
@@ -179,7 +208,6 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
     let data = value
         .get("payload")
         .and_then(|payload| payload.get("data"))
-        .or_else(|| value.get("payload").and_then(|payload| payload.get("job")))
         .or_else(|| value.get("data"))
         .or_else(|| value.get("job"))
         .unwrap_or(value);
@@ -242,16 +270,74 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
 }
 
 fn tool_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
-    let name = first_string(payload, &["toolName", "name", "tool", "server"])
+    let name = first_string(payload, &["toolName", "name", "tool", "server", "command"])
         .unwrap_or_else(|| event_type.replace('.', " "));
+    let status = match status_from_value(payload) {
+        RunTimelineItemStatus::Info => status_from_event_type(event_type),
+        other => other,
+    };
     RunTimelineItem::new(
         id,
         RunTimelineItemKind::Tool,
-        status_from_payload_or_event(payload, event_type),
+        status,
         format!("tool {name}"),
     )
     .with_detail(
-        first_string(payload, &["summary", "command", "result", "error"]).unwrap_or_default(),
+        first_string(
+            payload,
+            &[
+                "summary",
+                "argsPreview",
+                "args_preview",
+                "command",
+                "outputPath",
+                "error",
+                "result",
+            ],
+        )
+        .unwrap_or_default(),
+    )
+}
+
+fn model_item(id: String, payload: &Value) -> RunTimelineItem {
+    let provider = first_string(payload, &["providerId", "provider_id", "provider"]);
+    let model = first_string(payload, &["modelId", "model_id", "model"]);
+    let title = match (provider, model) {
+        (Some(provider), Some(model)) => format!("model {provider}/{model}"),
+        (None, Some(model)) => format!("model {model}"),
+        (Some(provider), None) => format!("model {provider}"),
+        (None, None) => "model selected".to_string(),
+    };
+    RunTimelineItem::new(
+        id,
+        RunTimelineItemKind::Model,
+        RunTimelineItemStatus::Info,
+        title,
+    )
+    .with_detail(
+        first_string(payload, &["scope", "agentRole", "agent_role", "reason"]).unwrap_or_default(),
+    )
+}
+
+fn process_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
+    let name = first_string(payload, &["command", "cmd", "process", "name"])
+        .unwrap_or_else(|| event_type.replace('.', " "));
+    let status = match status_from_value(payload) {
+        RunTimelineItemStatus::Info => status_from_event_type(event_type),
+        other => other,
+    };
+    RunTimelineItem::new(
+        id,
+        RunTimelineItemKind::Process,
+        status,
+        format!("process {name}"),
+    )
+    .with_detail(
+        first_string(
+            payload,
+            &["outputPreview", "output", "outputPath", "error", "summary"],
+        )
+        .unwrap_or_default(),
     )
 }
 
@@ -287,6 +373,14 @@ pub(crate) fn value_string(value: &Value, key: &str) -> Option<String> {
     })
 }
 
+pub(crate) fn value_u64(value: &Value, key: &str) -> Option<u64> {
+    value.get(key).and_then(|value| match value {
+        Value::Number(number) => number.as_u64(),
+        Value::String(text) => text.parse::<u64>().ok(),
+        _ => None,
+    })
+}
+
 pub(crate) fn first_string(value: &Value, keys: &[&str]) -> Option<String> {
     for key in keys {
         if let Some(text) = value_string(value, key) {
@@ -297,9 +391,7 @@ pub(crate) fn first_string(value: &Value, keys: &[&str]) -> Option<String> {
 }
 
 pub(crate) fn status_from_event_type(event_type: &str) -> RunTimelineItemStatus {
-    if event_type.ends_with(".queued") {
-        RunTimelineItemStatus::Pending
-    } else if event_type.ends_with(".start")
+    if event_type.ends_with(".start")
         || event_type.ends_with(".started")
         || event_type.ends_with(".resumed")
     {
@@ -307,34 +399,22 @@ pub(crate) fn status_from_event_type(event_type: &str) -> RunTimelineItemStatus 
     } else if event_type.ends_with(".end")
         || event_type.ends_with(".ended")
         || event_type.ends_with(".completed")
-        || event_type.ends_with(".succeeded")
         || event_type.ends_with(".written")
+        || event_type.ends_with(".succeeded")
+        || event_type.ends_with(".persisted")
         || event_type.ends_with(".exit")
     {
         RunTimelineItemStatus::Completed
-    } else if event_type.ends_with(".failed")
-        || event_type.ends_with(".error")
-        || event_type.ends_with(".denied")
-    {
+    } else if event_type.ends_with(".failed") || event_type.ends_with(".error") {
         RunTimelineItemStatus::Failed
     } else if event_type.ends_with(".paused")
         || event_type.ends_with(".needs_user")
         || event_type.ends_with(".ask_required")
         || event_type.ends_with(".budget.exhausted")
-        || event_type.ends_with(".approval.requested")
     {
         RunTimelineItemStatus::NeedsUser
     } else {
         RunTimelineItemStatus::Info
-    }
-}
-
-fn status_from_payload_or_event(payload: &Value, event_type: &str) -> RunTimelineItemStatus {
-    let status = status_from_value(payload);
-    if status == RunTimelineItemStatus::Info {
-        status_from_event_type(event_type)
-    } else {
-        status
     }
 }
 
@@ -417,22 +497,21 @@ mod tests {
     fn parses_required_event_families() {
         let cases = [
             ("scope.recall.started", RunTimelineItemKind::Recall),
-            ("memory.recall.assembled", RunTimelineItemKind::Recall),
+            ("model.allocation.selected", RunTimelineItemKind::Model),
             (
                 "blackboard.message.appended",
                 RunTimelineItemKind::Blackboard,
             ),
             ("mcp.tool.call.executed", RunTimelineItemKind::Tool),
-            ("sandbox.tool.approval.requested", RunTimelineItemKind::Tool),
-            ("process.start", RunTimelineItemKind::Tool),
             ("tool.shell.completed", RunTimelineItemKind::Tool),
-            ("worker.task.start", RunTimelineItemKind::Subagent),
+            ("sandbox.tool.exec.started", RunTimelineItemKind::Tool),
+            ("process.output", RunTimelineItemKind::Process),
             ("subagent.batch.start", RunTimelineItemKind::Subagent),
             ("subagent.child.end", RunTimelineItemKind::Subagent),
             ("executive.loop.paused", RunTimelineItemKind::Loop),
             ("executive.loop.resumed", RunTimelineItemKind::Loop),
-            ("memory.task_plan.written", RunTimelineItemKind::Plan),
-            ("memory.context_fork.written", RunTimelineItemKind::Fork),
+            ("memory.ask.answered", RunTimelineItemKind::Ask),
+            ("memory.crystal.written", RunTimelineItemKind::Crystal),
         ];
 
         for (event_type, kind) in cases {
@@ -469,34 +548,31 @@ mod tests {
     }
 
     #[test]
-    fn parses_execution_job_snapshot_payload_job_shape() {
-        let items = parse_execution_job_snapshot(&json!({
-            "type": "execution.job.snapshot",
+    fn parses_model_and_process_details_without_raw_dump() {
+        let model = parse_event_publish(&json!({
+            "type": "model.allocation.selected",
             "payload": {
-                "job": {
-                    "jobId": "job-payload",
-                    "status": "completed",
-                    "children": [{ "id": "child-payload", "status": "succeeded" }]
-                }
-            }
-        }));
-
-        assert!(items.iter().any(|item| item.id == "job:job-payload"));
-        assert!(items.iter().any(|item| item.id == "child:child-payload"));
-    }
-
-    #[test]
-    fn subagent_end_prefers_payload_status() {
-        let item = parse_event_publish(&json!({
-            "type": "subagent.child.end",
-            "payload": {
-                "childId": "child-1",
-                "status": "needs_user",
-                "summary": "Pick an option"
+                "providerId": "anthropic",
+                "modelId": "claude",
+                "scope": "blackboard"
             }
         }))
-        .expect("subagent event");
+        .expect("model event");
+        assert_eq!(model.kind, RunTimelineItemKind::Model);
+        assert_eq!(model.title, "model anthropic/claude");
+        assert_eq!(model.detail.as_deref(), Some("blackboard"));
 
-        assert_eq!(item.status, RunTimelineItemStatus::NeedsUser);
+        let process = parse_event_publish(&json!({
+            "type": "process.exit",
+            "payload": {
+                "processId": "proc-1",
+                "command": "rg ASK",
+                "outputPath": "/tmp/out"
+            }
+        }))
+        .expect("process event");
+        assert_eq!(process.kind, RunTimelineItemKind::Process);
+        assert_eq!(process.status, RunTimelineItemStatus::Completed);
+        assert_eq!(process.detail.as_deref(), Some("/tmp/out"));
     }
 }

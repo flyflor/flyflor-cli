@@ -613,40 +613,123 @@ fn render_command_palette_lines(menu: &CommandPalette, theme: &Theme) -> Vec<Lin
 }
 
 fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::styled(
-        "ASK 选择 · Enter 确认 · Esc 关闭",
-        Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
-    )];
-    for (index, item) in menu
-        .items
-        .iter()
-        .take(visible_item_count(menu, 7))
-        .enumerate()
-    {
-        let selected = index == menu.selected;
+    let mut lines = vec![Line::from(vec![
+        Span::styled(
+            "ASK",
+            Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(
+                "  问题 {}/{} · Enter 确认 · Tab 下一题 · Esc 关闭",
+                menu.active_question + 1,
+                menu.questions.len().max(1)
+            ),
+            Style::default().fg(theme.muted),
+        ),
+    ])];
+    for (question_index, question) in menu.questions.iter().enumerate() {
+        let active = question_index == menu.active_question;
+        let selected = menu
+            .selected_by_question
+            .get(question_index)
+            .copied()
+            .unwrap_or(0);
         lines.push(Line::from(vec![
             Span::styled(
-                if selected { "› " } else { "  " },
-                Style::default().fg(if selected { theme.pink } else { theme.muted }),
+                if active { "› " } else { "  " },
+                Style::default().fg(if active { theme.pink } else { theme.muted }),
             ),
             Span::styled(
-                item.label.clone(),
-                Style::default().fg(if item.is_other {
-                    theme.green
-                } else {
-                    theme.text
-                }),
-            ),
-            Span::styled(
-                item.description
-                    .as_ref()
-                    .map(|description| format!(" · {description}"))
-                    .unwrap_or_default(),
-                Style::default().fg(theme.muted),
+                format!("{}. {}", question_index + 1, question.prompt),
+                Style::default()
+                    .fg(if active { theme.text } else { theme.muted })
+                    .add_modifier(if active {
+                        Modifier::BOLD
+                    } else {
+                        Modifier::empty()
+                    }),
             ),
         ]));
+        if active {
+            for (choice_index, item) in question
+                .choices
+                .iter()
+                .take(visible_item_count(menu, 7))
+                .enumerate()
+            {
+                let choice_active = choice_index == selected;
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        if choice_active { "  › " } else { "    " },
+                        Style::default().fg(if choice_active {
+                            theme.pink
+                        } else {
+                            theme.muted
+                        }),
+                    ),
+                    Span::styled(
+                        item.label.clone(),
+                        Style::default().fg(if item.is_other {
+                            theme.green
+                        } else {
+                            theme.text
+                        }),
+                    ),
+                    Span::styled(
+                        item.description
+                            .as_ref()
+                            .map(|description| format!(" · {description}"))
+                            .unwrap_or_default(),
+                        Style::default().fg(theme.muted),
+                    ),
+                ]));
+            }
+        } else if let Some(choice) = question.choices.get(selected) {
+            let answer = menu
+                .freeform_by_question
+                .get(question_index)
+                .and_then(|value| value.as_deref())
+                .unwrap_or(choice.label.as_str());
+            lines.push(Line::from(vec![
+                Span::raw("    "),
+                Span::styled("已选 ", Style::default().fg(theme.muted)),
+                Span::styled(
+                    truncate_to_width(answer, 54),
+                    Style::default().fg(if choice.is_other {
+                        theme.green
+                    } else {
+                        theme.text
+                    }),
+                ),
+            ]));
+        }
+    }
+    if menu.questions.is_empty() {
+        lines.push(Line::styled(
+            "ASK payload is empty",
+            Style::default().fg(theme.muted),
+        ));
     }
     lines
+}
+
+fn render_ask_freeform_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
+    let prompt = menu
+        .current_question()
+        .map(|question| question.prompt.clone())
+        .unwrap_or_else(|| "ASK".to_string());
+    vec![
+        Line::styled(
+            "ASK 自由输入 · Enter 写入当前问题",
+            Style::default()
+                .fg(theme.green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Line::from(vec![
+            Span::styled("› ", Style::default().fg(theme.pink)),
+            Span::styled(prompt, Style::default().fg(theme.text)),
+        ]),
+    ]
 }
 
 fn render_plan_menu_lines(menu: &PlanMenu, theme: &Theme) -> Vec<Line<'static>> {
@@ -865,6 +948,7 @@ struct App {
     command_palette: Option<CommandPalette>,
     ask_menu: Option<AskMenu>,
     plan_menu: Option<PlanMenu>,
+    pending_ask_menu: Option<AskMenu>,
     pending_ask_continuation: Option<Value>,
     pending_ask_question_id: Option<String>,
     pending_ask_choice_id: Option<String>,
@@ -1069,6 +1153,7 @@ impl App {
             command_palette: None,
             ask_menu: None,
             plan_menu: None,
+            pending_ask_menu: None,
             pending_ask_continuation: None,
             pending_ask_question_id: None,
             pending_ask_choice_id: None,
@@ -1456,7 +1541,7 @@ impl App {
     }
 
     fn refresh_command_palette(&mut self) {
-        if self.pending_ask_continuation.is_some() {
+        if self.pending_ask_continuation.is_some() || self.pending_ask_menu.is_some() {
             self.command_palette = None;
             return;
         }
@@ -1483,8 +1568,7 @@ impl App {
 
     fn move_active_menu(&mut self, delta: isize) -> bool {
         if let Some(menu) = &mut self.ask_menu {
-            menu.selected = move_index(menu.selected, menu.items.len(), delta);
-            return true;
+            return menu.move_choice(delta);
         }
         if let Some(menu) = &mut self.plan_menu {
             menu.selected = move_index(menu.selected, menu.items.len(), delta);
@@ -1502,7 +1586,7 @@ impl App {
             if confirm {
                 self.confirm_ask_menu_selection();
             } else {
-                self.move_active_menu(1);
+                self.advance_ask_menu_or_submit();
             }
             return true;
         }
@@ -1529,6 +1613,9 @@ impl App {
         if let Some(menu) = &self.ask_menu {
             return Some(render_ask_menu_lines(menu, theme));
         }
+        if let Some(menu) = &self.pending_ask_menu {
+            return Some(render_ask_freeform_lines(menu, theme));
+        }
         if let Some(menu) = &self.plan_menu {
             return Some(render_plan_menu_lines(menu, theme));
         }
@@ -1552,7 +1639,7 @@ impl App {
     }
 
     fn confirm_command_palette_selection(&mut self) {
-        if self.pending_ask_continuation.is_some() {
+        if self.pending_ask_continuation.is_some() || self.pending_ask_menu.is_some() {
             self.command_palette = None;
             self.right_source.blackboard_status =
                 "请先完成当前 ASK 自由输入，Esc 可关闭菜单但不会丢弃待答 ASK".to_string();
@@ -1732,20 +1819,37 @@ impl App {
         let Some(menu) = self.ask_menu.take() else {
             return;
         };
-        let Some(item) = menu.items.get(menu.selected).cloned() else {
+        let Some(item) = menu.current_choice().cloned() else {
             return;
         };
         if item.is_other {
-            self.pending_ask_continuation = Some(menu.continuation);
-            self.pending_ask_question_id = item.question_id;
-            self.pending_ask_choice_id = Some(item.id);
+            self.pending_ask_menu = Some(menu);
             self.input.clear();
             self.input_cursor = None;
             self.right_source.blackboard_status = "请输入自定义 ASK 回答后发送".to_string();
             return;
         }
-        let answer = AskAnswer::from_choice(&item);
-        self.send_ask_answer(menu.turn_index, answer, menu.continuation);
+        self.submit_or_advance_ask_menu(menu);
+    }
+
+    fn advance_ask_menu_or_submit(&mut self) {
+        let Some(menu) = self.ask_menu.take() else {
+            return;
+        };
+        self.submit_or_advance_ask_menu(menu);
+    }
+
+    fn submit_or_advance_ask_menu(&mut self, mut menu: AskMenu) {
+        if menu.advance_question() {
+            self.ask_menu = Some(menu);
+            return;
+        }
+        let answers = menu
+            .answers()
+            .into_iter()
+            .map(AskAnswer::from)
+            .collect::<Vec<_>>();
+        self.send_ask_answers(menu.turn_index, answers, menu.continuation);
     }
 
     fn open_plan_menu(&mut self) {
@@ -1792,15 +1896,28 @@ impl App {
             format!("已发送计划决策：{} · {plan_id}", action.as_str());
     }
 
-    fn send_ask_answer(&mut self, turn_index: usize, ask_answer: AskAnswer, continuation: Value) {
+    fn send_ask_answers(
+        &mut self,
+        turn_index: usize,
+        ask_answers: Vec<AskAnswer>,
+        continuation: Value,
+    ) {
+        if ask_answers.is_empty() {
+            return;
+        }
         let message_id = format!("flyflor-cli-message-{}", now_millis());
         let new_turn_index = self.turns.len();
         let socket_connected = self.socket_connected;
-        let metadata = tui::ask::ask_message_metadata(continuation, &ask_answer);
+        let metadata = tui::ask::ask_message_metadata_many(continuation, &ask_answers);
+        let user_text = ask_answers
+            .iter()
+            .map(|answer| answer.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
-            user: ask_answer.text.clone(),
+            user: user_text.clone(),
             thought: None,
             answer: String::new(),
             metadata: None,
@@ -1826,7 +1943,7 @@ impl App {
             .socket_tx
             .send(SocketCommand::SendMessage {
                 message_id,
-                text: ask_answer.text,
+                text: user_text,
                 context_fork_id: self.active_context_fork_id.clone(),
                 metadata: Some(metadata),
                 mode: self.interaction_mode,
@@ -2188,6 +2305,7 @@ impl App {
         !self.input.is_empty()
             || self.command_palette.is_some()
             || self.ask_menu.is_some()
+            || self.pending_ask_menu.is_some()
             || self.plan_menu.is_some()
     }
 
@@ -2352,6 +2470,13 @@ impl App {
         if text.is_empty() {
             return;
         }
+        if let Some(mut menu) = self.pending_ask_menu.take() {
+            menu.set_current_freeform(text.clone());
+            self.input.clear();
+            self.input_cursor = None;
+            self.submit_or_advance_ask_menu(menu);
+            return;
+        }
         if matches!(self.pending_plan_action, Some(PlanPendingAction::Revise)) {
             self.pending_plan_action = None;
             self.send_plan_command(PlanAction::Revise, Some(text));
@@ -2359,7 +2484,7 @@ impl App {
             self.input_cursor = None;
             return;
         }
-        if self.pending_ask_continuation.is_none() {
+        if self.pending_ask_continuation.is_none() && self.pending_ask_menu.is_none() {
             if text == "/exit" {
                 self.should_quit = true;
                 return;
@@ -6216,15 +6341,17 @@ fn format_ask_detail(value: &Value) -> String {
         value_string(value, "continuationId"),
     );
     let menu = tui::ask::parser::ask_menu_from_metadata(0, &json!({ "ask": value }));
-    if let Some(menu) = menu
-        && !menu.items.is_empty()
-    {
-        lines.push("   选项:".to_string());
-        for option in menu.items.iter().filter(|option| !option.is_other) {
-            lines.push(format!("   - {}", option.label));
+    if let Some(menu) = menu {
+        for question in menu.questions {
+            lines.push(format!("   Q: {}", question.prompt));
+            for option in question.choices.iter().filter(|option| !option.is_other) {
+                lines.push(format!("   - {}", option.label));
+            }
+            if question.choices.iter().any(|option| option.is_other) {
+                lines.push("   - Other 自由输入".to_string());
+            }
         }
     }
-    lines.push("   - Other 自由输入".to_string());
     lines.join("\n")
 }
 
@@ -6621,7 +6748,7 @@ mod tests {
     use super::*;
     use crate::{
         layout::shell::{app_layout, content_root},
-        tui::ask::state::AskChoice,
+        tui::ask::state::{AskChoice, AskQuestion},
     };
 
     fn separator_text(width: u16) -> String {
@@ -7588,8 +7715,8 @@ mod tests {
 
         assert!(app.open_latest_ask_menu());
         let menu = app.ask_menu.as_ref().expect("ask menu");
-        assert_eq!(menu.items.len(), 2);
-        assert!(menu.items.last().expect("other").is_other);
+        assert_eq!(menu.questions[0].choices.len(), 2);
+        assert!(menu.questions[0].choices.last().expect("other").is_other);
 
         app.confirm_ask_menu_selection();
         let sent = app.turns.last().expect("sent turn");
@@ -7619,11 +7746,72 @@ mod tests {
 
         assert!(app.open_latest_ask_menu());
         assert!(app.move_active_menu(1));
-        assert_eq!(app.ask_menu.as_ref().expect("ask menu").selected, 1);
+        assert_eq!(
+            app.ask_menu
+                .as_ref()
+                .expect("ask menu")
+                .selected_by_question[0],
+            1
+        );
         assert!(app.handle_menu_confirm_or_next(true));
 
         let sent = app.turns.last().expect("sent turn");
         assert_eq!(sent.user, "B");
+    }
+
+    #[test]
+    fn ask_menu_multi_question_submits_answers_array() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.socket_connected = true;
+        app.turns.push(Turn {
+            message_id: Some("message-1".to_string()),
+            event_id: Some("event-1".to_string()),
+            user: "u".to_string(),
+            thought: None,
+            answer: "需要选择".to_string(),
+            metadata: Some(json!({
+                "ask": {
+                    "prompt": "选择下一步",
+                    "snapshotId": "ask-snapshot-1",
+                    "questions": [
+                        { "id": "q1", "prompt": "策略", "choices": [{ "id": "continue", "label": "继续", "value": "continue" }] },
+                        { "id": "q2", "prompt": "预算", "choices": [{ "id": "raise", "label": "增加", "value": "raise" }] }
+                    ]
+                }
+            })),
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+
+        assert!(app.open_latest_ask_menu());
+        assert!(app.handle_menu_confirm_or_next(false));
+        assert!(app.handle_menu_confirm_or_next(true));
+
+        match rx.try_recv().expect("send message command") {
+            SocketCommand::SendMessage {
+                metadata: Some(metadata),
+                ..
+            } => {
+                let answers = metadata
+                    .get("askAnswer")
+                    .and_then(|answer| answer.get("answers"))
+                    .and_then(Value::as_array)
+                    .expect("answers");
+                assert_eq!(answers.len(), 2);
+                assert_eq!(
+                    answers[0].get("questionId").and_then(Value::as_str),
+                    Some("q1")
+                );
+                assert_eq!(
+                    answers[1].get("questionId").and_then(Value::as_str),
+                    Some("q2")
+                );
+            }
+            _ => panic!("expected ask send message with metadata"),
+        }
     }
 
     #[test]
@@ -7652,12 +7840,13 @@ mod tests {
         });
 
         assert!(app.open_latest_ask_menu());
-        app.ask_menu.as_mut().expect("ask menu").selected = 1;
+        app.ask_menu
+            .as_mut()
+            .expect("ask menu")
+            .selected_by_question[0] = 1;
         app.confirm_ask_menu_selection();
 
-        assert!(app.pending_ask_continuation.is_some());
-        assert_eq!(app.pending_ask_question_id.as_deref(), Some("q1"));
-        assert_eq!(app.pending_ask_choice_id.as_deref(), Some("other"));
+        assert!(app.pending_ask_menu.is_some());
         assert!(app.right_source.blackboard_status.contains("自定义"));
     }
 
@@ -7683,7 +7872,10 @@ mod tests {
         });
 
         assert!(app.open_latest_ask_menu());
-        app.ask_menu.as_mut().expect("ask menu").selected = 1;
+        app.ask_menu
+            .as_mut()
+            .expect("ask menu")
+            .selected_by_question[0] = 1;
         app.confirm_ask_menu_selection();
         app.input = "我的自定义回答".to_string();
         app.socket_connected = true;
@@ -7691,7 +7883,7 @@ mod tests {
 
         let sent = app.turns.last().expect("sent turn");
         assert_eq!(sent.user, "我的自定义回答");
-        assert!(app.pending_ask_continuation.is_none());
+        assert!(app.pending_ask_menu.is_none());
     }
 
     #[test]
@@ -7726,7 +7918,10 @@ mod tests {
         });
 
         assert!(app.open_latest_ask_menu());
-        app.ask_menu.as_mut().expect("ask menu").selected = 1;
+        app.ask_menu
+            .as_mut()
+            .expect("ask menu")
+            .selected_by_question[0] = 1;
         app.confirm_ask_menu_selection();
         app.input = "我的自定义回答".to_string();
         app.submit_input();
@@ -7738,6 +7933,11 @@ mod tests {
                 ..
             } => {
                 let ask_answer = metadata.get("askAnswer").expect("askAnswer");
+                let answers = ask_answer
+                    .get("answers")
+                    .and_then(Value::as_array)
+                    .expect("answers");
+                assert_eq!(answers.len(), 1);
                 assert_eq!(
                     ask_answer.get("questionId").and_then(Value::as_str),
                     Some("q1")
@@ -7894,32 +8094,35 @@ mod tests {
     #[test]
     fn ask_menu_renders_above_composer_with_choices_and_other() {
         let theme = Theme::default();
-        let menu = AskMenu {
-            turn_index: 0,
-            selected: 0,
-            continuation: json!({ "mode": "continue", "snapshotId": "ask-1" }),
-            questions: Vec::new(),
-            items: vec![
-                AskChoice {
-                    id: "continue".to_string(),
-                    label: "继续实现".to_string(),
-                    value: Some("继续实现".to_string()),
-                    description: None,
-                    question_id: None,
-                    recommended: false,
-                    is_other: false,
-                },
-                AskChoice {
-                    id: "other".to_string(),
-                    label: "Other 自由输入".to_string(),
-                    value: None,
-                    description: Some("自由输入".to_string()),
-                    question_id: None,
-                    recommended: false,
-                    is_other: true,
-                },
-            ],
-        };
+        let menu = AskMenu::new(
+            0,
+            json!({ "mode": "continue", "snapshotId": "ask-1" }),
+            vec![AskQuestion {
+                id: "q1".to_string(),
+                prompt: "选择下一步".to_string(),
+                recommended_choice_id: None,
+                choices: vec![
+                    AskChoice {
+                        id: "continue".to_string(),
+                        label: "继续实现".to_string(),
+                        value: Some("继续实现".to_string()),
+                        description: None,
+                        question_id: None,
+                        recommended: false,
+                        is_other: false,
+                    },
+                    AskChoice {
+                        id: "other".to_string(),
+                        label: "Other 自由输入".to_string(),
+                        value: None,
+                        description: Some("自由输入".to_string()),
+                        question_id: None,
+                        recommended: false,
+                        is_other: true,
+                    },
+                ],
+            }],
+        );
         let lines = render_ask_menu_lines(&menu, &theme);
         let area = composer_menu_area(Rect::new(4, 20, 80, 4), lines.len()).expect("menu area");
         let text = lines
@@ -7928,7 +8131,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert_eq!(area, Rect::new(4, 17, 68, 3));
+        assert_eq!(area, Rect::new(4, 16, 68, 4));
         assert!(text.contains("继续实现"));
         assert!(text.contains("Other 自由输入"));
         assert!(!text.contains('{'));
@@ -9297,7 +9500,7 @@ mod tests {
             .join("\n");
 
         assert!(right.contains("Run"));
-        assert!(right.contains("subagent child ended"));
+        assert!(right.contains("Subagents"));
         assert!(right.contains("child-1"));
     }
 
