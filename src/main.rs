@@ -200,6 +200,7 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         }
         KeyCode::Enter if app.handle_menu_confirm_or_next(true) => {}
         KeyCode::Enter => app.submit_input(),
+        KeyCode::Char(ch) if app.select_active_menu_number(ch) => {}
         KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.insert_input_char(ch);
             app.refresh_command_palette();
@@ -415,8 +416,8 @@ fn composer_menu_area(input_inner: Rect, menu_len: usize) -> Option<Rect> {
     if menu_len == 0 || input_inner.y == 0 {
         return None;
     }
-    let width = input_inner.width.min(68);
-    let height = (menu_len as u16).min(input_inner.y).min(8);
+    let width = input_inner.width.min(96);
+    let height = (menu_len as u16).min(input_inner.y).min(14);
     if width < 12 || height == 0 {
         return None;
     }
@@ -469,7 +470,7 @@ fn draw_right_panel(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme)
 
 fn draw_compact_sidebar(frame: &mut Frame, area: Rect, theme: &Theme) {
     let compact = Paragraph::new(vec![
-        Line::styled("TODO List", Style::default().fg(theme.text)),
+        Line::styled("ACT 计划", Style::default().fg(theme.text)),
         Line::styled("○ 暂无计划", Style::default().fg(theme.muted)),
         Line::raw(""),
         Line::styled("CONTEXT WINDOW", Style::default().fg(theme.blue)),
@@ -613,6 +614,22 @@ fn render_command_palette_lines(menu: &CommandPalette, theme: &Theme) -> Vec<Lin
 }
 
 fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
+    let completed = menu
+        .questions
+        .iter()
+        .enumerate()
+        .filter(|(index, question)| {
+            let selected = menu.selected_by_question.get(*index).copied().unwrap_or(0);
+            question.choices.get(selected).is_some_and(|choice| {
+                !choice.is_other
+                    || menu
+                        .freeform_by_question
+                        .get(*index)
+                        .and_then(|value| value.as_deref())
+                        .is_some_and(|value| !value.trim().is_empty())
+            })
+        })
+        .count();
     let mut lines = vec![Line::from(vec![
         Span::styled(
             "ASK",
@@ -620,9 +637,10 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
         ),
         Span::styled(
             format!(
-                "  问题 {}/{} · Enter 确认 · Tab 下一题 · Esc 关闭",
+                "  问题 {}/{} · 完成 {completed}/{} · ↑↓ 选择 · 1-9 快选 · Enter 下一题/发送 · Esc 关闭",
                 menu.active_question + 1,
-                menu.questions.len().max(1)
+                menu.questions.len().max(1),
+                menu.questions.len()
             ),
             Style::default().fg(theme.muted),
         ),
@@ -668,12 +686,26 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                         }),
                     ),
                     Span::styled(
+                        format!("{}. ", choice_index + 1),
+                        Style::default().fg(theme.muted),
+                    ),
+                    Span::styled(
                         item.label.clone(),
                         Style::default().fg(if item.is_other {
                             theme.green
                         } else {
                             theme.text
                         }),
+                    ),
+                    Span::styled(
+                        if item.recommended {
+                            " (Recommended)"
+                        } else {
+                            ""
+                        },
+                        Style::default()
+                            .fg(theme.green)
+                            .add_modifier(Modifier::BOLD),
                     ),
                     Span::styled(
                         item.description
@@ -700,6 +732,14 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                     } else {
                         theme.text
                     }),
+                ),
+                Span::styled(
+                    if choice.recommended {
+                        " (Recommended)"
+                    } else {
+                        ""
+                    },
+                    Style::default().fg(theme.green),
                 ),
             ]));
         }
@@ -1233,6 +1273,7 @@ impl App {
             }
             SocketEvent::RuntimeEvent(event) => {
                 let item = self.run_timeline.apply_event_publish(&event);
+                self.attach_execution_row_to_active_turn();
                 let status = self.apply_runtime_event_side_effects(&event);
                 if let Some(job_id) = job_id_from_event_payload(&event) {
                     let _ = self
@@ -1247,6 +1288,7 @@ impl App {
             }
             SocketEvent::ExecutionJobSnapshot(snapshot) => {
                 self.run_timeline.apply_execution_job_snapshot(&snapshot);
+                self.attach_execution_row_to_active_turn();
                 self.right_source.blackboard_status = "execution job snapshot updated".to_string();
             }
             SocketEvent::ContextSnapshotLoaded(snapshot) => {
@@ -1275,7 +1317,7 @@ impl App {
                 text,
                 metadata,
             } => {
-                if let Some(turn_index) = self.pending_turns.remove(&message_id) {
+                if let Some(turn_index) = self.resolve_turn_final_index(&message_id) {
                     if let Some(turn) = self.turns.get_mut(turn_index) {
                         turn.answer = turn_final_visible_text(&text, metadata.as_ref());
                         turn.metadata = metadata;
@@ -1395,6 +1437,38 @@ impl App {
         }
     }
 
+    fn attach_execution_row_to_active_turn(&mut self) {
+        let Some(turn_index) = self
+            .pending_turns
+            .values()
+            .copied()
+            .max()
+            .or_else(|| self.turns.len().checked_sub(1))
+        else {
+            return;
+        };
+        let summary = execution_context_summary(&self.run_timeline);
+        let detail = execution_context_detail(&self.run_timeline);
+        let Some(turn) = self.turns.get_mut(turn_index) else {
+            return;
+        };
+        if let Some(row) = turn
+            .context_rows
+            .iter_mut()
+            .find(|row| row.kind == ContextRowKind::Execution)
+        {
+            row.summary = summary;
+            row.detail = detail;
+            return;
+        }
+        turn.context_rows.push(ContextRow {
+            kind: ContextRowKind::Execution,
+            summary,
+            detail,
+            expanded: false,
+        });
+    }
+
     fn fail_pending_turns(&mut self, message: &str) {
         let pending = mem::take(&mut self.pending_turns);
         for (_, turn_index) in pending {
@@ -1411,6 +1485,28 @@ impl App {
     fn pending_turn_mut(&mut self, message_id: &str) -> Option<&mut Turn> {
         let turn_index = *self.pending_turns.get(message_id)?;
         self.turns.get_mut(turn_index)
+    }
+
+    fn resolve_turn_final_index(&mut self, message_id: &str) -> Option<usize> {
+        if let Some(turn_index) = self.pending_turns.remove(message_id) {
+            return Some(turn_index);
+        }
+        if self.pending_turns.len() == 1 {
+            let Some((pending_id, turn_index)) = self
+                .pending_turns
+                .iter()
+                .map(|(id, index)| (id.clone(), *index))
+                .next()
+            else {
+                return None;
+            };
+            self.pending_turns.remove(&pending_id);
+            log_event(format!(
+                "turn final message_id mismatch final={message_id} pending={pending_id}"
+            ));
+            return Some(turn_index);
+        }
+        None
     }
 
     fn is_working(&self) -> bool {
@@ -1584,6 +1680,19 @@ impl App {
         if let Some(menu) = &mut self.command_palette {
             menu.selected = move_index(menu.selected, menu.items.len(), delta);
             return true;
+        }
+        false
+    }
+
+    fn select_active_menu_number(&mut self, ch: char) -> bool {
+        let Some(digit) = ch.to_digit(10) else {
+            return false;
+        };
+        if digit == 0 {
+            return false;
+        }
+        if let Some(menu) = &mut self.ask_menu {
+            return menu.select_current_choice(digit as usize - 1);
         }
         false
     }
@@ -2175,6 +2284,7 @@ impl App {
             ContextRowKind::Recall
             | ContextRowKind::Thought
             | ContextRowKind::Fork
+            | ContextRowKind::Execution
             | ContextRowKind::Blackboard => {
                 row.expanded = !row.expanded;
                 self.left.stick_to_bottom = false;
@@ -2776,33 +2886,16 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
         });
         lines.push(thread_line(Line::raw(""), width, theme, ThreadTone::Rail));
 
-        for (row_index, row) in turn.context_rows.iter().enumerate() {
-            let line_index = lines.len();
-            let block_start = line_index;
-            lines.push(render_context_row_header(row, width, theme));
-            context_row_regions.push(ContextRowRegion {
-                turn_index,
-                row_index,
-                line_index,
-            });
-            if row.expanded {
-                lines.push(thread_line(Line::raw(""), width, theme, ThreadTone::Rail));
-                for line in render_markdown_block(
-                    &row.detail,
-                    thread_body_width(width, theme, ThreadTone::Thought),
-                    theme,
-                    MarkdownTone::Thought,
-                ) {
-                    lines.push(thread_line(line, width, theme, ThreadTone::Thought));
-                }
-            }
-            block_regions.push(BlockRegion {
-                kind: BlockKind::Thought,
-                turn_index,
-                start_line: block_start,
-                end_line: lines.len().saturating_sub(1),
-            });
-        }
+        render_context_rows_for_turn(
+            turn,
+            turn_index,
+            width,
+            theme,
+            |row| row.kind != ContextRowKind::Execution,
+            &mut lines,
+            &mut context_row_regions,
+            &mut block_regions,
+        );
 
         if let Some(thought) = &turn.thought {
             let row = ContextRow {
@@ -2855,6 +2948,16 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
                 end_line: lines.len().saturating_sub(1),
             });
         }
+        render_context_rows_for_turn(
+            turn,
+            turn_index,
+            width,
+            theme,
+            |row| row.kind == ContextRowKind::Execution,
+            &mut lines,
+            &mut context_row_regions,
+            &mut block_regions,
+        );
         if !turn.footer.trim().is_empty() {
             let footer_start = lines.len();
             lines.push(render_footer_line(&turn.footer, width, theme));
@@ -2875,6 +2978,48 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
     }
 }
 
+fn render_context_rows_for_turn(
+    turn: &Turn,
+    turn_index: usize,
+    width: usize,
+    theme: &Theme,
+    include: impl Fn(&ContextRow) -> bool,
+    lines: &mut Vec<Line<'static>>,
+    context_row_regions: &mut Vec<ContextRowRegion>,
+    block_regions: &mut Vec<BlockRegion>,
+) {
+    for (row_index, row) in turn.context_rows.iter().enumerate() {
+        if !include(row) {
+            continue;
+        }
+        let line_index = lines.len();
+        let block_start = line_index;
+        lines.push(render_context_row_header(row, width, theme));
+        context_row_regions.push(ContextRowRegion {
+            turn_index,
+            row_index,
+            line_index,
+        });
+        if row.expanded {
+            lines.push(thread_line(Line::raw(""), width, theme, ThreadTone::Rail));
+            for line in render_markdown_block(
+                &row.detail,
+                thread_body_width(width, theme, ThreadTone::Thought),
+                theme,
+                MarkdownTone::Thought,
+            ) {
+                lines.push(thread_line(line, width, theme, ThreadTone::Thought));
+            }
+        }
+        block_regions.push(BlockRegion {
+            kind: BlockKind::Thought,
+            turn_index,
+            start_line: block_start,
+            end_line: lines.len().saturating_sub(1),
+        });
+    }
+}
+
 fn chat_render_key(turns: &[Turn], width: usize) -> ChatRenderKey {
     let last_turn_hash = turns.iter().fold(0u64, |acc, turn| {
         acc.wrapping_mul(16777619)
@@ -2882,9 +3027,14 @@ fn chat_render_key(turns: &[Turn], width: usize) -> ChatRenderKey {
     });
     let expanded_hash = turns.iter().fold(0u64, |acc, turn| {
         let row_hash = turn.context_rows.iter().fold(0u64, |row_acc, row| {
-            row_acc
+            let mut row_hash = row_acc
                 .wrapping_mul(31)
-                .wrapping_add(u64::from(row.expanded))
+                .wrapping_add(u64::from(row.expanded));
+            for byte in row.summary.as_bytes().iter().chain(row.detail.as_bytes()) {
+                row_hash ^= u64::from(*byte);
+                row_hash = row_hash.wrapping_mul(1099511628211);
+            }
+            row_hash
         });
         acc.wrapping_mul(131)
             .wrapping_add(row_hash)
@@ -2906,6 +3056,12 @@ fn hash_turn_render_inputs(turn: &Turn) -> u64 {
     let mut hash = 1469598103934665603u64;
     for text in [&turn.user, &turn.answer, &turn.footer] {
         for byte in text.as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(1099511628211);
+        }
+    }
+    for row in &turn.context_rows {
+        for byte in row.summary.as_bytes().iter().chain(row.detail.as_bytes()) {
             hash ^= u64::from(*byte);
             hash = hash.wrapping_mul(1099511628211);
         }
@@ -3039,6 +3195,7 @@ fn context_row_label(kind: ContextRowKind) -> &'static str {
         ContextRowKind::Thought => "😌 思考中",
         ContextRowKind::Fork => "🍀 fork",
         ContextRowKind::Blackboard => "🤔 黑板讨论",
+        ContextRowKind::Execution => "Exo",
         ContextRowKind::AskResume => "重新回答",
         ContextRowKind::CreateFork => "新建 fork",
     }
@@ -3951,14 +4108,8 @@ fn render_right_panel_sections(
     width: usize,
 ) -> Vec<RightPanelSection> {
     let mut sections = vec![
-        right_section("TODO List", todo_section_rows(todos)),
-        right_section(
-            "Run",
-            run_panel_lines(&data.run_timeline)
-                .into_iter()
-                .map(|line| line_plain_text(&line))
-                .collect(),
-        ),
+        right_section("ACT 计划", todo_section_rows(todos)),
+        right_section("Run", right_run_summary_rows(&data.run_timeline)),
         right_section(
             "Model / Status",
             data.model_stats
@@ -3975,12 +4126,28 @@ fn render_right_panel_sections(
     ];
 
     for section in sections.iter_mut() {
-        if section.title == "TODO List" {
+        if section.title == "ACT 计划" {
             continue;
         }
         section.lines = render_right_section_lines(section, width, false);
     }
     sections
+}
+
+fn right_run_summary_rows(timeline: &RunTimeline) -> Vec<String> {
+    if timeline.items.is_empty() && timeline.subagents.batches.is_empty() {
+        return vec!["waiting for run events".to_string()];
+    }
+    let mut rows = vec![execution_context_summary(timeline)];
+    rows.extend(
+        run_panel_lines(timeline)
+            .into_iter()
+            .skip(2)
+            .map(|line| line_plain_text(&line))
+            .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with("Subagents"))
+            .take(5),
+    );
+    rows
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -6040,6 +6207,10 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
         }
     }
 
+    if let Some(row) = execution_context_row_from_metadata(metadata) {
+        rows.push(row);
+    }
+
     rows.push(ContextRow {
         kind: ContextRowKind::CreateFork,
         summary: "从本轮创建 context fork".to_string(),
@@ -6048,6 +6219,178 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
     });
 
     rows
+}
+
+fn execution_context_row_from_metadata(metadata: &Value) -> Option<ContextRow> {
+    let ask_loop = metadata
+        .get("ask")
+        .and_then(|ask| ask.get("executiveToolLoop"))
+        .or_else(|| metadata.get("executiveToolLoop"));
+    let tool_executions = metadata
+        .get("executiveToolExecutions")
+        .and_then(Value::as_array);
+    if ask_loop.is_none() && tool_executions.is_none() {
+        return None;
+    }
+
+    let mut detail = Vec::new();
+    if let Some(loop_snapshot) = ask_loop {
+        detail.push("执行层 ASK / 外骨骼暂停".to_string());
+        push_detail_field(
+            &mut detail,
+            "askId",
+            value_string(loop_snapshot, "askId").or_else(|| value_string(loop_snapshot, "id")),
+        );
+        push_detail_field(
+            &mut detail,
+            "原因",
+            value_string(loop_snapshot, "message")
+                .or_else(|| value_string(loop_snapshot, "reason"))
+                .or_else(|| value_string(loop_snapshot, "stop")),
+        );
+        push_detail_field(
+            &mut detail,
+            "工具步数",
+            loop_snapshot
+                .get("stepCount")
+                .and_then(Value::as_u64)
+                .map(|value| value.to_string()),
+        );
+    }
+    if let Some(tool_executions) = tool_executions {
+        detail.push(format!("工具调用：{}", tool_executions.len()));
+        for execution in tool_executions.iter().take(8) {
+            detail.push(format!("- {}", compact_tool_execution_label(execution, 96)));
+        }
+    }
+
+    Some(ContextRow {
+        kind: ContextRowKind::Execution,
+        summary: execution_metadata_summary(ask_loop, tool_executions),
+        detail: detail.join("\n"),
+        expanded: false,
+    })
+}
+
+fn execution_metadata_summary(
+    ask_loop: Option<&Value>,
+    tool_executions: Option<&Vec<Value>>,
+) -> String {
+    let tool_count = tool_executions.map(Vec::len).unwrap_or(0);
+    let stop = ask_loop
+        .and_then(|value| value_string(value, "stop"))
+        .unwrap_or_else(|| "visible".to_string());
+    if tool_count > 0 {
+        format!("工具/子进程 {tool_count} · Plan {stop}")
+    } else {
+        format!("工具阻断 · Plan {stop}")
+    }
+}
+
+fn compact_tool_execution_label(value: &Value, width: usize) -> String {
+    let label = value_string(value, "tool")
+        .or_else(|| value_string(value, "name"))
+        .or_else(|| value_string(value, "command"))
+        .or_else(|| value_string(value, "id"))
+        .unwrap_or_else(|| "tool".to_string());
+    let status = value_string(value, "status")
+        .or_else(|| value_string(value, "state"))
+        .unwrap_or_else(|| "unknown".to_string());
+    truncate_to_width(&format!("{label} · {status}"), width)
+}
+
+fn execution_context_summary(timeline: &RunTimeline) -> String {
+    let model_count = timeline.subagents.models.len();
+    let batch_count = timeline.subagents.batches.len();
+    let child_count = timeline
+        .subagents
+        .batches
+        .iter()
+        .map(|batch| batch.children.len())
+        .sum::<usize>()
+        + timeline.subagents.loose_children.len();
+    let tool_count = timeline.subagents.loose_tool_calls.len()
+        + timeline
+            .subagents
+            .batches
+            .iter()
+            .map(|batch| {
+                batch
+                    .children
+                    .iter()
+                    .map(|child| child.tool_calls.len())
+                    .sum::<usize>()
+            })
+            .sum::<usize>()
+        + timeline
+            .subagents
+            .loose_children
+            .iter()
+            .map(|child| child.tool_calls.len())
+            .sum::<usize>();
+    let process_count = timeline.subagents.loose_processes.len()
+        + timeline
+            .subagents
+            .batches
+            .iter()
+            .map(|batch| {
+                batch
+                    .children
+                    .iter()
+                    .map(|child| child.processes.len())
+                    .sum::<usize>()
+            })
+            .sum::<usize>()
+        + timeline
+            .subagents
+            .loose_children
+            .iter()
+            .map(|child| child.processes.len())
+            .sum::<usize>();
+    let ask_count = timeline.subagents.loose_asks.len()
+        + timeline
+            .subagents
+            .batches
+            .iter()
+            .map(|batch| {
+                batch
+                    .children
+                    .iter()
+                    .filter(|child| child.ask.is_some())
+                    .count()
+            })
+            .sum::<usize>()
+        + timeline
+            .subagents
+            .loose_children
+            .iter()
+            .filter(|child| child.ask.is_some())
+            .count();
+    let status = if ask_count > 0 {
+        "等待 ASK"
+    } else if timeline.items.iter().any(|item| {
+        matches!(
+            item.status,
+            tui::run_timeline::state::RunTimelineItemStatus::Running
+        )
+    }) {
+        "进行中"
+    } else {
+        "已记录"
+    };
+    format!(
+        "{status} · 模型 {model_count} · 子代理 {batch_count}/{child_count} · 工具 {tool_count} · 子进程 {process_count}"
+    )
+}
+
+fn execution_context_detail(timeline: &RunTimeline) -> String {
+    run_panel_lines(timeline)
+        .into_iter()
+        .skip(1)
+        .take(18)
+        .map(|line| line_plain_text(&line))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn aggregate_context_row(
@@ -6533,6 +6876,7 @@ enum ContextRowKind {
     Thought,
     Fork,
     Blackboard,
+    Execution,
     AskResume,
     CreateFork,
 }
@@ -7240,6 +7584,7 @@ mod tests {
                     "questions": [{
                         "id": "strategy",
                         "prompt": "下一步执行策略是什么？",
+                        "recommendedChoiceId": "continue",
                         "choices": [
                             { "id": "continue", "label": "继续执行", "value": "continue" },
                             { "id": "narrow", "label": "缩小范围", "value": "narrow" }
@@ -7258,6 +7603,54 @@ mod tests {
         let menu = app.ask_menu.as_ref().expect("ASK menu should open");
         assert_eq!(menu.questions[0].id, "strategy");
         assert_eq!(menu.questions[0].choices[0].id, "continue");
+        assert!(menu.questions[0].choices[0].recommended);
+    }
+
+    #[test]
+    fn turn_final_message_id_mismatch_still_opens_structured_ask_menu() {
+        let mut app = App::new();
+        app.socket_connected = true;
+        app.pending_turns.insert("client-message".to_string(), 0);
+        app.turns.push(Turn {
+            message_id: Some("client-message".to_string()),
+            event_id: None,
+            user: "read project".to_string(),
+            thought: None,
+            answer: String::new(),
+            metadata: None,
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+
+        app.apply_socket_event(SocketEvent::TurnFinal {
+            message_id: "runtime-message".to_string(),
+            text: "fallback".to_string(),
+            metadata: Some(json!({
+                "kind": "ask",
+                "behaviorSnapshotId": "behavior-ask-1",
+                "ask": {
+                    "prompt": "需要选择策略",
+                    "questions": [{
+                        "id": "strategy",
+                        "prompt": "下一步？",
+                        "recommendedChoiceId": "continue",
+                        "choices": [
+                            { "id": "continue", "label": "继续执行", "value": "continue" },
+                            { "id": "stop", "label": "停止", "value": "stop" }
+                        ]
+                    }]
+                }
+            })),
+        });
+
+        let menu = app.ask_menu.as_ref().expect("ASK menu should open");
+        assert_eq!(
+            menu.continuation.get("snapshotId").and_then(Value::as_str),
+            Some("behavior-ask-1")
+        );
+        assert_eq!(menu.selected_by_question[0], 0);
+        assert!(menu.questions[0].choices[0].recommended);
     }
 
     #[test]
@@ -8208,10 +8601,38 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert_eq!(area, Rect::new(4, 16, 68, 4));
+        assert_eq!(area, Rect::new(4, 16, 80, 4));
         assert!(text.contains("继续实现"));
         assert!(text.contains("Other 自由输入"));
         assert!(!text.contains('{'));
+    }
+
+    #[test]
+    fn execution_context_row_renders_below_assistant_answer() {
+        let theme = Theme::default();
+        let mut turn = test_turn("任务", "智能体回答正文");
+        turn.context_rows.push(ContextRow {
+            kind: ContextRowKind::Execution,
+            summary: "进行中 · 模型 1 · 子代理 1/2 · 工具 3 · 子进程 1".to_string(),
+            detail: "tool read completed".to_string(),
+            expanded: false,
+        });
+
+        let rendered = render_turns(&[turn], 96, &theme)
+            .lines
+            .into_iter()
+            .map(|line| line_plain_text(&line))
+            .collect::<Vec<_>>();
+        let answer_index = rendered
+            .iter()
+            .position(|line| line.contains("智能体回答正文"))
+            .expect("answer should render");
+        let exo_index = rendered
+            .iter()
+            .position(|line| line.contains("Exo") && line.contains("子代理"))
+            .expect("execution row should render");
+
+        assert!(exo_index > answer_index);
     }
 
     #[test]
@@ -8565,7 +8986,7 @@ mod tests {
         app.update_right_viewport(area);
 
         assert!(app.right_sections.len() >= 4);
-        assert_eq!(app.right_sections[0].title, "TODO List");
+        assert_eq!(app.right_sections[0].title, "ACT 计划");
         let model = app.right_sections[2]
             .lines
             .iter()
@@ -8582,21 +9003,21 @@ mod tests {
         let area = Rect::new(0, 0, 48, 20);
         app.update_right_viewport(area);
 
-        assert_eq!(app.right_sections[0].title, "TODO List");
+        assert_eq!(app.right_sections[0].title, "ACT 计划");
         assert_eq!(
             line_plain_text(&render_right_section_title(
                 &app.right_sections[0],
                 area.width as usize,
                 true
             )),
-            "› TODO List"
+            "› ACT 计划"
         );
         let todo_title = line_plain_text(&render_right_section_title(
             &app.right_sections[0],
             area.width as usize,
             true,
         ));
-        assert_eq!(todo_title.matches("TODO List").count(), 1);
+        assert_eq!(todo_title.matches("ACT 计划").count(), 1);
         let todo_body_lines = app.right_sections[0]
             .lines
             .iter()
@@ -8606,7 +9027,7 @@ mod tests {
         assert!(
             todo_body_lines
                 .iter()
-                .all(|line| !line.contains("TODO List"))
+                .all(|line| !line.contains("ACT 计划"))
         );
         assert!(!todo_body.contains("状态：暂无计划"));
         assert_eq!(todo_body.matches("暂无计划 [-]").count(), 1);
@@ -8616,7 +9037,7 @@ mod tests {
             .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!scroll_text.contains("TODO List"));
+        assert!(!scroll_text.contains("ACT 计划"));
         assert!(!scroll_text.contains("状态：暂无计划"));
         assert!(!scroll_text.contains("暂无计划 [-]"));
         assert!(!scroll_text.contains("ASK / Questions"));
@@ -8691,7 +9112,7 @@ mod tests {
 
         assert_eq!(
             &titles[..4],
-            ["TODO List", "Run", "Model / Status", "Context Window",]
+            ["ACT 计划", "Run", "Model / Status", "Context Window",]
         );
         let rendered = sections
             .iter()
@@ -8725,7 +9146,7 @@ mod tests {
         let sections =
             render_right_panel_sections(&App::new().current_right_panel_data(), &todos, 48);
 
-        assert_eq!(sections[0].title, "TODO List");
+        assert_eq!(sections[0].title, "ACT 计划");
         let title = line_plain_text(&render_right_section_title(&sections[0], 48, true));
         let body = sections[0]
             .lines
@@ -8733,7 +9154,7 @@ mod tests {
             .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(title, "› TODO List");
+        assert_eq!(title, "› ACT 计划");
         assert!(body.contains("实现布局"));
         assert!(body.contains("验证测试"));
     }
@@ -9577,7 +9998,7 @@ mod tests {
             .join("\n");
 
         assert!(right.contains("Run"));
-        assert!(right.contains("Subagents"));
+        assert!(!right.contains("Subagents"));
         assert!(right.contains("child-1"));
     }
 

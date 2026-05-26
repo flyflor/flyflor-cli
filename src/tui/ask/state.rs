@@ -95,6 +95,20 @@ impl AskMenu {
         true
     }
 
+    pub fn select_current_choice(&mut self, index: usize) -> bool {
+        let Some(question) = self.questions.get(self.active_question) else {
+            return false;
+        };
+        if index >= question.choices.len() {
+            return false;
+        }
+        if let Some(selected) = self.selected_by_question.get_mut(self.active_question) {
+            *selected = index;
+            return true;
+        }
+        false
+    }
+
     pub fn advance_question(&mut self) -> bool {
         if self.active_question + 1 < self.questions.len() {
             self.active_question += 1;
