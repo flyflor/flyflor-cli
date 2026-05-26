@@ -3,8 +3,10 @@ use std::env;
 pub mod content;
 pub mod gateway;
 pub mod layout;
+pub mod run_timeline;
 pub mod service;
 pub mod state;
+pub mod subagent;
 pub mod terminal;
 pub mod ws;
 
