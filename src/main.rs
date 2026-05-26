@@ -44,8 +44,8 @@ mod shared;
 mod tui;
 
 use shared::{
-    center_text, draw_separator, in_rect, metric_line, top_bar_title, working_light_bar,
-    working_light_phase, working_light_style, working_shimmer_style, ws_url,
+    center_text, draw_separator, in_rect, metric_line, top_bar_title, working_light_line,
+    working_light_phase, working_shimmer_style, ws_url,
 };
 use tui::ask::{
     command::AskAnswer,
@@ -325,9 +325,8 @@ fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     frame.render_widget(Paragraph::new(right).alignment(Alignment::Right), cols[1]);
     if app.is_working() && area.height > 1 {
         let phase = working_light_phase(now_millis());
-        let pattern = working_light_bar(area.width as usize, phase);
         frame.render_widget(
-            Paragraph::new(Line::styled(pattern, working_light_style(phase, &theme))),
+            Paragraph::new(working_light_line(area.width as usize, phase, &theme)),
             Rect::new(area.x, area.y + 1, area.width, 1),
         );
     }
@@ -10573,17 +10572,30 @@ mod tests {
     }
 
     #[test]
-    fn working_light_bar_uses_continuous_heavy_line() {
-        let bar = working_light_bar(12, 0);
+    fn working_light_line_uses_gradient_spans() {
+        let theme = Theme::default();
+        let line = working_light_line(12, 0, &theme);
+        let colors = line
+            .spans
+            .iter()
+            .filter_map(|span| span.style.fg)
+            .collect::<Vec<_>>();
 
-        assert_eq!(bar.chars().count(), 12);
-        assert!(bar.chars().all(|ch| ch == '━'));
+        assert_eq!(line.spans.len(), 12);
+        assert!(line.spans.iter().all(|span| span.content.as_ref() == "━"));
+        assert!(colors.contains(&theme.purple));
+        assert!(colors.iter().any(|color| *color != colors[0]));
+        assert!(
+            colors
+                .iter()
+                .any(|color| matches!(color, Color::Rgb(_, _, _)))
+        );
     }
 
     #[test]
     fn working_light_phase_changes_on_reduced_tick() {
-        assert_eq!(working_light_phase(0), working_light_phase(359));
-        assert_ne!(working_light_phase(0), working_light_phase(360));
+        assert_eq!(working_light_phase(0), working_light_phase(119));
+        assert_ne!(working_light_phase(0), working_light_phase(120));
     }
 
     #[test]
