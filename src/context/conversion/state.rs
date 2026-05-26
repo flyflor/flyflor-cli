@@ -59,7 +59,7 @@ impl ConversionState {
 
     pub fn update_viewport(&mut self, area: Rect, theme: &Theme) {
         self.content_area = area;
-        let render = render_turns(&self.turns, area.width.max(1) as usize, theme);
+        let render = render_turns(&self.turns, area.width.max(1) as usize, theme, 0);
         self.chat_lines = render.lines;
         self.plain_lines = self.chat_lines.iter().map(line_to_plain_text).collect();
         update_scroll_state_from_rendered(&self.chat_lines, &mut self.scroll, area);
