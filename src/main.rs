@@ -998,6 +998,7 @@ struct App {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ChatRenderKey {
     width: usize,
+    animation_phase: usize,
     turns_len: usize,
     last_turn_hash: u64,
     expanded_hash: u64,
@@ -1539,6 +1540,12 @@ impl App {
     }
 
     fn close_menus(&mut self) {
+        if let Some(menu) = self.pending_ask_menu.take() {
+            self.ask_menu = Some(menu);
+            self.input.clear();
+            self.input_cursor = None;
+            return;
+        }
         self.command_palette = None;
         self.ask_menu = None;
         self.plan_menu = None;
@@ -1675,7 +1682,11 @@ impl App {
 
     fn move_active_menu(&mut self, delta: isize) -> bool {
         if let Some(menu) = &mut self.ask_menu {
-            return menu.move_choice(delta);
+            if !menu.move_choice(delta) {
+                return false;
+            }
+            self.activate_selected_ask_other();
+            return true;
         }
         if let Some(menu) = &mut self.plan_menu {
             menu.selected = move_index(menu.selected, menu.items.len(), delta);
@@ -1696,9 +1707,32 @@ impl App {
             return false;
         }
         if let Some(menu) = &mut self.ask_menu {
-            return menu.select_current_choice(digit as usize - 1);
+            if !menu.select_current_choice(digit as usize - 1) {
+                return false;
+            }
+            self.activate_selected_ask_other();
+            return true;
         }
         false
+    }
+
+    fn activate_selected_ask_other(&mut self) -> bool {
+        let is_other = self
+            .ask_menu
+            .as_ref()
+            .and_then(AskMenu::current_choice)
+            .is_some_and(|choice| choice.is_other);
+        if !is_other {
+            return false;
+        }
+        let Some(menu) = self.ask_menu.take() else {
+            return false;
+        };
+        self.pending_ask_menu = Some(menu);
+        self.input.clear();
+        self.input_cursor = None;
+        self.right_source.blackboard_status = "请输入自定义 ASK 回答后发送".to_string();
+        true
     }
 
     fn handle_menu_confirm_or_next(&mut self, confirm: bool) -> bool {
@@ -2081,9 +2115,10 @@ impl App {
 
     fn update_left_viewport(&mut self, area: Rect, theme: &Theme) {
         let width = area.width.max(1) as usize;
-        let key = chat_render_key(&self.turns, width);
+        let phase = working_light_phase(now_millis());
+        let key = chat_render_key(&self.turns, width, phase);
         if self.chat_render_key != Some(key) {
-            let render = render_turns(&self.turns, width, theme);
+            let render = render_turns(&self.turns, width, theme, phase);
             self.chat_lines = render.lines;
             self.chat_context_regions = render.context_row_regions;
             self.chat_render_key = Some(key);
@@ -2868,7 +2903,7 @@ fn wrapped_line_count(line: &Line<'_>, width: usize) -> usize {
     }
 }
 
-fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
+fn render_turns(turns: &[Turn], width: usize, theme: &Theme, phase: usize) -> LeftRender {
     let mut lines = Vec::new();
     let mut context_row_regions = Vec::new();
     let mut thought_regions = Vec::new();
@@ -2910,7 +2945,9 @@ fn render_turns(turns: &[Turn], width: usize, theme: &Theme) -> LeftRender {
             };
             let line_index = lines.len();
             let block_start = line_index;
-            lines.push(render_context_row_header(&row, width, theme));
+            lines.push(render_context_row_header_with_phase(
+                &row, width, theme, phase,
+            ));
             thought_regions.push(ContextRowRegion {
                 turn_index,
                 row_index: 0,
@@ -3024,7 +3061,7 @@ fn render_context_rows_for_turn(
     }
 }
 
-fn chat_render_key(turns: &[Turn], width: usize) -> ChatRenderKey {
+fn chat_render_key(turns: &[Turn], width: usize, phase: usize) -> ChatRenderKey {
     let last_turn_hash = turns.iter().fold(0u64, |acc, turn| {
         acc.wrapping_mul(16777619)
             .wrapping_add(hash_turn_render_inputs(turn))
@@ -3050,10 +3087,23 @@ fn chat_render_key(turns: &[Turn], width: usize) -> ChatRenderKey {
     });
     ChatRenderKey {
         width,
+        animation_phase: if turns_have_running_execution_rows(turns) {
+            phase % 4
+        } else {
+            0
+        },
         turns_len: turns.len(),
         last_turn_hash,
         expanded_hash,
     }
+}
+
+fn turns_have_running_execution_rows(turns: &[Turn]) -> bool {
+    turns.iter().any(|turn| {
+        turn.context_rows
+            .iter()
+            .any(|row| row.kind == ContextRowKind::Execution && row_is_running(row))
+    })
 }
 
 fn hash_turn_render_inputs(turn: &Turn) -> u64 {
@@ -3138,7 +3188,7 @@ fn render_context_row_header_with_phase(
     theme: &Theme,
     phase: usize,
 ) -> Line<'static> {
-    let marker = context_row_marker(row);
+    let marker = context_row_marker(row, phase);
     let body_width = thread_body_width(width, theme, ThreadTone::Thought);
     let label = truncate_to_width(
         &format!("{marker} {} {}", context_row_label(row.kind), row.summary),
@@ -3177,10 +3227,16 @@ fn thought_summary(thought: &ThoughtData) -> String {
     }
 }
 
-fn context_row_marker(row: &ContextRow) -> &'static str {
+fn context_row_marker(row: &ContextRow, phase: usize) -> &'static str {
     match row.kind {
         ContextRowKind::AskResume => "◎",
         ContextRowKind::CreateFork => "⊕",
+        ContextRowKind::Execution if row.expanded => "◼",
+        ContextRowKind::Execution if row_is_running(row) => {
+            const FRAMES: [&str; 4] = ["◰", "◳", "◲", "◱"];
+            FRAMES[phase % FRAMES.len()]
+        }
+        ContextRowKind::Execution => "◱",
         ContextRowKind::Blackboard | ContextRowKind::Thought => {
             if row.expanded {
                 "▼"
@@ -8140,6 +8196,37 @@ mod tests {
     }
 
     #[test]
+    fn execution_context_row_uses_rotating_square_marker() {
+        let theme = Theme::default();
+        let row = ContextRow {
+            kind: ContextRowKind::Execution,
+            summary: "子代理 1/2 · 运行中".to_string(),
+            detail: "状态：running".to_string(),
+            expanded: false,
+        };
+        let line_a = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 0));
+        let line_b = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 1));
+
+        assert!(line_a.contains("◰"));
+        assert!(line_b.contains("◳"));
+        assert!(!line_a.contains("▶"));
+    }
+
+    #[test]
+    fn non_execution_context_rows_keep_triangle_marker() {
+        let theme = Theme::default();
+        let row = ContextRow {
+            kind: ContextRowKind::Blackboard,
+            summary: "讨论".to_string(),
+            detail: String::new(),
+            expanded: false,
+        };
+        let line = line_text(&render_context_row_header_with_phase(&row, 96, &theme, 2));
+
+        assert!(line.contains("▶"));
+    }
+
+    #[test]
     fn expanded_blackboard_discussion_is_available_to_selection_copy() {
         let theme = Theme::default();
         let mut turn = Turn {
@@ -8494,6 +8581,66 @@ mod tests {
     }
 
     #[test]
+    fn ask_menu_selecting_other_enters_freeform_without_extra_confirm() {
+        let mut app = App::new();
+        app.turns.push(Turn {
+            message_id: Some("message-1".to_string()),
+            event_id: Some("event-1".to_string()),
+            user: "u".to_string(),
+            thought: None,
+            answer: "需要选择".to_string(),
+            metadata: Some(json!({
+                "ask": {
+                    "prompt": "选择下一步",
+                    "continuationId": "cont-1",
+                    "choices": ["A"]
+                }
+            })),
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+
+        assert!(app.open_latest_ask_menu());
+        assert!(app.move_active_menu(1));
+
+        assert!(app.ask_menu.is_none());
+        assert!(app.pending_ask_menu.is_some());
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
+    fn ask_menu_escape_from_other_freeform_restores_menu() {
+        let mut app = App::new();
+        app.turns.push(Turn {
+            message_id: Some("message-1".to_string()),
+            event_id: Some("event-1".to_string()),
+            user: "u".to_string(),
+            thought: None,
+            answer: "需要选择".to_string(),
+            metadata: Some(json!({
+                "ask": {
+                    "prompt": "选择下一步",
+                    "continuationId": "cont-1",
+                    "choices": ["A"]
+                }
+            })),
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+
+        assert!(app.open_latest_ask_menu());
+        assert!(app.move_active_menu(1));
+        app.input = "暂存输入".to_string();
+        app.close_menus();
+
+        assert!(app.pending_ask_menu.is_none());
+        assert!(app.ask_menu.is_some());
+        assert!(app.input.is_empty());
+    }
+
+    #[test]
     fn ask_menu_other_free_input_submits_through_existing_reply_path() {
         let mut app = App::new();
         app.turns.push(Turn {
@@ -8791,7 +8938,7 @@ mod tests {
             expanded: false,
         });
 
-        let rendered = render_turns(&[turn], 96, &theme)
+        let rendered = render_turns(&[turn], 96, &theme, 0)
             .lines
             .into_iter()
             .map(|line| line_plain_text(&line))
@@ -11049,7 +11196,7 @@ mod tests {
         let width = 32;
         let turn = test_turn("u", "abcdefghijklmnopqrstuvwxyz0123456789");
 
-        let rendered = render_turns(&[turn], width, &theme);
+        let rendered = render_turns(&[turn], width, &theme, 0);
 
         assert!(rendered.lines.iter().all(|line| line_width(line) <= width));
     }
@@ -11060,7 +11207,7 @@ mod tests {
         let width = 32;
         let turn = test_turn("u", "```text\nabcdefghijklmnopqrstuvwxyz0123456789\n```");
 
-        let rendered = render_turns(&[turn], width, &theme);
+        let rendered = render_turns(&[turn], width, &theme, 0);
 
         assert!(rendered.lines.iter().all(|line| line_width(line) <= width));
     }
