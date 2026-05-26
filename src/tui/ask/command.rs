@@ -1,6 +1,6 @@
 use serde_json::{Value, json};
 
-use super::state::{AskChoice, AskSelection};
+use super::state::AskSelection;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AskAnswer {
@@ -12,17 +12,6 @@ pub struct AskAnswer {
 }
 
 impl AskAnswer {
-    pub fn from_choice(choice: &AskChoice) -> Self {
-        let text = choice.value.clone().unwrap_or_else(|| choice.label.clone());
-        Self {
-            question_id: choice.question_id.clone(),
-            choice_id: choice.id.clone(),
-            value: choice.value.clone(),
-            text,
-            is_other: choice.is_other,
-        }
-    }
-
     pub fn other(text: String) -> Self {
         Self::other_for_question(text, None)
     }
@@ -58,6 +47,27 @@ pub fn ask_message_metadata(continuation: Value, answer: &AskAnswer) -> Value {
     json!({
         "continuation": continuation,
         "askAnswer": ask_answer_metadata(answer)
+    })
+}
+
+pub fn ask_message_metadata_many(continuation: Value, answers: &[AskAnswer]) -> Value {
+    let mut ask_answer = json!({
+        "answers": answers.iter().map(ask_answer_metadata).collect::<Vec<_>>()
+    });
+    if answers.len() == 1 {
+        if let Some(object) = ask_answer.as_object_mut() {
+            if let Some(single) = answers.first().map(ask_answer_metadata) {
+                if let Some(single_object) = single.as_object() {
+                    for (key, value) in single_object {
+                        object.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+    }
+    json!({
+        "continuation": continuation,
+        "askAnswer": ask_answer
     })
 }
 
@@ -142,5 +152,61 @@ mod tests {
             Some("custom")
         );
         assert_eq!(metadata.get("isOther").and_then(Value::as_bool), Some(true));
+    }
+
+    #[test]
+    fn builds_multi_answer_metadata_with_legacy_single_compat() {
+        let answers = vec![AskAnswer {
+            question_id: Some("q1".to_string()),
+            choice_id: "continue".to_string(),
+            text: "Continue".to_string(),
+            value: Some("continue".to_string()),
+            is_other: false,
+        }];
+        let metadata = ask_message_metadata_many(json!({ "snapshotId": "ask-1" }), &answers);
+        let ask_answer = metadata.get("askAnswer").expect("askAnswer");
+
+        assert_eq!(
+            ask_answer
+                .get("answers")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(1)
+        );
+        assert_eq!(
+            ask_answer.get("choiceId").and_then(Value::as_str),
+            Some("continue")
+        );
+    }
+
+    #[test]
+    fn builds_multi_answer_metadata_without_flattening_questions() {
+        let answers = vec![
+            AskAnswer {
+                question_id: Some("q1".to_string()),
+                choice_id: "a".to_string(),
+                text: "A".to_string(),
+                value: Some("A".to_string()),
+                is_other: false,
+            },
+            AskAnswer {
+                question_id: Some("q2".to_string()),
+                choice_id: "other".to_string(),
+                text: "custom".to_string(),
+                value: Some("custom".to_string()),
+                is_other: true,
+            },
+        ];
+        let metadata = ask_message_metadata_many(json!({ "snapshotId": "ask-1" }), &answers);
+        let ask_answer = metadata.get("askAnswer").expect("askAnswer");
+
+        assert_eq!(
+            ask_answer
+                .get("answers")
+                .and_then(Value::as_array)
+                .map(Vec::len),
+            Some(2)
+        );
+        assert!(ask_answer.get("choiceId").is_none());
     }
 }

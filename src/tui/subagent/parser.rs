@@ -1,9 +1,12 @@
 use serde_json::Value;
 
 use crate::tui::{
-    run_timeline::parser::{arrays_at, compact_json, event_value, first_string, value_string},
+    run_timeline::parser::{
+        arrays_at, compact_json, event_value, first_string, value_string, value_u64,
+    },
     subagent::state::{
-        SubagentBatch, SubagentChild, SubagentStatus, SubagentToolCall, SubagentTree,
+        ModelAllocation, SubagentAskPause, SubagentBatch, SubagentChild, SubagentProcess,
+        SubagentStatus, SubagentToolCall, SubagentTree,
     },
 };
 
@@ -17,33 +20,30 @@ pub fn merge_event_publish(tree: &mut SubagentTree, event_type: &str, value: &Va
         .unwrap_or(event);
 
     match event_type {
+        "model.allocation.selected" => tree.upsert_model(model_from_value(payload)),
         "subagent.batch.start" | "subagent.batch.end" => {
             tree.upsert_batch(batch_from_value(
                 payload,
-                subagent_status(payload, event_type),
+                SubagentStatus::from_event_type(event_type),
             ));
         }
         "subagent.child.start" | "subagent.child.end" => {
             tree.upsert_child(child_from_value(
                 payload,
-                subagent_status(payload, event_type),
+                SubagentStatus::from_event_type(event_type),
             ));
         }
-        "mcp.tool.call.executed" | "tool.call.executed" => {
-            merge_tool_call(tree, payload, event_type)
+        "mcp.tool.call.executed" | "tool.call.executed" => merge_tool_call(tree, payload),
+        event_type if event_type.starts_with("sandbox.tool.") => {
+            merge_tool_call_with_status(tree, payload, SubagentStatus::from_event_type(event_type));
         }
-        event_type if event_type.starts_with("tool.") => merge_tool_call(tree, payload, event_type),
+        event_type if event_type.starts_with("tool.") => merge_tool_call(tree, payload),
+        event_type if event_type.starts_with("process.") => {
+            merge_process(tree, payload, SubagentStatus::from_event_type(event_type));
+        }
         "executive.loop.paused" => mark_needs_user(tree, payload),
+        "memory.ask.answered" => mark_ask_answered(tree, payload),
         _ => {}
-    }
-}
-
-fn subagent_status(payload: &Value, event_type: &str) -> SubagentStatus {
-    let status = SubagentStatus::from_value(payload);
-    if status == SubagentStatus::Unknown {
-        SubagentStatus::from_event_type(event_type)
-    } else {
-        status
     }
 }
 
@@ -51,7 +51,6 @@ pub fn merge_execution_job_snapshot(tree: &mut SubagentTree, value: &Value) {
     let data = value
         .get("payload")
         .and_then(|payload| payload.get("data"))
-        .or_else(|| value.get("payload").and_then(|payload| payload.get("job")))
         .or_else(|| value.get("data"))
         .or_else(|| value.get("job"))
         .unwrap_or(value);
@@ -78,6 +77,21 @@ pub fn merge_execution_job_snapshot(tree: &mut SubagentTree, value: &Value) {
             ));
         }
     }
+
+    for calls in arrays_at(data, &["toolExecutions", "toolCalls", "tools"]) {
+        for call in calls {
+            tree.upsert_tool_call(tool_call_from_value(call));
+        }
+    }
+
+    for processes in arrays_at(data, &["processes", "subprocesses"]) {
+        for process in processes {
+            tree.upsert_process(process_from_value(
+                process,
+                SubagentStatus::from_value(process),
+            ));
+        }
+    }
 }
 
 fn batch_from_value(value: &Value, status: SubagentStatus) -> SubagentBatch {
@@ -87,6 +101,7 @@ fn batch_from_value(value: &Value, status: SubagentStatus) -> SubagentBatch {
     SubagentBatch {
         name: first_string(value, &["name", "title"]).unwrap_or_else(|| id.clone()),
         id,
+        job_id: value_string(value, "jobId").or_else(|| value_string(value, "job_id")),
         status,
         allowed_tools: string_list(value, &["allowedTools", "allowed_tools", "tools"]),
         children: Vec::new(),
@@ -101,70 +116,253 @@ fn child_from_value(value: &Value, status: SubagentStatus) -> SubagentChild {
     let tool_calls = arrays_at(value, &["toolCalls", "tool_calls", "calls"])
         .into_iter()
         .flat_map(|calls| calls.iter())
-        .map(|value| tool_call_from_value(value, SubagentStatus::from_value(value)))
+        .map(tool_call_from_value)
+        .collect();
+    let processes = arrays_at(value, &["processes", "subprocesses"])
+        .into_iter()
+        .flat_map(|processes| processes.iter())
+        .map(|process| process_from_value(process, SubagentStatus::from_value(process)))
         .collect();
     SubagentChild {
         batch_id: value_string(value, "batchId").or_else(|| value_string(value, "batch_id")),
+        job_id: value_string(value, "jobId")
+            .or_else(|| value_string(value, "job_id"))
+            .or_else(|| value_string(value, "childJobId")),
         name: first_string(value, &["name", "title", "role"]).unwrap_or_else(|| id.clone()),
         task: first_string(value, &["task", "summary", "prompt"]),
         id,
         status,
+        model: model_from_nested(value),
         allowed_tools: string_list(value, &["allowedTools", "allowed_tools", "tools"]),
         tool_calls,
+        processes,
+        ask: ask_from_value(value),
+        crystal: first_string(value, &["crystalCandidate", "crystal_candidate", "crystal"]),
     }
 }
 
-fn tool_call_from_value(value: &Value, status: SubagentStatus) -> SubagentToolCall {
+fn tool_call_from_value(value: &Value) -> SubagentToolCall {
     let id = value_string(value, "id")
         .or_else(|| value_string(value, "callId"))
         .or_else(|| value_string(value, "toolCallId"))
         .unwrap_or_else(|| compact_json(value));
+    let server = first_string(value, &["server", "serverName", "server_name"]);
+    let tool = first_string(value, &["tool", "toolName", "name"]);
+    let name = tool
+        .clone()
+        .or_else(|| server.clone())
+        .or_else(|| first_string(value, &["command", "cmd"]))
+        .unwrap_or_else(|| id.clone());
     SubagentToolCall {
-        name: first_string(value, &["name", "toolName", "tool"]).unwrap_or_else(|| id.clone()),
+        name,
         id,
-        status,
-        detail: first_string(value, &["summary", "command", "result", "error"]),
+        status: SubagentStatus::from_value(value),
+        call_id: value_string(value, "callId").or_else(|| value_string(value, "toolCallId")),
+        job_id: value_string(value, "jobId")
+            .or_else(|| value_string(value, "job_id"))
+            .or_else(|| value_string(value, "childJobId")),
+        child_id: value_string(value, "childId")
+            .or_else(|| value_string(value, "agentId"))
+            .or_else(|| value_string(value, "subagentId")),
+        server,
+        tool,
+        command: first_string(value, &["command", "cmd"]),
+        args_preview: first_string(value, &["argsPreview", "args_preview", "argumentsPreview"]),
+        output_path: first_string(value, &["outputPath", "output_path", "path"]),
+        error: first_string(value, &["error", "errorMessage", "message"]),
+        duration_ms: value_u64(value, "durationMs").or_else(|| value_u64(value, "duration_ms")),
+        detail: first_string(
+            value,
+            &[
+                "summary",
+                "argsPreview",
+                "args_preview",
+                "command",
+                "result",
+                "error",
+            ],
+        ),
+        processes: arrays_at(value, &["processes", "subprocesses"])
+            .into_iter()
+            .flat_map(|processes| processes.iter())
+            .map(|process| process_from_value(process, SubagentStatus::from_value(process)))
+            .collect(),
     }
 }
 
-fn merge_tool_call(tree: &mut SubagentTree, value: &Value, event_type: &str) {
-    let Some(child_id) = value_string(value, "childId")
-        .or_else(|| value_string(value, "agentId"))
-        .or_else(|| value_string(value, "subagentId"))
-    else {
-        return;
-    };
-    let child = SubagentChild {
-        id: child_id,
-        batch_id: value_string(value, "batchId").or_else(|| value_string(value, "batch_id")),
-        name: first_string(value, &["childName", "agentName"]).unwrap_or_default(),
-        task: None,
-        status: SubagentStatus::Unknown,
-        allowed_tools: Vec::new(),
-        tool_calls: vec![tool_call_from_value(
-            value,
-            subagent_status(value, event_type),
-        )],
-    };
-    tree.upsert_child(child);
+fn merge_tool_call(tree: &mut SubagentTree, value: &Value) {
+    tree.upsert_tool_call(tool_call_from_value(value));
+}
+
+fn merge_tool_call_with_status(tree: &mut SubagentTree, value: &Value, status: SubagentStatus) {
+    let mut call = tool_call_from_value(value);
+    if status != SubagentStatus::Unknown {
+        call.status = status;
+    }
+    tree.upsert_tool_call(call);
+}
+
+fn merge_process(tree: &mut SubagentTree, value: &Value, status: SubagentStatus) {
+    tree.upsert_process(process_from_value(value, status));
 }
 
 fn mark_needs_user(tree: &mut SubagentTree, value: &Value) {
-    let Some(child_id) = value_string(value, "childId")
+    let child_id = value_string(value, "childId")
         .or_else(|| value_string(value, "agentId"))
-        .or_else(|| value_string(value, "subagentId"))
-    else {
-        return;
-    };
-    tree.upsert_child(SubagentChild {
-        id: child_id,
-        batch_id: value_string(value, "batchId").or_else(|| value_string(value, "batch_id")),
-        name: first_string(value, &["childName", "agentName"]).unwrap_or_default(),
-        task: first_string(value, &["reason", "message", "askId"]),
+        .or_else(|| value_string(value, "subagentId"));
+    let ask = ask_from_value(value).unwrap_or_else(|| SubagentAskPause {
+        id: first_string(value, &["askId", "id"]).unwrap_or_else(|| compact_json(value)),
         status: SubagentStatus::NeedsUser,
-        allowed_tools: Vec::new(),
-        tool_calls: Vec::new(),
+        reason: first_string(value, &["reason", "message", "askId"]),
+        crystal_candidate: first_string(value, &["crystalCandidate", "crystal_candidate"]),
+        answered: false,
     });
+    if let Some(child_id) = child_id {
+        tree.upsert_child(SubagentChild {
+            id: child_id,
+            batch_id: value_string(value, "batchId").or_else(|| value_string(value, "batch_id")),
+            job_id: value_string(value, "jobId").or_else(|| value_string(value, "job_id")),
+            name: first_string(value, &["childName", "agentName"]).unwrap_or_default(),
+            task: first_string(value, &["reason", "message", "askId"]),
+            status: SubagentStatus::NeedsUser,
+            model: None,
+            allowed_tools: Vec::new(),
+            tool_calls: Vec::new(),
+            processes: Vec::new(),
+            ask: Some(ask),
+            crystal: first_string(value, &["crystalCandidate", "crystal_candidate"]),
+        });
+    } else {
+        tree.upsert_ask(ask, None);
+    }
+}
+
+fn mark_ask_answered(tree: &mut SubagentTree, value: &Value) {
+    let ask = SubagentAskPause {
+        id: first_string(value, &["askId", "id"]).unwrap_or_else(|| compact_json(value)),
+        status: SubagentStatus::Completed,
+        reason: first_string(value, &["answerText", "text", "message"]),
+        crystal_candidate: first_string(value, &["crystalCandidate", "crystal_candidate"]),
+        answered: true,
+    };
+    let child_id = value_string(value, "childId")
+        .or_else(|| value_string(value, "agentId"))
+        .or_else(|| value_string(value, "subagentId"));
+    tree.upsert_ask(ask, child_id);
+}
+
+fn model_from_nested(value: &Value) -> Option<ModelAllocation> {
+    if let Some(model) = value
+        .get("modelAllocation")
+        .or_else(|| value.get("model_allocation"))
+    {
+        return Some(model_from_value(model));
+    }
+    if value.get("modelId").is_some()
+        || value.get("model_id").is_some()
+        || value.get("providerId").is_some()
+        || value.get("provider_id").is_some()
+    {
+        return Some(model_from_value(value));
+    }
+    None
+}
+
+fn model_from_value(value: &Value) -> ModelAllocation {
+    let id = first_string(value, &["allocationId", "allocation_id", "id"])
+        .or_else(|| {
+            let child = value_string(value, "childId").or_else(|| value_string(value, "child_id"));
+            let model = first_string(value, &["modelId", "model_id", "model"]);
+            match (child, model) {
+                (Some(child), Some(model)) => Some(format!("{child}:{model}")),
+                (_, Some(model)) => Some(model),
+                _ => None,
+            }
+        })
+        .unwrap_or_else(|| compact_json(value));
+    ModelAllocation {
+        id,
+        request_id: value_string(value, "requestId").or_else(|| value_string(value, "request_id")),
+        job_id: value_string(value, "jobId").or_else(|| value_string(value, "job_id")),
+        child_id: value_string(value, "childId")
+            .or_else(|| value_string(value, "child_id"))
+            .or_else(|| value_string(value, "agentId"))
+            .or_else(|| value_string(value, "subagentId")),
+        scope: first_string(value, &["scope", "modelScope"]),
+        agent_role: first_string(value, &["agentRole", "agent_role", "role"]),
+        provider_id: first_string(value, &["providerId", "provider_id", "provider"]),
+        model_id: first_string(value, &["modelId", "model_id", "model"]),
+        reason: first_string(value, &["reason", "summary", "message"]),
+        source: first_string(value, &["source", "origin"]),
+    }
+}
+
+fn process_from_value(value: &Value, status: SubagentStatus) -> SubagentProcess {
+    let id = value_string(value, "processId")
+        .or_else(|| value_string(value, "id"))
+        .or_else(|| value_string(value, "pid"))
+        .or_else(|| value_string(value, "callId"))
+        .unwrap_or_else(|| compact_json(value));
+    SubagentProcess {
+        id,
+        status: if status == SubagentStatus::Unknown {
+            SubagentStatus::from_value(value)
+        } else {
+            status
+        },
+        call_id: value_string(value, "callId")
+            .or_else(|| value_string(value, "toolCallId"))
+            .or_else(|| value_string(value, "tool_call_id")),
+        job_id: value_string(value, "jobId").or_else(|| value_string(value, "job_id")),
+        child_id: value_string(value, "childId")
+            .or_else(|| value_string(value, "agentId"))
+            .or_else(|| value_string(value, "subagentId")),
+        command: first_string(value, &["command", "cmd"]),
+        output_preview: first_string(value, &["outputPreview", "output", "stdout", "stderr"]),
+        output_path: first_string(value, &["outputPath", "output_path", "path"]),
+        error: first_string(value, &["error", "errorMessage", "message"]),
+        duration_ms: value_u64(value, "durationMs").or_else(|| value_u64(value, "duration_ms")),
+    }
+}
+
+fn ask_from_value(value: &Value) -> Option<SubagentAskPause> {
+    if !(value.get("askId").is_some()
+        || value.get("ask").is_some()
+        || value.get("crystalCandidate").is_some()
+        || value.get("crystal_candidate").is_some()
+        || value
+            .get("needsUser")
+            .or_else(|| value.get("needs_user"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false))
+    {
+        return None;
+    }
+
+    Some(SubagentAskPause {
+        id: first_string(value, &["askId", "id"])
+            .or_else(|| {
+                value
+                    .get("ask")
+                    .and_then(|ask| first_string(ask, &["id", "askId"]))
+            })
+            .unwrap_or_else(|| compact_json(value)),
+        status: if value
+            .get("answered")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            SubagentStatus::Completed
+        } else {
+            SubagentStatus::NeedsUser
+        },
+        reason: first_string(value, &["reason", "message", "question", "askId"]),
+        crystal_candidate: first_string(value, &["crystalCandidate", "crystal_candidate"]),
+        answered: value
+            .get("answered")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+    })
 }
 
 fn string_list(value: &Value, keys: &[&str]) -> Vec<String> {
@@ -263,62 +461,129 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_accepts_payload_job_shape() {
-        let mut tree = SubagentTree::default();
-        merge_execution_job_snapshot(
-            &mut tree,
-            &json!({
-                "type": "execution.job.snapshot",
-                "payload": {
-                    "job": {
-                        "batches": [{ "id": "batch-1" }],
-                        "children": [{ "id": "child-1", "batchId": "batch-1", "status": "running" }]
-                    }
-                }
-            }),
-        );
-
-        assert_eq!(tree.batches.len(), 1);
-        assert_eq!(tree.batches[0].children[0].id, "child-1");
-    }
-
-    #[test]
-    fn tool_event_status_falls_back_to_event_type() {
+    fn model_allocation_attaches_to_subagent_child() {
         let mut tree = SubagentTree::default();
         merge_event_publish(
             &mut tree,
-            "tool.budget.exhausted",
+            "model.allocation.selected",
             &json!({
-                "type": "tool.budget.exhausted",
+                "type": "model.allocation.selected",
                 "payload": {
                     "childId": "child-1",
-                    "tool": "workspace.read"
+                    "providerId": "openai",
+                    "modelId": "gpt-5",
+                    "scope": "subagent-child",
+                    "agentRole": "run-inspector",
+                    "reason": "tool-heavy branch"
                 }
             }),
         );
-
-        let call = &tree.loose_children[0].tool_calls[0];
-        assert_eq!(call.status, SubagentStatus::NeedsUser);
-    }
-
-    #[test]
-    fn child_end_prefers_payload_status() {
-        let mut tree = SubagentTree::default();
-
         merge_event_publish(
             &mut tree,
-            "subagent.child.end",
+            "subagent.child.start",
             &json!({
-                "type": "subagent.child.end",
+                "type": "subagent.child.start",
                 "payload": {
                     "batchId": "batch-1",
                     "childId": "child-1",
-                    "status": "needs_user",
-                    "summary": "Pick an option"
+                    "task": "trace tools"
                 }
             }),
         );
 
-        assert_eq!(tree.loose_children[0].status, SubagentStatus::NeedsUser);
+        let child = &tree.loose_children[0];
+        let model = child.model.as_ref().expect("child model allocation");
+        assert_eq!(model.provider_id.as_deref(), Some("openai"));
+        assert_eq!(model.model_id.as_deref(), Some("gpt-5"));
+        assert_eq!(model.agent_role.as_deref(), Some("run-inspector"));
+    }
+
+    #[test]
+    fn links_tool_and_process_to_subagent_child() {
+        let mut tree = SubagentTree::default();
+        merge_event_publish(
+            &mut tree,
+            "subagent.child.start",
+            &json!({
+                "type": "subagent.child.start",
+                "payload": { "childId": "child-1", "batchId": "batch-1" }
+            }),
+        );
+        merge_event_publish(
+            &mut tree,
+            "tool.started",
+            &json!({
+                "type": "tool.started",
+                "payload": {
+                    "childId": "child-1",
+                    "callId": "call-1",
+                    "server": "shell",
+                    "tool": "exec",
+                    "argsPreview": "rg ASK src"
+                }
+            }),
+        );
+        merge_event_publish(
+            &mut tree,
+            "process.output",
+            &json!({
+                "type": "process.output",
+                "payload": {
+                    "childId": "child-1",
+                    "callId": "call-1",
+                    "processId": "proc-1",
+                    "command": "rg ASK src",
+                    "outputPreview": "src/main.rs"
+                }
+            }),
+        );
+
+        let child = &tree.loose_children[0];
+        assert_eq!(child.tool_calls.len(), 1);
+        assert_eq!(child.tool_calls[0].server.as_deref(), Some("shell"));
+        assert_eq!(child.tool_calls[0].processes[0].id, "proc-1");
+        assert_eq!(
+            child.tool_calls[0].processes[0].output_preview.as_deref(),
+            Some("src/main.rs")
+        );
+    }
+
+    #[test]
+    fn ask_pause_and_answer_preserve_crystal_closure() {
+        let mut tree = SubagentTree::default();
+        merge_event_publish(
+            &mut tree,
+            "executive.loop.paused",
+            &json!({
+                "type": "executive.loop.paused",
+                "payload": {
+                    "childId": "child-1",
+                    "askId": "ask-1",
+                    "reason": "tool budget exhausted",
+                    "crystalCandidate": "record retry policy"
+                }
+            }),
+        );
+        merge_event_publish(
+            &mut tree,
+            "memory.ask.answered",
+            &json!({
+                "type": "memory.ask.answered",
+                "payload": {
+                    "childId": "child-1",
+                    "askId": "ask-1",
+                    "answerText": "continue",
+                    "crystalCandidate": "record retry policy"
+                }
+            }),
+        );
+
+        let ask = tree.loose_children[0].ask.as_ref().expect("ask pause");
+        assert!(ask.answered);
+        assert_eq!(ask.status, SubagentStatus::Completed);
+        assert_eq!(
+            ask.crystal_candidate.as_deref(),
+            Some("record retry policy")
+        );
     }
 }

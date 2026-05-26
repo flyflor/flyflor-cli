@@ -50,26 +50,23 @@ impl SubagentStatus {
     }
 
     pub fn from_event_type(event_type: &str) -> Self {
-        if event_type.ends_with(".start") || event_type.ends_with(".started") {
+        if event_type.ends_with(".start")
+            || event_type.ends_with(".started")
+            || event_type.ends_with(".progress")
+            || event_type.ends_with(".output")
+        {
             Self::Running
         } else if event_type.ends_with(".end")
             || event_type.ends_with(".ended")
             || event_type.ends_with(".completed")
             || event_type.ends_with(".succeeded")
-            || event_type.ends_with(".written")
+            || event_type.ends_with(".persisted")
             || event_type.ends_with(".exit")
         {
             Self::Completed
-        } else if event_type.ends_with(".failed")
-            || event_type.ends_with(".error")
-            || event_type.ends_with(".denied")
-        {
+        } else if event_type.ends_with(".failed") || event_type.ends_with(".error") {
             Self::Failed
-        } else if event_type.ends_with(".paused")
-            || event_type.ends_with(".needs_user")
-            || event_type.ends_with(".ask_required")
-            || event_type.ends_with(".budget.exhausted")
-            || event_type.ends_with(".approval.requested")
+        } else if event_type.ends_with(".ask_required") || event_type.ends_with(".budget.exhausted")
         {
             Self::NeedsUser
         } else {
@@ -83,23 +80,77 @@ pub struct SubagentToolCall {
     pub id: String,
     pub name: String,
     pub status: SubagentStatus,
+    pub call_id: Option<String>,
+    pub job_id: Option<String>,
+    pub child_id: Option<String>,
+    pub server: Option<String>,
+    pub tool: Option<String>,
+    pub command: Option<String>,
+    pub args_preview: Option<String>,
+    pub output_path: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: Option<u64>,
     pub detail: Option<String>,
+    pub processes: Vec<SubagentProcess>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubagentProcess {
+    pub id: String,
+    pub status: SubagentStatus,
+    pub call_id: Option<String>,
+    pub job_id: Option<String>,
+    pub child_id: Option<String>,
+    pub command: Option<String>,
+    pub output_preview: Option<String>,
+    pub output_path: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelAllocation {
+    pub id: String,
+    pub request_id: Option<String>,
+    pub job_id: Option<String>,
+    pub child_id: Option<String>,
+    pub scope: Option<String>,
+    pub agent_role: Option<String>,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub reason: Option<String>,
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubagentAskPause {
+    pub id: String,
+    pub status: SubagentStatus,
+    pub reason: Option<String>,
+    pub crystal_candidate: Option<String>,
+    pub answered: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubagentChild {
     pub id: String,
     pub batch_id: Option<String>,
+    pub job_id: Option<String>,
     pub name: String,
     pub task: Option<String>,
     pub status: SubagentStatus,
+    pub model: Option<ModelAllocation>,
     pub allowed_tools: Vec<String>,
     pub tool_calls: Vec<SubagentToolCall>,
+    pub processes: Vec<SubagentProcess>,
+    pub ask: Option<SubagentAskPause>,
+    pub crystal: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubagentBatch {
     pub id: String,
+    pub job_id: Option<String>,
     pub name: String,
     pub status: SubagentStatus,
     pub allowed_tools: Vec<String>,
@@ -110,12 +161,14 @@ pub struct SubagentBatch {
 pub struct SubagentTree {
     pub batches: Vec<SubagentBatch>,
     pub loose_children: Vec<SubagentChild>,
+    pub models: Vec<ModelAllocation>,
+    pub loose_tool_calls: Vec<SubagentToolCall>,
+    pub loose_processes: Vec<SubagentProcess>,
+    pub loose_asks: Vec<SubagentAskPause>,
 }
 
 impl SubagentTree {
     pub fn upsert_batch(&mut self, batch: SubagentBatch) {
-        let mut batch = batch;
-        attach_loose_children(&mut self.loose_children, &mut batch);
         if let Some(existing) = self.batches.iter_mut().find(|item| item.id == batch.id) {
             merge_batch(existing, batch);
             return;
@@ -124,6 +177,26 @@ impl SubagentTree {
     }
 
     pub fn upsert_child(&mut self, child: SubagentChild) {
+        let mut child = child;
+        let child_id = child.id.clone();
+        if child.model.is_none() {
+            child.model = self
+                .models
+                .iter()
+                .find(|model| model.child_id.as_deref() == Some(child_id.as_str()))
+                .cloned();
+        }
+        for call in take_matching(&mut self.loose_tool_calls, |call| {
+            call.child_id.as_deref() == Some(child_id.as_str())
+        }) {
+            upsert_tool_into(&mut child.tool_calls, call);
+        }
+        for process in take_matching(&mut self.loose_processes, |process| {
+            process.child_id.as_deref() == Some(child_id.as_str())
+        }) {
+            upsert_process_on_child(&mut child, process);
+        }
+
         if let Some(batch_id) = &child.batch_id {
             if let Some(batch) = self.batches.iter_mut().find(|batch| &batch.id == batch_id) {
                 upsert_child_into(&mut batch.children, child);
@@ -150,21 +223,107 @@ impl SubagentTree {
 
         self.loose_children.push(child);
     }
-}
 
-fn attach_loose_children(loose_children: &mut Vec<SubagentChild>, batch: &mut SubagentBatch) {
-    let mut index = 0;
-    while index < loose_children.len() {
-        if loose_children[index].batch_id.as_deref() == Some(batch.id.as_str()) {
-            let child = loose_children.remove(index);
-            upsert_child_into(&mut batch.children, child);
-        } else {
-            index += 1;
+    pub fn upsert_model(&mut self, model: ModelAllocation) {
+        if let Some(child_id) = &model.child_id {
+            if let Some(child) = self.child_mut(child_id) {
+                child.model = Some(merge_model(child.model.take(), model.clone()));
+            }
         }
+
+        if let Some(existing) = self.models.iter_mut().find(|item| item.id == model.id) {
+            *existing = merge_model(Some(existing.clone()), model);
+        } else {
+            self.models.push(model);
+        }
+    }
+
+    pub fn upsert_tool_call(&mut self, call: SubagentToolCall) {
+        let mut call = call;
+        let call_id = call.call_id.clone().unwrap_or_else(|| call.id.clone());
+        for process in take_matching(&mut self.loose_processes, |process| {
+            process.call_id.as_deref() == Some(call_id.as_str())
+        }) {
+            upsert_process_into(&mut call.processes, process);
+        }
+
+        if let Some(child_id) = &call.child_id {
+            if let Some(child) = self.child_mut(child_id) {
+                upsert_tool_into(&mut child.tool_calls, call);
+                return;
+            }
+
+            self.upsert_child(SubagentChild {
+                id: child_id.clone(),
+                batch_id: None,
+                job_id: call.job_id.clone(),
+                name: child_id.clone(),
+                task: None,
+                status: SubagentStatus::Unknown,
+                model: None,
+                allowed_tools: Vec::new(),
+                tool_calls: vec![call],
+                processes: Vec::new(),
+                ask: None,
+                crystal: None,
+            });
+            return;
+        }
+
+        upsert_tool_into(&mut self.loose_tool_calls, call);
+    }
+
+    pub fn upsert_process(&mut self, process: SubagentProcess) {
+        if let Some(child_id) = &process.child_id {
+            if let Some(child) = self.child_mut(child_id) {
+                upsert_process_on_child(child, process);
+                return;
+            }
+        }
+
+        if let Some(call_id) = &process.call_id {
+            for call in &mut self.loose_tool_calls {
+                if call.id == *call_id || call.call_id.as_deref() == Some(call_id.as_str()) {
+                    upsert_process_into(&mut call.processes, process);
+                    return;
+                }
+            }
+        }
+
+        upsert_process_into(&mut self.loose_processes, process);
+    }
+
+    pub fn upsert_ask(&mut self, ask: SubagentAskPause, child_id: Option<String>) {
+        if let Some(child_id) = child_id {
+            if let Some(child) = self.child_mut(&child_id) {
+                merge_ask_on_child(child, ask);
+                return;
+            }
+        }
+
+        if let Some(existing) = self.loose_asks.iter_mut().find(|item| item.id == ask.id) {
+            merge_ask(existing, ask);
+        } else {
+            self.loose_asks.push(ask);
+        }
+    }
+
+    fn child_mut(&mut self, child_id: &str) -> Option<&mut SubagentChild> {
+        for batch in &mut self.batches {
+            if let Some(child) = batch.children.iter_mut().find(|child| child.id == child_id) {
+                return Some(child);
+            }
+        }
+        self.loose_children
+            .iter_mut()
+            .find(|child| child.id == child_id)
     }
 }
 
 fn merge_batch(existing: &mut SubagentBatch, incoming: SubagentBatch) {
+    if incoming.job_id.is_some() {
+        existing.job_id = incoming.job_id;
+    }
     if !incoming.name.is_empty() {
         existing.name = incoming.name;
     }
@@ -189,6 +348,9 @@ fn merge_child(existing: &mut SubagentChild, incoming: SubagentChild) {
     if incoming.batch_id.is_some() {
         existing.batch_id = incoming.batch_id;
     }
+    if incoming.job_id.is_some() {
+        existing.job_id = incoming.job_id;
+    }
     if !incoming.name.is_empty() {
         existing.name = incoming.name;
     }
@@ -198,26 +360,187 @@ fn merge_child(existing: &mut SubagentChild, incoming: SubagentChild) {
     if incoming.status != SubagentStatus::Unknown {
         existing.status = incoming.status;
     }
+    if incoming.model.is_some() {
+        existing.model = incoming.model;
+    }
+    if incoming.ask.is_some() {
+        existing.ask = incoming.ask;
+    }
+    if incoming.crystal.is_some() {
+        existing.crystal = incoming.crystal;
+    }
     merge_unique(&mut existing.allowed_tools, incoming.allowed_tools);
     for call in incoming.tool_calls {
-        if let Some(existing_call) = existing
+        upsert_tool_into(&mut existing.tool_calls, call);
+    }
+    for process in incoming.processes {
+        upsert_process_on_child(existing, process);
+    }
+}
+
+fn upsert_tool_into(calls: &mut Vec<SubagentToolCall>, call: SubagentToolCall) {
+    if let Some(existing) = calls.iter_mut().find(|item| {
+        item.id == call.id
+            || item.call_id.as_deref() == Some(call.id.as_str())
+            || call.call_id.as_deref() == Some(item.id.as_str())
+    }) {
+        merge_tool(existing, call);
+    } else {
+        calls.push(call);
+    }
+}
+
+fn merge_tool(existing: &mut SubagentToolCall, incoming: SubagentToolCall) {
+    if !incoming.name.is_empty() {
+        existing.name = incoming.name;
+    }
+    if incoming.status != SubagentStatus::Unknown {
+        existing.status = incoming.status;
+    }
+    if incoming.call_id.is_some() {
+        existing.call_id = incoming.call_id;
+    }
+    if incoming.job_id.is_some() {
+        existing.job_id = incoming.job_id;
+    }
+    if incoming.child_id.is_some() {
+        existing.child_id = incoming.child_id;
+    }
+    if incoming.server.is_some() {
+        existing.server = incoming.server;
+    }
+    if incoming.tool.is_some() {
+        existing.tool = incoming.tool;
+    }
+    if incoming.command.is_some() {
+        existing.command = incoming.command;
+    }
+    if incoming.args_preview.is_some() {
+        existing.args_preview = incoming.args_preview;
+    }
+    if incoming.output_path.is_some() {
+        existing.output_path = incoming.output_path;
+    }
+    if incoming.error.is_some() {
+        existing.error = incoming.error;
+    }
+    if incoming.duration_ms.is_some() {
+        existing.duration_ms = incoming.duration_ms;
+    }
+    if incoming.detail.is_some() {
+        existing.detail = incoming.detail;
+    }
+    for process in incoming.processes {
+        upsert_process_into(&mut existing.processes, process);
+    }
+}
+
+fn upsert_process_on_child(child: &mut SubagentChild, process: SubagentProcess) {
+    if let Some(call_id) = &process.call_id {
+        if let Some(call) = child
             .tool_calls
             .iter_mut()
-            .find(|item| item.id == call.id)
+            .find(|call| call.id == *call_id || call.call_id.as_deref() == Some(call_id.as_str()))
         {
-            if !call.name.is_empty() {
-                existing_call.name = call.name;
-            }
-            if call.status != SubagentStatus::Unknown {
-                existing_call.status = call.status;
-            }
-            if call.detail.is_some() {
-                existing_call.detail = call.detail;
-            }
-        } else {
-            existing.tool_calls.push(call);
+            upsert_process_into(&mut call.processes, process);
+            return;
         }
     }
+    upsert_process_into(&mut child.processes, process);
+}
+
+fn upsert_process_into(processes: &mut Vec<SubagentProcess>, process: SubagentProcess) {
+    if let Some(existing) = processes.iter_mut().find(|item| item.id == process.id) {
+        merge_process(existing, process);
+    } else {
+        processes.push(process);
+    }
+}
+
+fn merge_process(existing: &mut SubagentProcess, incoming: SubagentProcess) {
+    if incoming.status != SubagentStatus::Unknown {
+        existing.status = incoming.status;
+    }
+    if incoming.call_id.is_some() {
+        existing.call_id = incoming.call_id;
+    }
+    if incoming.job_id.is_some() {
+        existing.job_id = incoming.job_id;
+    }
+    if incoming.child_id.is_some() {
+        existing.child_id = incoming.child_id;
+    }
+    if incoming.command.is_some() {
+        existing.command = incoming.command;
+    }
+    if incoming.output_preview.is_some() {
+        existing.output_preview = incoming.output_preview;
+    }
+    if incoming.output_path.is_some() {
+        existing.output_path = incoming.output_path;
+    }
+    if incoming.error.is_some() {
+        existing.error = incoming.error;
+    }
+    if incoming.duration_ms.is_some() {
+        existing.duration_ms = incoming.duration_ms;
+    }
+}
+
+fn merge_model(existing: Option<ModelAllocation>, incoming: ModelAllocation) -> ModelAllocation {
+    let Some(mut existing) = existing else {
+        return incoming;
+    };
+    if incoming.request_id.is_some() {
+        existing.request_id = incoming.request_id;
+    }
+    if incoming.job_id.is_some() {
+        existing.job_id = incoming.job_id;
+    }
+    if incoming.child_id.is_some() {
+        existing.child_id = incoming.child_id;
+    }
+    if incoming.scope.is_some() {
+        existing.scope = incoming.scope;
+    }
+    if incoming.agent_role.is_some() {
+        existing.agent_role = incoming.agent_role;
+    }
+    if incoming.provider_id.is_some() {
+        existing.provider_id = incoming.provider_id;
+    }
+    if incoming.model_id.is_some() {
+        existing.model_id = incoming.model_id;
+    }
+    if incoming.reason.is_some() {
+        existing.reason = incoming.reason;
+    }
+    if incoming.source.is_some() {
+        existing.source = incoming.source;
+    }
+    existing
+}
+
+fn merge_ask_on_child(child: &mut SubagentChild, ask: SubagentAskPause) {
+    if let Some(existing) = &mut child.ask {
+        merge_ask(existing, ask);
+    } else {
+        child.ask = Some(ask);
+    }
+    child.status = SubagentStatus::NeedsUser;
+}
+
+fn merge_ask(existing: &mut SubagentAskPause, incoming: SubagentAskPause) {
+    if incoming.status != SubagentStatus::Unknown {
+        existing.status = incoming.status;
+    }
+    if incoming.reason.is_some() {
+        existing.reason = incoming.reason;
+    }
+    if incoming.crystal_candidate.is_some() {
+        existing.crystal_candidate = incoming.crystal_candidate;
+    }
+    existing.answered |= incoming.answered;
 }
 
 fn merge_unique(target: &mut Vec<String>, incoming: Vec<String>) {
@@ -228,36 +551,15 @@ fn merge_unique(target: &mut Vec<String>, incoming: Vec<String>) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn child(id: &str, batch_id: Option<&str>, status: SubagentStatus) -> SubagentChild {
-        SubagentChild {
-            id: id.to_string(),
-            batch_id: batch_id.map(str::to_string),
-            name: id.to_string(),
-            task: None,
-            status,
-            allowed_tools: Vec::new(),
-            tool_calls: Vec::new(),
+fn take_matching<T>(items: &mut Vec<T>, mut matches: impl FnMut(&T) -> bool) -> Vec<T> {
+    let mut selected = Vec::new();
+    let mut index = 0;
+    while index < items.len() {
+        if matches(&items[index]) {
+            selected.push(items.remove(index));
+        } else {
+            index += 1;
         }
     }
-
-    #[test]
-    fn upsert_batch_drains_matching_loose_children() {
-        let mut tree = SubagentTree::default();
-        tree.upsert_child(child("child-1", Some("batch-1"), SubagentStatus::Running));
-
-        tree.upsert_batch(SubagentBatch {
-            id: "batch-1".to_string(),
-            name: "batch-1".to_string(),
-            status: SubagentStatus::Running,
-            allowed_tools: Vec::new(),
-            children: Vec::new(),
-        });
-
-        assert!(tree.loose_children.is_empty());
-        assert_eq!(tree.batches[0].children[0].id, "child-1");
-    }
+    selected
 }

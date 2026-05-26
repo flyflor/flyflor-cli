@@ -4,9 +4,11 @@ use crate::tui::subagent::state::SubagentTree;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunTimelineItemKind {
+    Model,
     Route,
     Recall,
     Tool,
+    Process,
     Blackboard,
     Subagent,
     Ask,
@@ -14,6 +16,7 @@ pub enum RunTimelineItemKind {
     Fork,
     Loop,
     Snapshot,
+    Crystal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,26 +110,37 @@ impl RunTimeline {
                 value,
             );
         }
-        upsert_item(&mut self.items, parsed.clone());
+        self.items.push(parsed.clone());
         Some(parsed)
     }
 
     pub fn apply_execution_job_snapshot(&mut self, value: &Value) -> Vec<RunTimelineItem> {
         let parsed = crate::tui::run_timeline::parser::parse_execution_job_snapshot(value);
         crate::tui::subagent::parser::merge_execution_job_snapshot(&mut self.subagents, value);
-        for item in &parsed {
-            upsert_item(&mut self.items, item.clone());
-        }
+        self.items.extend(parsed.iter().cloned());
         parsed
     }
-}
 
-fn upsert_item(items: &mut Vec<RunTimelineItem>, item: RunTimelineItem) {
-    if let Some(existing) = items.iter_mut().find(|existing| existing.id == item.id) {
-        *existing = item;
-        return;
+    #[cfg(test)]
+    pub fn apply_json(&mut self, value: &Value) -> Vec<RunTimelineItem> {
+        let parsed = crate::tui::run_timeline::parser::parse_timeline_input(value);
+        for item in &parsed {
+            if item.source == RunTimelineSource::ExecutionJobSnapshot {
+                crate::tui::subagent::parser::merge_execution_job_snapshot(
+                    &mut self.subagents,
+                    value,
+                );
+            } else if let Some(event_type) = item.raw.as_ref().and_then(event_type_from_raw) {
+                crate::tui::subagent::parser::merge_event_publish(
+                    &mut self.subagents,
+                    event_type,
+                    value,
+                );
+            }
+        }
+        self.items.extend(parsed.iter().cloned());
+        parsed
     }
-    items.push(item);
 }
 
 fn event_type_from_raw(raw: &Value) -> Option<&str> {
@@ -172,23 +186,23 @@ mod tests {
         }));
         assert!(snapshot_items.iter().any(|item| item.id == "batch:batch-1"));
         assert_eq!(
-            timeline.subagents.batches[0].children[0].status,
-            crate::tui::subagent::state::SubagentStatus::Completed
+            timeline.subagents.batches[0].children[0].status.as_str(),
+            "completed"
         );
     }
 
     #[test]
-    fn repeated_snapshots_update_existing_timeline_items() {
+    fn timeline_apply_json_routes_by_message_type() {
         let mut timeline = RunTimeline::new();
-        timeline.apply_execution_job_snapshot(&json!({
-            "data": { "jobId": "job-1", "status": "running", "summary": "first" }
-        }));
-        timeline.apply_execution_job_snapshot(&json!({
-            "data": { "jobId": "job-1", "status": "completed", "summary": "done" }
+        let items = timeline.apply_json(&json!({
+            "type": "execution.job.snapshot",
+            "data": { "jobId": "job-1", "status": "running" }
         }));
 
-        assert_eq!(timeline.items.len(), 1);
-        assert_eq!(timeline.items[0].status, RunTimelineItemStatus::Completed);
-        assert_eq!(timeline.items[0].detail.as_deref(), Some("done"));
+        assert_eq!(items[0].id, "job:job-1");
+        assert_eq!(
+            timeline.items[0].source,
+            RunTimelineSource::ExecutionJobSnapshot
+        );
     }
 }
