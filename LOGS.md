@@ -161,3 +161,27 @@
   原因：满足 gateway bridge lane 对 `/ws` thin-client、ASK/approval structured metadata/context 和 channel capability degradation 的契约。
   验证：`cargo test tui::gateway::channels::runtime::tests`；`cargo fmt --check`；`cargo check`；`cargo test`（199 passed）；`git diff --check`。
   风险：真实平台 live stream update 仍取决于未来 adapter 是否实现 `stream_update`；当前 Weixin iLink 明确报告 edit/draft/card/media unavailable。
+
+- 状态：完成
+  执行者：main-codex
+  范围：src-tui-external-tool-failure-visibility
+  摘要：在 `src/tui/run_timeline/parser.rs` 增加 nested failure/unavailable detail 提取，并让 `src/tui/subagent/parser.rs` 复用该提取；外部 browser/computer sidecar、delegate、provider 返回的 `result.response.error/reason/code` 会显示为紧凑错误文本，不再回退成 raw JSON 或空白。
+  原因：真实工具闭环中失败/不可用必须通过 TUI 可见，避免 Exo timeline 和 subagent 展开区进入黑盒状态。
+  验证：待运行 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。
+  风险：仅扩展显示层 payload 提取，不改变 ASK、gateway socket、kernel ledger 或工具调度语义。
+
+- 状态：完成
+  执行者：main-codex
+  范围：src-tui-external-tool-failure-visibility-verification
+  摘要：完成外部工具失败可见性修复的格式、类型、全量测试和 diff whitespace 验证。
+  原因：上一条记录在实现落地时预留验证状态；本条按 append-only 规则补充实际验证结果。
+  验证：`cargo fmt --check`；`cargo check`（仅既有 gateway config dead_code warnings）；`cargo test`（209 passed）；`git diff --check`。
+  风险：未运行真实 tmux TUI smoke；本次改动只覆盖 `src/tui` parser/display payload 消费，真实 LLM kernel 工具闭环已由上游 kernel smoke 覆盖。
+
+- 状态：完成
+  执行者：main-codex
+  范围：src-tui-real-smoke-after-failure-visibility
+  摘要：补跑真实 tmux TUI smoke，隔离启动 kernel socket 与 Rust TUI，确认本次 parser/display 改动不破坏真实 TUI loop。
+  原因：用户要求真实场景不能只依赖单元测试；即使本次是显示层小改，也需要保留 live 证据。
+  验证：`npm run smoke:live:tui` 输出 `ok: true`、`failedChecks: []`，报告目录 `.flyflor-cli/live/2026-05-27T13-08-49-999Z/`。
+  风险：该 live smoke 验证 TUI 真实交互闭环与无 `unknown`/panic；nested external failure 形态由 targeted parser tests 覆盖。

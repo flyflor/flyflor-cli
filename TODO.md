@@ -106,3 +106,9 @@
 - [x] outbound 消费 `turn.delta`、`turn.final`、`turn.error` 与 subscribed `event.publish`，按 channel capability 选择 typing/send 或 edit/draft/card stream update。
 - [x] channel capability report 显式标记 `available`/`degraded`/`unavailable`，未实现平台不返回假成功。
 - [x] 增加 mock WS targeted tests 覆盖 inbound envelope、ASK/approval metadata、delta/final/error 和 event.publish streaming。
+
+## 2026-05-27 src/tui external tool failure visibility
+
+- [x] Timeline parser 提取外部工具 nested failure/unavailable 字段，避免 browser/computer sidecar 错误变成 raw JSON 或空白 detail。
+- [x] Subagent tree 同步显示 nested failure detail，让 Exo/child 工具失败在展开区可见。
+- [x] 增加 targeted parser tests，覆盖 `result.response.error/reason/code` 形态且禁止 `unknown`/raw JSON 回退。

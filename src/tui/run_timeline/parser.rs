@@ -415,30 +415,89 @@ fn tool_display_name(payload: &Value) -> Option<String> {
 
 fn tool_detail(payload: &Value) -> Option<String> {
     let payload = tool_payload_value(payload);
-    first_string_nested(
-        payload,
-        &[
-            &["metadata", "preview"],
-            &["inputPreview"],
-            &["call", "inputPreview"],
-            &["call", "argsPreview"],
-            &["resultSummary"],
-            &["result", "preview"],
-        ],
-    )
-    .or_else(|| {
-        first_text_nested(
-            payload,
-            &[
-                &["call", "input"],
-                &["input"],
-                &["args"],
-                &["arguments"],
-                &["result", "raw"],
-            ],
-        )
+    failure_detail(payload)
+        .or_else(|| {
+            first_string_nested(
+                payload,
+                &[
+                    &["metadata", "preview"],
+                    &["inputPreview"],
+                    &["call", "inputPreview"],
+                    &["call", "argsPreview"],
+                    &["resultSummary"],
+                    &["result", "preview"],
+                ],
+            )
+        })
+        .or_else(|| {
+            first_text_nested(
+                payload,
+                &[
+                    &["call", "input"],
+                    &["input"],
+                    &["args"],
+                    &["arguments"],
+                    &["result", "raw"],
+                ],
+            )
+        })
+        .or_else(|| first_string_nested(payload, &[&["state", "title"], &["state", "error"]]))
+}
+
+pub(crate) fn failure_detail(value: &Value) -> Option<String> {
+    let payload = tool_payload_value(value);
+    let mut parts = Vec::new();
+    for path in [
+        &["error"][..],
+        &["errorMessage"],
+        &["message"],
+        &["reason"],
+        &["result", "error"],
+        &["result", "message"],
+        &["result", "reason"],
+        &["result", "response", "error"],
+        &["result", "response", "message"],
+        &["result", "response", "reason"],
+        &["details", "error"],
+        &["details", "message"],
+        &["details", "reason"],
+        &["failure", "message"],
+        &["failure", "reason"],
+        &["unavailable", "message"],
+        &["unavailable", "reason"],
+        &["state", "error"],
+        &["stderr"],
+        &["result", "stderr"],
+        &["code"],
+        &["result", "code"],
+        &["result", "response", "code"],
+    ] {
+        let Some(text) = scalar_text_at(payload, path) else {
+            continue;
+        };
+        let text = text.trim();
+        if text.is_empty() || parts.iter().any(|part| part == text) {
+            continue;
+        }
+        parts.push(text.to_string());
+        if parts.len() >= 3 {
+            break;
+        }
+    }
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(" · "))
+    }
+}
+
+fn scalar_text_at(value: &Value, path: &[&str]) -> Option<String> {
+    value_at(value, path).and_then(|value| match value {
+        Value::String(text) if !text.trim().is_empty() => Some(text.clone()),
+        Value::Number(number) => Some(number.to_string()),
+        _ => None,
     })
-    .or_else(|| first_string_nested(payload, &[&["state", "title"], &["state", "error"]]))
 }
 
 fn tool_payload_value(value: &Value) -> &Value {
@@ -811,6 +870,34 @@ mod tests {
         assert_eq!(item.title, "tool workspace/read");
         assert_eq!(item.detail.as_deref(), Some("src/main.rs"));
         assert_eq!(item.status, RunTimelineItemStatus::Completed);
+    }
+
+    #[test]
+    fn surfaces_nested_external_tool_failure_detail() {
+        let item = parse_event_publish(&json!({
+            "type": "tool.failed",
+            "payload": {
+                "tool": "browser.use",
+                "status": "failed",
+                "result": {
+                    "response": {
+                        "ok": false,
+                        "code": "unavailable",
+                        "error": "external sidecar is not configured",
+                        "reason": "browser.use not enabled"
+                    }
+                }
+            }
+        }))
+        .expect("tool failure event");
+
+        let detail = item.detail.as_deref().expect("visible failure detail");
+        assert_eq!(item.kind, RunTimelineItemKind::Tool);
+        assert_eq!(item.status, RunTimelineItemStatus::Failed);
+        assert!(detail.contains("external sidecar is not configured"));
+        assert!(detail.contains("browser.use not enabled"));
+        assert!(!detail.contains('{'));
+        assert!(!detail.contains("unknown"));
     }
 
     #[test]

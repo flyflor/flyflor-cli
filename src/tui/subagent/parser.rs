@@ -2,8 +2,8 @@ use serde_json::Value;
 
 use crate::tui::{
     run_timeline::parser::{
-        arrays_at, compact_json, event_value, first_string, first_string_nested, first_text_nested,
-        value_at, value_string, value_text_at, value_u64,
+        arrays_at, compact_json, event_value, failure_detail, first_string, first_string_nested,
+        first_text_nested, value_at, value_string, value_text_at, value_u64,
     },
     subagent::state::{
         ModelAllocation, SubagentAskPause, SubagentBatch, SubagentChild, SubagentProcess,
@@ -260,18 +260,10 @@ fn tool_call_from_value(value: &Value) -> SubagentToolCall {
                 &["result", "path"],
             ],
         ),
-        error: first_string_nested(
-            value,
-            &[
-                &["error"],
-                &["errorMessage"],
-                &["message"],
-                &["result", "error"],
-                &["state", "error"],
-            ],
-        ),
+        error: failure_detail(value),
         duration_ms: value_u64(value, "durationMs").or_else(|| value_u64(value, "duration_ms")),
-        detail: first_string(value, &["summary", "command", "error"])
+        detail: failure_detail(value)
+            .or_else(|| first_string(value, &["summary", "command", "error"]))
             .or_else(|| first_string_nested(value, &[&["state", "title"]]))
             .or(result_preview),
         output_tail: output_tail_lines(value),
@@ -483,16 +475,7 @@ fn process_from_value(value: &Value, status: SubagentStatus) -> SubagentProcess 
                 &["result", "path"],
             ],
         ),
-        error: first_string_nested(
-            value,
-            &[
-                &["error"],
-                &["errorMessage"],
-                &["message"],
-                &["result", "error"],
-                &["state", "error"],
-            ],
-        ),
+        error: failure_detail(value),
         duration_ms: value_u64(value, "durationMs").or_else(|| value_u64(value, "duration_ms")),
         output_tail: output_tail_lines(value),
     }
@@ -888,6 +871,48 @@ mod tests {
         assert_eq!(call.args_preview.as_deref(), Some("src/main.rs"));
         assert_eq!(call.detail.as_deref(), Some("fn main() {}"));
         assert_eq!(call.status, SubagentStatus::Completed);
+    }
+
+    #[test]
+    fn surfaces_nested_external_tool_failure_on_subagent_tree() {
+        let mut tree = SubagentTree::default();
+        merge_event_publish(
+            &mut tree,
+            "tool.failed",
+            &json!({
+                "type": "tool.failed",
+                "payload": {
+                    "childId": "child-1",
+                    "tool": "computer.use",
+                    "status": "failed",
+                    "result": {
+                        "response": {
+                            "ok": false,
+                            "code": "unavailable",
+                            "error": "computer delegate unavailable",
+                            "reason": "cua-driver command not found"
+                        }
+                    }
+                }
+            }),
+        );
+        merge_event_publish(
+            &mut tree,
+            "subagent.child.start",
+            &json!({
+                "type": "subagent.child.start",
+                "payload": { "childId": "child-1", "task": "probe desktop" }
+            }),
+        );
+
+        let call = &tree.loose_children[0].tool_calls[0];
+        let detail = call.detail.as_deref().expect("visible failure detail");
+        assert_eq!(call.status, SubagentStatus::Failed);
+        assert_eq!(call.error.as_deref(), Some(detail));
+        assert!(detail.contains("computer delegate unavailable"));
+        assert!(detail.contains("cua-driver command not found"));
+        assert!(!detail.contains('{'));
+        assert!(!detail.contains("unknown"));
     }
 
     #[test]
