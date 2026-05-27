@@ -71,3 +71,11 @@
 - [x] `build:binary` 支持显式 Rust target triple，并输出到对应 `dist/<platform>-<arch>`。
 - [x] `build:binary:all` 提供发布批量构建入口。
 - [x] 复跑 host target 显式构建、npm local/global-prefix smoke、Cargo 门禁和 `git diff --check`。
+
+## 2026-05-27 gateway bridge streaming
+
+- [x] inbound normalized channel message 映射为 `gateway.message.send`，保留 routing/audit/reply anchor 与显式 `payload.context`。
+- [x] ASK/approval metadata 作为结构化 metadata/context 透传，不把工具授权写成普通用户文本。
+- [x] outbound 消费 `turn.delta`、`turn.final`、`turn.error` 与 subscribed `event.publish`，按 channel capability 选择 typing/send 或 edit/draft/card stream update。
+- [x] channel capability report 显式标记 `available`/`degraded`/`unavailable`，未实现平台不返回假成功。
+- [x] 增加 mock WS targeted tests 覆盖 inbound envelope、ASK/approval metadata、delta/final/error 和 event.publish streaming。
