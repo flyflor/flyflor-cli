@@ -7,7 +7,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::{Theme, shared::draw_separator};
+use crate::tui::{shared::draw_separator, theme::Theme};
 
 pub struct ShellLayout {
     pub root: Rect,

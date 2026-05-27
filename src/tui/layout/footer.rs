@@ -6,7 +6,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::{Theme, layout::state::HeaderState};
+use crate::tui::{layout::state::HeaderState, theme::Theme};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &HeaderState, theme: &Theme) {
     frame.render_widget(

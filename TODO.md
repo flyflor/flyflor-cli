@@ -71,3 +71,10 @@
 - [x] `build:binary` 支持显式 Rust target triple，并输出到对应 `dist/<platform>-<arch>`。
 - [x] `build:binary:all` 提供发布批量构建入口。
 - [x] 复跑 host target 显式构建、npm local/global-prefix smoke、Cargo 门禁和 `git diff --check`。
+
+## 2026-05-27 dir-foundation module layout
+
+- [x] 将顶层 `clipboard.rs`、`input.rs`、`shared.rs`、`theme.rs` 移入 `src/tui/`。
+- [x] 将顶层 `context/`、`layout/` 移入 `src/tui/context/` 与 `src/tui/layout/`。
+- [x] 将 TUI kernel socket module 从 `src/tui/gateway/` 改为 `src/tui/kernel/`，并准备 `src/cli/`、`src/gateway/channels/` roots。
+- [x] 复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check` 与 stale path search。

@@ -10,8 +10,9 @@ use ratatui_interact::{
 };
 
 use crate::{
-    ScrollState, Theme, ThoughtHitbox, Turn, apply_scroll_delta, drag_scroll, render_turns,
-    shared::in_rect, update_scroll_state_from_rendered,
+    ScrollState, ThoughtHitbox, Turn, apply_scroll_delta, drag_scroll, render_turns,
+    tui::{shared::in_rect, theme::Theme},
+    update_scroll_state_from_rendered,
 };
 
 #[derive(Default)]

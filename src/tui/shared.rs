@@ -9,7 +9,7 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::{DEFAULT_WS_URL, Theme};
+use crate::{DEFAULT_WS_URL, tui::theme::Theme};
 
 pub const WORKING_SHIMMER_PHASES: usize = 192;
 
