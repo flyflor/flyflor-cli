@@ -11,6 +11,8 @@ pub struct AskAnswer {
     pub is_other: bool,
 }
 
+const CITIZEN_PERMISSION_CHOICES: [&str; 3] = ["continue-tools", "keep-budget", "keep-subagents"];
+
 impl From<AskSelection> for AskAnswer {
     fn from(selection: AskSelection) -> Self {
         Self {
@@ -38,10 +40,25 @@ pub fn ask_message_metadata_many(continuation: Value, answers: &[AskAnswer]) -> 
             }
         }
     }
-    json!({
+    let mut metadata = json!({
         "continuation": continuation,
         "askAnswer": ask_answer
-    })
+    });
+    if let Some(permission) = citizen_permission_metadata(answers) {
+        metadata["citizenPermission"] = permission;
+    }
+    metadata
+}
+
+pub fn ask_message_text(answers: &[AskAnswer]) -> String {
+    if citizen_permission_choices(answers).is_empty() {
+        return answers
+            .iter()
+            .map(|answer| answer.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    "已提交执行授权策略".to_string()
 }
 
 pub fn ask_answer_metadata(answer: &AskAnswer) -> Value {
@@ -51,6 +68,40 @@ pub fn ask_answer_metadata(answer: &AskAnswer) -> Value {
         "text": answer.text,
         "value": answer.value,
         "isOther": answer.is_other
+    })
+}
+
+fn citizen_permission_metadata(answers: &[AskAnswer]) -> Option<Value> {
+    let choices = citizen_permission_choices(answers);
+    if choices.is_empty() {
+        return None;
+    }
+    Some(json!({
+        "kind": "execution-policy",
+        "choices": choices
+    }))
+}
+
+fn citizen_permission_choices(answers: &[AskAnswer]) -> Vec<String> {
+    answers
+        .iter()
+        .filter_map(citizen_permission_choice)
+        .collect()
+}
+
+fn citizen_permission_choice(answer: &AskAnswer) -> Option<String> {
+    [
+        Some(answer.choice_id.as_str()),
+        answer.value.as_deref(),
+        Some(answer.text.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|value| value.trim().to_ascii_lowercase())
+    .find(|value| {
+        CITIZEN_PERMISSION_CHOICES
+            .iter()
+            .any(|choice| *choice == value.as_str())
     })
 }
 
@@ -186,5 +237,36 @@ mod tests {
             Some(2)
         );
         assert!(ask_answer.get("choiceId").is_none());
+    }
+
+    #[test]
+    fn citizen_permission_answer_adds_structured_metadata_and_safe_text() {
+        let answers = vec![AskAnswer {
+            question_id: Some("permission".to_string()),
+            choice_id: "continue-tools".to_string(),
+            text: "continue-tools".to_string(),
+            value: Some("continue-tools".to_string()),
+            is_other: false,
+        }];
+
+        let metadata = ask_message_metadata_many(json!({ "snapshotId": "ask-1" }), &answers);
+
+        assert_eq!(ask_message_text(&answers), "已提交执行授权策略");
+        assert_eq!(
+            metadata
+                .get("citizenPermission")
+                .and_then(|permission| permission.get("kind"))
+                .and_then(Value::as_str),
+            Some("execution-policy")
+        );
+        assert_eq!(
+            metadata
+                .get("citizenPermission")
+                .and_then(|permission| permission.get("choices"))
+                .and_then(Value::as_array)
+                .and_then(|choices| choices.first())
+                .and_then(Value::as_str),
+            Some("continue-tools")
+        );
     }
 }

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "FLYFLOR_DEV=1 FLYFLOR_LOG=.flyflor-cli/logs/dev.log cargo watch --clear --why -w src -w Cargo.toml -w Cargo.lock -x 'run -- --dev'",
     "dev:node": "tsx scripts/dev.ts",
+    "smoke:live:tui": "tsx scripts/live-tui-scenario.ts",
     "logs": "tsx scripts/logs.ts",
     "check": "cargo check",
     "test": "cargo test"

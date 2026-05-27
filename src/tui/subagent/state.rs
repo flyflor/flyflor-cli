@@ -18,7 +18,7 @@ impl SubagentStatus {
             Self::NeedsUser => "needs_user",
             Self::Completed => "completed",
             Self::Failed => "failed",
-            Self::Unknown => "unknown",
+            Self::Unknown => "pending",
         }
     }
 
@@ -650,4 +650,14 @@ fn take_matching<T>(items: &mut Vec<T>, mut matches: impl FnMut(&T) -> bool) -> 
         }
     }
     selected
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_status_is_not_rendered_as_unknown() {
+        assert_eq!(SubagentStatus::Unknown.as_str(), "pending");
+    }
 }

@@ -39,7 +39,7 @@ pub fn execution_context_rows(timeline: &RunTimeline) -> Vec<ExecutionContextRow
             summary: subagent_execution_summary(index + 1, total, child),
             detail: subagent_execution_detail(batch_name, child),
             status: child_status(&child.status),
-            expanded: true,
+            expanded: index + 1 == total,
             identity: format!("child:{}", child.id),
         })
         .collect()
@@ -433,5 +433,24 @@ mod tests {
         assert!(!rows[0].detail.contains("tool · unknown"));
         assert!(rows[0].detail.contains("> b"));
         assert!(rows[0].detail.contains("> d"));
+    }
+
+    #[test]
+    fn execution_rows_expand_only_latest_child_by_default() {
+        let mut timeline = RunTimeline::new();
+        timeline.apply_execution_job_snapshot(&json!({
+            "data": {
+                "children": [
+                    { "childId": "reader", "task": "inspect", "status": "completed" },
+                    { "childId": "writer", "task": "edit", "status": "running" }
+                ]
+            }
+        }));
+
+        let rows = execution_context_rows(&timeline);
+
+        assert_eq!(rows.len(), 2);
+        assert!(!rows[0].expanded);
+        assert!(rows[1].expanded);
     }
 }

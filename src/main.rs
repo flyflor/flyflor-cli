@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     env,
     fs::{OpenOptions, create_dir_all},
     io,
@@ -82,6 +82,7 @@ const DEFAULT_WS_URL: &str = "ws://127.0.0.1:8787/ws";
 const DEFAULT_CONTEXT_BAR_WIDTH: usize = 32;
 const ESC_INTERRUPT_WINDOW_MS: u64 = 1_200;
 const EXO_ACTIVITY_FRAMES: [&str; 8] = ["⣏⣹", "⣇⣸", "⣧⣤", "⣿⣴", "⣿⣿", "⣿⡷", "⣿⡇", "⡇⡇"];
+const CITIZEN_PERMISSION_CHOICES: [&str; 3] = ["continue-tools", "keep-budget", "keep-subagents"];
 
 fn main() -> io::Result<()> {
     install_panic_logger();
@@ -655,7 +656,11 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
         .count();
     let mut lines = vec![Line::from(vec![
         Span::styled(
-            "ASK",
+            if ask_menu_is_citizen_permission(menu) {
+                "ASK 授权执行策略"
+            } else {
+                "ASK"
+            },
             Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
@@ -783,6 +788,26 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
         ));
     }
     lines
+}
+
+fn ask_menu_is_citizen_permission(menu: &AskMenu) -> bool {
+    menu.questions.iter().any(|question| {
+        question.choices.iter().any(|choice| {
+            [
+                Some(choice.id.as_str()),
+                choice.value.as_deref(),
+                Some(choice.label.as_str()),
+            ]
+            .into_iter()
+            .flatten()
+            .map(|value| value.trim().to_ascii_lowercase())
+            .any(|value| {
+                CITIZEN_PERMISSION_CHOICES
+                    .iter()
+                    .any(|choice| *choice == value.as_str())
+            })
+        })
+    })
 }
 
 fn render_plan_menu_lines(menu: &PlanMenu, theme: &Theme) -> Vec<Line<'static>> {
@@ -1029,6 +1054,7 @@ struct App {
     tool_approval_next_turn: bool,
     task_todos: Option<Vec<TodoItem>>,
     run_timeline: RunTimeline,
+    requested_execution_detail_job_ids: HashSet<String>,
     model_context_window_tokens: Option<usize>,
     model_name: Option<String>,
     model_provider: Option<String>,
@@ -1252,6 +1278,7 @@ impl App {
                 None
             },
             run_timeline: RunTimeline::new(),
+            requested_execution_detail_job_ids: HashSet::new(),
             model_context_window_tokens: demo_mode.then_some(12000),
             model_name: demo_mode.then(|| "demo-model".to_string()),
             model_provider: demo_mode.then(|| "demo".to_string()),
@@ -1345,9 +1372,7 @@ impl App {
                 self.attach_execution_row_to_active_turn();
                 let status = self.apply_runtime_event_side_effects(&event);
                 if let Some(job_id) = job_id_from_event_payload(&event) {
-                    let _ = self
-                        .socket_tx
-                        .send(SocketCommand::ExecutionJobDetailGet { job_id });
+                    self.request_execution_job_detail(job_id);
                 }
                 if let Some(status) = status {
                     self.right_source.blackboard_status = status;
@@ -1432,6 +1457,7 @@ impl App {
                 });
                 self.turns.clear();
                 self.pending_turns.clear();
+                self.requested_execution_detail_job_ids.clear();
                 self.clear_working_state_if_idle();
                 self.chat_render_key = None;
                 self.left.initial_scroll_applied = false;
@@ -1540,9 +1566,28 @@ impl App {
                 row.expanded = *expanded;
             }
         }
+        expand_latest_execution_row_only(&mut rows);
         turn.context_rows
             .retain(|row| row.kind != ContextRowKind::Execution);
         turn.context_rows.extend(rows);
+    }
+
+    fn request_execution_job_detail(&mut self, job_id: String) {
+        if !self
+            .requested_execution_detail_job_ids
+            .insert(job_id.clone())
+        {
+            return;
+        }
+        if self
+            .socket_tx
+            .send(SocketCommand::ExecutionJobDetailGet {
+                job_id: job_id.clone(),
+            })
+            .is_err()
+        {
+            self.requested_execution_detail_job_ids.remove(&job_id);
+        }
     }
 
     fn fail_pending_turns(&mut self, message: &str) {
@@ -2136,6 +2181,7 @@ impl App {
         self.pending_plan_action = None;
         self.pending_fork_create = false;
         self.run_timeline = RunTimeline::new();
+        self.requested_execution_detail_job_ids.clear();
         self.chat_render_key = None;
         self.chat_context_regions.clear();
         self.context_row_hitboxes.clear();
@@ -2169,6 +2215,7 @@ impl App {
             self.right_source.blackboard_status = "已退出 fork，回到父级/root 对话".to_string();
         }
         self.pending_turns.clear();
+        self.requested_execution_detail_job_ids.clear();
         self.clear_working_state_if_idle();
         self.chat_render_key = None;
         self.left.initial_scroll_applied = false;
@@ -2297,11 +2344,7 @@ impl App {
         let new_turn_index = self.turns.len();
         let socket_connected = self.socket_connected;
         let metadata = tui::ask::command::ask_message_metadata_many(continuation, &ask_answers);
-        let user_text = ask_answers
-            .iter()
-            .map(|answer| answer.text.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let user_text = tui::ask::command::ask_message_text(&ask_answers);
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
@@ -2861,21 +2904,6 @@ impl App {
         visible_line_slice(&self.right_lines, 0, height)
     }
 
-    fn metadata_for_pending_ask_answer(&self, text: &str) -> Option<Value> {
-        let continuation = self.turns.iter().rev().find_map(continuation_from_turn)?;
-        let answer = AskAnswer {
-            question_id: None,
-            choice_id: "freeform".to_string(),
-            text: text.to_string(),
-            value: Some(text.to_string()),
-            is_other: true,
-        };
-        Some(tui::ask::command::ask_message_metadata_many(
-            continuation,
-            &[answer],
-        ))
-    }
-
     fn submit_input(&mut self) {
         let text = self.input.trim().to_string();
         if let Some(mut menu) = self.ask_menu.take_if(|menu| menu.is_editing_other()) {
@@ -2935,7 +2963,7 @@ impl App {
             return;
         }
         let turn_index = self.turns.len();
-        let metadata = self.metadata_for_pending_ask_answer(&text);
+        let metadata = None;
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
@@ -6911,6 +6939,20 @@ fn execution_context_rows(timeline: &RunTimeline) -> Vec<ContextRow> {
         .collect()
 }
 
+fn expand_latest_execution_row_only(rows: &mut [ContextRow]) {
+    let Some(last_index) = rows
+        .iter()
+        .rposition(|row| row.kind == ContextRowKind::Execution)
+    else {
+        return;
+    };
+    for (index, row) in rows.iter_mut().enumerate() {
+        if row.kind == ContextRowKind::Execution {
+            row.expanded = index == last_index;
+        }
+    }
+}
+
 fn execution_row_identity(row: &ContextRow) -> Option<String> {
     row.detail
         .lines()
@@ -9287,6 +9329,66 @@ mod tests {
     }
 
     #[test]
+    fn ask_citizen_permission_menu_sends_metadata_without_token_message_text() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.socket_connected = true;
+        app.turns.push(Turn {
+            message_id: Some("message-1".to_string()),
+            event_id: Some("event-1".to_string()),
+            user: "u".to_string(),
+            thought: None,
+            answer: "需要授权".to_string(),
+            metadata: Some(json!({
+                "ask": {
+                    "prompt": "授权执行策略",
+                    "snapshotId": "ask-permission-1",
+                    "choices": [
+                        { "id": "continue-tools", "label": "continue-tools", "value": "continue-tools" }
+                    ]
+                }
+            })),
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+
+        assert!(app.open_latest_ask_menu());
+        let menu_text =
+            render_ask_menu_lines(app.ask_menu.as_ref().expect("ask menu"), &Theme::default())
+                .iter()
+                .map(line_plain_text)
+                .collect::<Vec<_>>()
+                .join("\n");
+        assert!(menu_text.contains("授权执行策略"));
+        app.confirm_ask_menu_selection();
+
+        let sent = app.turns.last().expect("sent turn");
+        assert_eq!(sent.user, "已提交执行授权策略");
+        assert!(!sent.user.contains("continue-tools"));
+        match rx.try_recv().expect("send message command") {
+            SocketCommand::SendMessage {
+                text,
+                metadata: Some(metadata),
+                ..
+            } => {
+                assert_eq!(text, "已提交执行授权策略");
+                assert_eq!(
+                    metadata
+                        .get("citizenPermission")
+                        .and_then(|permission| permission.get("choices"))
+                        .and_then(Value::as_array)
+                        .and_then(|choices| choices.first())
+                        .and_then(Value::as_str),
+                    Some("continue-tools")
+                );
+            }
+            _ => panic!("expected ask permission send message with metadata"),
+        }
+    }
+
+    #[test]
     fn slash_command_real_enter_path_does_not_submit_while_ask_other_inline_is_active() {
         let mut app = App::new();
         app.socket_connected = true;
@@ -9576,7 +9678,7 @@ mod tests {
     }
 
     #[test]
-    fn execution_context_preserves_expanded_subagent_by_child_id() {
+    fn execution_context_expands_latest_subagent_and_collapses_prior_rows() {
         let mut app = App::new();
         app.turns.push(test_turn("任务", "智能体回答正文"));
         app.apply_socket_event(SocketEvent::ExecutionJobSnapshot(json!({
@@ -9605,18 +9707,18 @@ mod tests {
         })));
 
         let turn = app.turns.last().expect("turn");
-        let first = turn
+        let latest = turn
             .context_rows
             .iter()
             .find(|row| row.detail.contains("子代理ID: child-a"))
-            .expect("first execution row");
-        let second = turn
+            .expect("latest execution row");
+        let prior = turn
             .context_rows
             .iter()
             .find(|row| row.detail.contains("子代理ID: child-b"))
-            .expect("second execution row");
-        assert!(first.expanded);
-        assert!(second.expanded);
+            .expect("prior execution row");
+        assert!(latest.expanded);
+        assert!(!prior.expanded);
     }
 
     #[test]
@@ -9725,7 +9827,7 @@ mod tests {
     }
 
     #[test]
-    fn submit_input_attaches_latest_pending_ask_continuation_to_plain_answer() {
+    fn submit_input_keeps_pending_ask_plain_text_unstructured() {
         let mut app = App::new();
         let (tx, rx) = mpsc::channel();
         app.socket_tx = tx;
@@ -9754,21 +9856,7 @@ mod tests {
         match rx.try_recv().expect("send command") {
             SocketCommand::SendMessage { metadata, text, .. } => {
                 assert_eq!(text, "prettier:all");
-                let metadata = metadata.expect("continuation metadata");
-                assert_eq!(
-                    metadata
-                        .get("continuation")
-                        .and_then(|value| value.get("snapshotId"))
-                        .and_then(Value::as_str),
-                    Some("ask-snapshot-1")
-                );
-                assert_eq!(
-                    metadata
-                        .get("askAnswer")
-                        .and_then(|value| value.get("text"))
-                        .and_then(Value::as_str),
-                    Some("prettier:all")
-                );
+                assert!(metadata.is_none());
             }
             _ => panic!("unexpected command"),
         }
@@ -10999,6 +11087,31 @@ mod tests {
             }
             _ => panic!("expected execution job detail command"),
         }
+    }
+
+    #[test]
+    fn runtime_event_job_detail_requests_are_deduped_by_job_id() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+
+        for child_id in ["child-1", "child-2"] {
+            app.apply_socket_event(SocketEvent::RuntimeEvent(json!({
+                "type": "subagent.child.start",
+                "data": {
+                    "jobId": "job-data-1",
+                    "childId": child_id
+                }
+            })));
+        }
+
+        match rx.try_recv().expect("first job detail command") {
+            SocketCommand::ExecutionJobDetailGet { job_id } => {
+                assert_eq!(job_id, "job-data-1");
+            }
+            _ => panic!("expected execution job detail command"),
+        }
+        assert!(rx.try_recv().is_err());
     }
 
     #[test]
