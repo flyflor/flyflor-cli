@@ -137,3 +137,19 @@
   原因：gateway config 必须由 CLI 侧拥有，使用 JSONC 作为唯一配置格式，同时保持 no-session contract 和 explicit unavailable/degraded channel surface。
   验证：`cargo fmt --check`；`cargo check`；`cargo test`；`git diff --check`。
   风险：本 lane 只提供配置/schema/registry 能力，真实平台 listener 与 transport 由后续 channel lanes 接入。
+
+- 状态：进行中
+  执行者：gateway-bridge-streaming
+  范围：gateway-channel-ws-bridge-streaming
+  摘要：扩展 channel bridge，将 normalized inbound message 构造成 `gateway.message.send`，保留 route anchor 与显式 `payload.context`；新增 channel capability report 和 generic stream update abstraction；outbound 侧消费 `turn.delta`、`turn.final`、`turn.error`、`event.publish`，按能力走 typing/send 或 edit/draft/card update fallback。
+  原因：gateway bridge 必须作为 thin client 通过 `/ws` 与 Flyflor 交互，不能把 conversation/thread/user 当作 session，也不能把 ASK/approval 授权转成普通用户文本。
+  验证：已通过 targeted `cargo test tui::gateway::channels::runtime::tests`；待复跑完整 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。
+  风险：Weixin iLink 当前明确为 send+typing 可用、edit/draft/card/media unavailable；未来平台只需在 adapter abstraction 中实现对应 stream update，不在 bridge runtime 写具体平台协议。
+
+- 状态：完成
+  执行者：gateway-bridge-streaming
+  范围：gateway-channel-ws-bridge-streaming
+  摘要：完成 channel bridge streaming 收口：inbound `NormalizedInboundMessage` 支持显式 context 并构造成 `gateway.message.send`；metadata 注入 explicit capability report；outbound 按 capability 消费 delta/final/error/event.publish，send-only channel 使用 typing/final send，stream channel 使用 edit/draft/card update abstraction 并在 final 失败时 fallback send。
+  原因：满足 gateway bridge lane 对 `/ws` thin-client、ASK/approval structured metadata/context 和 channel capability degradation 的契约。
+  验证：`cargo test tui::gateway::channels::runtime::tests`；`cargo fmt --check`；`cargo check`；`cargo test`（199 passed）；`git diff --check`。
+  风险：真实平台 live stream update 仍取决于未来 adapter 是否实现 `stream_update`；当前 Weixin iLink 明确报告 edit/draft/card/media unavailable。

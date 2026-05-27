@@ -1,6 +1,6 @@
 use std::{collections::HashMap, env, sync::Arc};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::gateway_platforms::all_platforms;
 
@@ -98,6 +98,7 @@ pub struct NormalizedInboundMessage {
     pub id: String,
     pub text: String,
     pub route: MessageRoute,
+    pub context: Option<Value>,
     pub metadata: Value,
 }
 
@@ -109,16 +110,120 @@ pub struct OutboundMessage {
     pub metadata: Option<Value>,
 }
 
+#[derive(Clone, Debug)]
+pub struct OutboundStreamUpdate {
+    pub route: MessageRoute,
+    pub message_id: String,
+    pub text: String,
+    pub mode: StreamDeliveryMode,
+    pub final_update: bool,
+    pub metadata: Option<Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StreamDeliveryMode {
+    Edit,
+    Draft,
+    Card,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PlatformSendOutcome {
     pub message_id: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChannelCapabilityState {
+    Available,
+    Degraded,
+    Unavailable,
+}
+
+impl ChannelCapabilityState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Available => "available",
+            Self::Degraded => "degraded",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChannelCapabilityReport {
+    pub send: ChannelCapabilityState,
+    pub typing: ChannelCapabilityState,
+    pub edit: ChannelCapabilityState,
+    pub draft: ChannelCapabilityState,
+    pub card: ChannelCapabilityState,
+    pub media: ChannelCapabilityState,
+}
+
+impl ChannelCapabilityReport {
+    pub fn send_only() -> Self {
+        Self {
+            send: ChannelCapabilityState::Available,
+            typing: ChannelCapabilityState::Degraded,
+            edit: ChannelCapabilityState::Unavailable,
+            draft: ChannelCapabilityState::Unavailable,
+            card: ChannelCapabilityState::Unavailable,
+            media: ChannelCapabilityState::Unavailable,
+        }
+    }
+
+    pub fn unavailable() -> Self {
+        Self {
+            send: ChannelCapabilityState::Unavailable,
+            typing: ChannelCapabilityState::Unavailable,
+            edit: ChannelCapabilityState::Unavailable,
+            draft: ChannelCapabilityState::Unavailable,
+            card: ChannelCapabilityState::Unavailable,
+            media: ChannelCapabilityState::Unavailable,
+        }
+    }
+
+    pub fn supports_stream_mode(&self) -> Option<StreamDeliveryMode> {
+        if self.card == ChannelCapabilityState::Available {
+            return Some(StreamDeliveryMode::Card);
+        }
+        if self.draft == ChannelCapabilityState::Available {
+            return Some(StreamDeliveryMode::Draft);
+        }
+        if self.edit == ChannelCapabilityState::Available {
+            return Some(StreamDeliveryMode::Edit);
+        }
+        None
+    }
+
+    pub fn as_metadata(&self) -> Value {
+        json!({
+            "send": self.send.as_str(),
+            "typing": self.typing.as_str(),
+            "edit": self.edit.as_str(),
+            "draft": self.draft.as_str(),
+            "card": self.card.as_str(),
+            "media": self.media.as_str()
+        })
+    }
+}
+
 pub trait PlatformAdapter: Send + Sync {
     fn name(&self) -> &'static str;
+    fn capabilities(&self) -> ChannelCapabilityReport {
+        ChannelCapabilityReport::send_only()
+    }
     fn poll_updates(&self) -> ChannelResult<Vec<NormalizedInboundMessage>>;
     fn send_typing(&self, route: &MessageRoute) -> ChannelResult<()>;
     fn send_message(&self, message: OutboundMessage) -> ChannelResult<PlatformSendOutcome>;
+
+    fn stream_update(&self, update: OutboundStreamUpdate) -> ChannelResult<PlatformSendOutcome> {
+        Err(ChannelError::unavailable(format!(
+            "{:?} streaming update is unavailable for {} message {}",
+            update.mode,
+            self.name(),
+            update.message_id
+        )))
+    }
 
     fn send_media_unavailable(&self, media_kind: &str) -> ChannelResult<PlatformSendOutcome> {
         Err(ChannelError::unavailable(format!(
@@ -207,6 +312,10 @@ struct UnsupportedPlatformAdapter {
 impl PlatformAdapter for UnsupportedPlatformAdapter {
     fn name(&self) -> &'static str {
         self.name
+    }
+
+    fn capabilities(&self) -> ChannelCapabilityReport {
+        ChannelCapabilityReport::unavailable()
     }
 
     fn poll_updates(&self) -> ChannelResult<Vec<NormalizedInboundMessage>> {

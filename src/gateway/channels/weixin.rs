@@ -295,6 +295,7 @@ impl WeixinIlinkAdapter {
             id: format!("weixin-{message_id}"),
             text,
             route,
+            context: None,
             metadata,
         })
     }
@@ -402,6 +403,17 @@ impl WeixinIlinkAdapter {
 impl PlatformAdapter for WeixinIlinkAdapter {
     fn name(&self) -> &'static str {
         "weixin"
+    }
+
+    fn capabilities(&self) -> super::platform::ChannelCapabilityReport {
+        super::platform::ChannelCapabilityReport {
+            send: super::platform::ChannelCapabilityState::Available,
+            typing: super::platform::ChannelCapabilityState::Available,
+            edit: super::platform::ChannelCapabilityState::Unavailable,
+            draft: super::platform::ChannelCapabilityState::Unavailable,
+            card: super::platform::ChannelCapabilityState::Unavailable,
+            media: super::platform::ChannelCapabilityState::Unavailable,
+        }
     }
 
     fn poll_updates(&self) -> ChannelResult<Vec<NormalizedInboundMessage>> {

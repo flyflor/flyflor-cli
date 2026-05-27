@@ -149,6 +149,7 @@ impl GatewayCommandBuilder {
 pub struct GatewayMessagePayload {
     message_id: String,
     text: String,
+    context: Option<Value>,
     context_fork_id: Option<String>,
     metadata: Option<Value>,
     tool_approvals: Option<GatewayToolApprovals>,
@@ -166,6 +167,7 @@ impl GatewayMessagePayload {
         Self {
             message_id: message_id.into(),
             text: text.into(),
+            context: None,
             context_fork_id: None,
             metadata: None,
             tool_approvals: None,
@@ -181,6 +183,11 @@ impl GatewayMessagePayload {
 
     pub fn context_fork_id(mut self, context_fork_id: impl Into<String>) -> Self {
         self.context_fork_id = Some(context_fork_id.into());
+        self
+    }
+
+    pub fn context(mut self, context: Value) -> Self {
+        self.context = Some(context);
         self
     }
 
@@ -234,8 +241,12 @@ impl GatewayMessagePayload {
                 "displayName": self.display_name
             }
         });
-        if self.context_fork_id.is_some() || self.tool_approvals.is_some() {
+        if self.context.is_some() || self.context_fork_id.is_some() || self.tool_approvals.is_some()
+        {
             let mut context = Map::new();
+            if let Some(Value::Object(existing)) = self.context {
+                context.extend(existing);
+            }
             if let Some(context_fork_id) = self.context_fork_id {
                 context.insert("contextForkId".to_string(), json!(context_fork_id));
             }
