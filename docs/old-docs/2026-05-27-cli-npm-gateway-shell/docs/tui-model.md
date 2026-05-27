@@ -17,9 +17,7 @@ The composer sends on `Enter` and inserts a newline on `Shift+Enter`.
 
 ASK data is read from turn metadata or ASK snapshots. If the metadata contains a continuation (`snapshotId` or `continuationId`), the transcript gets an `AskResume` context row. Opening it shows an ASK menu.
 
-The ASK menu contains kernel-provided options plus `Other` free input. Choosing a fixed option sends a `gateway.message.send` with continuation metadata. Choosing `Other` arms one explicit continuation reply; the next composer submit sends the typed text with the same continuation metadata.
-
-A pending ASK does not make the ordinary composer a default ASK answer. If the user types without explicitly choosing an ASK menu option or `Other`, the CLI sends normal message text with no continuation metadata.
+The ASK menu contains kernel-provided options plus `Other` free input. Choosing a fixed option sends a `gateway.message.send` with continuation metadata. Choosing `Other` stores the continuation locally until the next composer submit, then sends the typed text with the same continuation metadata.
 
 The CLI does not decide ASK semantics. It only presents choices and returns the selected answer to the kernel.
 
@@ -64,8 +62,6 @@ The CLI does not schedule workers, decide route convergence, or write Blackboard
 
 Run is the visible execution spine for gateway events. It consumes `event.publish`, `event.snapshot`, `event`, and `execution.job.snapshot` data and renders route decisions, scope recall, blackboard turns, tool calls, ASK pauses, plan writes, forks, Executive loop transitions, process events, worker events, and subagent lifecycle updates.
 
-Job detail fetches are deduped or throttled by job id. Timeline display should not repeatedly request the same `execution.job.detail.get` payload while rendering.
-
 Subagent events are merged into a batch/child tree. Loose child events are attached to their batch when a later snapshot or batch event arrives, and repeated snapshots update existing rows instead of duplicating them. This keeps subagents visible without making the CLI responsible for runtime scheduling.
 
 ## Tool Visibility And Approval Closure
@@ -74,11 +70,9 @@ Tool events and execution-job snapshots make the Executive exoskeleton visible. 
 
 Normal per-turn approval for kernel `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls` is closed through `/approve`. It marks only the next send and then clears. YOLO mode remains a separate local high-privilege interaction marker sent as metadata.
 
-Citizen permission options such as `continue-tools`, `keep-budget`, and `keep-subagents` are rendered as authorization policy choices and sent as structured metadata. They must not be converted into ordinary user-message text.
-
 While a turn is active, the footer shows an animated Working line. Pressing Esc once arms interruption; pressing Esc again within the interrupt window sends `gateway.message.interrupt` for the pending public message id.
 
-The Exo tool/subprocess section uses parsed tool names and lifecycle summaries rather than `unknown` placeholders. Waiting for permission, running, completed, and failed states must all have explicit labels. The latest Exo row auto-expands; older Exo rows stay collapsed by default. Expanded rows show recent output snippets without making the CLI execute tools locally.
+The Exo tool/subprocess section uses parsed tool names and lifecycle summaries rather than `unknown` placeholders. Collapsed rows stay single-line; expanded rows show recent output snippets without making the CLI execute tools locally.
 
 `/undo` opens a menu of user-message rollback anchors. Confirming a row sends `gateway.message.undo`; kernel-side memory abandonment and ledger audit are authoritative.
 

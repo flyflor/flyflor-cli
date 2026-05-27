@@ -1,12 +1,39 @@
 {
   "name": "flyflor-cli",
   "version": "0.1.0",
-  "private": true,
+  "description": "Rust TUI thin client for the Flyflor WebSocket gateway.",
+  "license": "UNLICENSED",
   "type": "module",
+  "bin": {
+    "flyflor": "./bin/flyflor.cjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "i18n/",
+    "scripts/build-binary.cjs",
+    "scripts/install-binary.cjs",
+    "src/",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "README.zh.cn.md",
+    "docs/README.md",
+    "docs/README.zh.cn.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "build:binary": "node scripts/build-binary.cjs",
+    "build:binary:all": "node scripts/build-binary.cjs --all",
+    "install:binary": "node scripts/install-binary.cjs",
+    "postinstall": "node scripts/install-binary.cjs",
+    "prepack": "node scripts/build-binary.cjs",
     "dev": "FLYFLOR_DEV=1 FLYFLOR_LOG=.flyflor-cli/logs/dev.log cargo watch --clear --why -w src -w Cargo.toml -w Cargo.lock -x 'run -- --dev'",
     "dev:node": "tsx scripts/dev.ts",
     "smoke:live:tui": "tsx scripts/live-tui-scenario.ts",
+    "smoke:npm:local": "node scripts/smoke-npm-local.cjs",
     "logs": "tsx scripts/logs.ts",
     "check": "cargo check",
     "test": "cargo test"

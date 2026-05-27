@@ -46,7 +46,7 @@ It deliberately does not subscribe to nonexistent or provisional event names, su
 
 The UI can send these socket commands:
 
-- `gateway.message.send`: normal user message or explicit ASK continuation answer.
+- `gateway.message.send`: normal user message or ASK continuation answer.
 - `gateway.message.undo`: rollback command for a selected user-message anchor.
 - `gateway.message.interrupt`: interrupt an active turn by public message id.
 - `history.list`: history refresh, optionally scoped by active context fork.
@@ -61,15 +61,9 @@ The UI can send these socket commands:
 
 `/approve` submits `context.toolApprovals.mcpToolCalls=true` and `context.toolApprovals.userToolCalls=true` for the next send only. YOLO also submits these approvals, but carries separate high-privilege metadata. The CLI must not execute approved tools locally.
 
-Pending ASK state must not hijack ordinary composer input. Normal typed text remains a normal `gateway.message.send` without continuation metadata unless the user explicitly confirms an ASK menu action.
-
-ASK fixed-option confirmation and ASK `Other` confirmation also use `gateway.message.send`; only those explicit paths attach the latest continuation metadata so the kernel resumes the original ASK/task context.
-
-Citizen permission choices, including `continue-tools`, `keep-budget`, and `keep-subagents`, are represented as structured metadata in the outgoing payload. They must not be sent as plain user-message text.
+Plain composer answers to a pending ASK also use `gateway.message.send`; the CLI attaches the latest continuation metadata so the kernel resumes the original ASK/task context.
 
 `/undo` sends `gateway.message.undo` with the selected anchor. The kernel records undo audit and abandons affected hot memory / ASK / continuation state without deleting `brain.db`; the CLI only updates presentation state after sending the command.
-
-`execution.job.detail.get` requests are display fetches only. The CLI dedupes or throttles them by job id so timeline rendering does not create socket noise.
 
 ## Localization
 

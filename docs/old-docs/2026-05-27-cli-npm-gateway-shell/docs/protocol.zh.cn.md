@@ -46,7 +46,7 @@ kernel 暴露 `capability.catalog.get` 和 `capability.catalog.snapshot`；CLI s
 
 UI 可以发送这些 socket commands：
 
-- `gateway.message.send`：普通用户消息或显式 ASK continuation answer。
+- `gateway.message.send`：普通用户消息或 ASK continuation answer。
 - `gateway.message.undo`：按选中的用户消息 anchor 发送 rollback command。
 - `gateway.message.interrupt`：按 public message id 终断 active turn。
 - `history.list`：history refresh，可按 active context fork 限定范围。
@@ -61,15 +61,9 @@ UI 可以发送这些 socket commands：
 
 `/approve` 只为下一次发送提交 `context.toolApprovals.mcpToolCalls=true` 和 `context.toolApprovals.userToolCalls=true`。YOLO 也会提交这些 approvals，但它额外携带高权限 metadata。CLI 不得本地执行已批准工具。
 
-pending ASK state 不得劫持普通 composer input。普通 typed text 仍作为不带 continuation metadata 的普通 `gateway.message.send` 发送，除非用户显式确认 ASK menu action。
-
-ASK 固定选项确认和 ASK `Other` 确认也使用 `gateway.message.send`；只有这些显式路径会附带最新 continuation metadata，让 kernel 恢复原始 ASK/task context。
-
-`continue-tools`、`keep-budget`、`keep-subagents` 等公民权限 choices 必须在 outgoing payload 中表示为结构化 metadata，不能作为普通用户消息文本发送。
+对 pending ASK 的普通 composer answer 也使用 `gateway.message.send`；CLI 会附带最新 continuation metadata，让 kernel 恢复原始 ASK/task context。
 
 `/undo` 发送带所选 anchor 的 `gateway.message.undo`。Kernel 会记录 undo audit，并把受影响的热记忆、ASK、continuation state 标记为 abandoned，不删除 `brain.db`；CLI 只在发送命令后更新展示状态。
-
-`execution.job.detail.get` 只是 display fetch。CLI 按 job id 去重或节流，避免 timeline rendering 产生 socket noise。
 
 ## Localization
 

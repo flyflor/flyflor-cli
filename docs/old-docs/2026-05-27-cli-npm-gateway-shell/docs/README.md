@@ -26,9 +26,7 @@ The Chinese document set mirrors this structure:
 - The kernel socket docs use `ws://127.0.0.1:8788/ws` for local smoke examples; the CLI default remains `ws://127.0.0.1:8787/ws` unless `FLYFLOR_WS_URL` is set.
 - The kernel exposes `server.hello` and `capability.catalog.get`; CLI startup requests the visible capability catalog.
 - The kernel context input supports `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls`; the CLI exposes `/approve` for one-turn non-YOLO approval, plus YOLO mode and tool/run visibility.
-- Pending ASK cannot hijack ordinary composer text; only explicit ASK menu fixed-option or `Other` confirmation attaches continuation metadata.
-- Citizen permission options such as `continue-tools`, `keep-budget`, and `keep-subagents` are sent as structured metadata, never as plain user-message tokens.
-- Exo timeline display must avoid `unknown`, auto-expand the latest Exo row, and dedupe detail fetches.
+- ASK typed-answer continuation is closed for plain composer replies.
 - `/undo` sends `gateway.message.undo`; rollback authority and memory abandonment remain kernel-side.
 - Context-window maximums are rendered from kernel snapshots when present, with local `FLYFLOR_CONTEXT_WINDOW` only as a display fallback.
 

@@ -12,35 +12,6 @@ Chinese companion: [README.zh.cn.md](README.zh.cn.md).
 cargo run
 ```
 
-Global npm install:
-
-```bash
-npm i -g flyflor-cli
-flyflor -h
-flyflor gateway -h
-flyflor
-```
-
-The npm package installs a `flyflor` bin wrapper and uses the bundled
-`dist/<platform>-<arch>/flyflor` binary when present. If that platform binary is
-missing, `postinstall` builds it from the included Rust sources with
-`cargo build --release --bin flyflor`.
-
-Packaging smoke:
-
-```bash
-npm run smoke:npm:local
-FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local
-```
-
-Cross-build package binaries:
-
-```bash
-npm run build:binary -- --target x86_64-unknown-linux-gnu
-npm run build:binary -- --target aarch64-apple-darwin
-npm run build:binary:all
-```
-
 Dev mode:
 
 ```bash
@@ -76,13 +47,11 @@ The dev runner and Rust TUI both append diagnostics to `.flyflor-cli/logs/dev.lo
 - WebSocket bootstrap with fixed runtime event subscription
 - Streaming transcript, history snapshots, and fork-scoped history refresh
 - ASK menu with fixed choices and `Other` free input continuation replies
-- Pending ASK does not capture ordinary composer input; only explicit ASK menu actions send continuation metadata
-- Citizen permission answers send structured metadata, not plain message tokens
+- Plain typed ASK answers reuse the latest pending continuation metadata
 - Plan confirmation/revision/abandon commands
 - Context fork creation and active fork session display
 - Run timeline for route, recall, blackboard, tool, ASK, plan, fork, loop, and
   subagent events
-- Exo timeline rows avoid `unknown`, auto-expand the latest Exo, and dedupe detail requests
 - Right-side TODO, Run, model/status, context-window, and fork-memory sections
 - JSON-backed i18n catalogs in `i18n/zh-CN.json` and `i18n/en-US.json`
 

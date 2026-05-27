@@ -5,10 +5,8 @@
 Run checks from the `flyflor-cli` workspace:
 
 ```bash
-cargo fmt --check
 cargo check
 cargo test
-git diff --check
 cargo run
 ```
 
@@ -38,8 +36,6 @@ Use `tmux` or separate terminals:
 3. Watch CLI logs and the TUI Run timeline for socket, event, ASK, tool, process, worker, and subagent visibility.
 
 The CLI should be debugged as a thin client. If behavior requires kernel state, inspect the kernel `/ws` contract and read-model snapshots rather than adding local authority to the CLI.
-
-Docs/guardrail lanes should stay in README, `docs/`, `AGENT.md`, `AGENTS.md`, `TODO.md`, and `LOGS.md` unless a documentation tool requires a focused test change. Do not implement feature behavior in this lane.
 
 ## Documentation Rule
 

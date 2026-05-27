@@ -26,9 +26,7 @@
 - Kernel socket 文档用 `ws://127.0.0.1:8788/ws` 作为本地 smoke 示例；CLI 默认值仍是 `ws://127.0.0.1:8787/ws`，除非设置 `FLYFLOR_WS_URL`。
 - Kernel 暴露 `server.hello` 和 `capability.catalog.get`；CLI startup 会请求 visible capability catalog。
 - Kernel context input 支持 `toolApprovals.mcpToolCalls` 和 `toolApprovals.userToolCalls`；CLI 通过 `/approve` 提供非 YOLO 的单轮 approval，同时保留 YOLO mode 与 tool/run 可见性。
-- pending ASK 不能劫持普通 composer 文本；只有显式 ASK menu 固定选项或 `Other` 确认才附带 continuation metadata。
-- `continue-tools`、`keep-budget`、`keep-subagents` 等公民权限选项必须作为结构化 metadata 发送，不能写成普通用户消息 token。
-- Exo timeline 展示禁止 `unknown`，最后一个 Exo row 自动展开，并对 detail 拉取去重。
+- ASK typed-answer continuation 已对普通 composer 回复闭合。
 - `/undo` 发送 `gateway.message.undo`；rollback authority 和 memory abandonment 仍由 kernel 负责。
 - Context-window 最大值优先渲染 kernel snapshot；本地 `FLYFLOR_CONTEXT_WINDOW` 只作为 display fallback。
 

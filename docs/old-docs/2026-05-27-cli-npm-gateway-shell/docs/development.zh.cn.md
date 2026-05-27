@@ -5,10 +5,8 @@
 在 `flyflor-cli` workspace 中运行检查：
 
 ```bash
-cargo fmt --check
 cargo check
 cargo test
-git diff --check
 cargo run
 ```
 
@@ -38,8 +36,6 @@ FLYFLOR_WS_URL=ws://127.0.0.1:8788/ws cargo run
 3. 查看 CLI logs 和 TUI Run timeline，确认 socket、event、ASK、tool、process、worker 和 subagent visibility。
 
 CLI 应作为 thin client 调试。如果某个行为需要 kernel state，应检查 kernel `/ws` contract 和 read-model snapshots，而不是给 CLI 增加本地权威。
-
-Docs/guardrail lane 应限制在 README、`docs/`、`AGENT.md`、`AGENTS.md`、`TODO.md` 和 `LOGS.md`，除非文档工具链需要 focused test change。不要在此 lane 实现 feature behavior。
 
 ## Documentation Rule
 

@@ -10,32 +10,6 @@ Flyflor 的 Rust TUI。CLI 是 Flyflor WebSocket gateway 之上的薄交互 shel
 cargo run
 ```
 
-全局 npm 安装：
-
-```bash
-npm i -g flyflor-cli
-flyflor -h
-flyflor gateway -h
-flyflor
-```
-
-npm 包安装 `flyflor` bin wrapper；若存在 `dist/<platform>-<arch>/flyflor`，优先使用内置平台二进制。缺失时，`postinstall` 会用随包 Rust 源码执行 `cargo build --release --bin flyflor` 作为 fallback。
-
-包安装 smoke：
-
-```bash
-npm run smoke:npm:local
-FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local
-```
-
-交叉编译平台二进制：
-
-```bash
-npm run build:binary -- --target x86_64-unknown-linux-gnu
-npm run build:binary -- --target aarch64-apple-darwin
-npm run build:binary:all
-```
-
 开发模式：
 
 ```bash
@@ -71,12 +45,10 @@ Dev runner 和 Rust TUI 都会把诊断追加到 `.flyflor-cli/logs/dev.log`。
 - WebSocket bootstrap 和固定 runtime event subscription。
 - Streaming transcript、history snapshot 和 fork-scoped history refresh。
 - ASK menu、固定选项、`Other` 自由输入 continuation reply。
-- pending ASK 不会劫持普通 composer 输入；只有显式 ASK menu 操作才发送 continuation metadata。
-- 公民权限 answer 发送结构化 metadata，不写成普通消息 token。
+- 普通 typed ASK answer 会复用最新 pending continuation metadata。
 - Plan confirmation/revision/abandon command。
 - Context fork creation 和 active fork session display。
 - Route、recall、blackboard、tool、ASK、plan、fork、loop、subagent event 的 Run timeline。
-- Exo timeline rows 不展示 `unknown`，最后一个 Exo 自动展开，并对 detail 请求去重。
 - 右侧 TODO、Run、model/status、context-window 和 fork-memory section。
 - `i18n/zh-CN.json` 与 `i18n/en-US.json` 外挂 JSON 文案目录。
 

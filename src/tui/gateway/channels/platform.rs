@@ -1,0 +1,270 @@
+use std::{collections::HashMap, env, sync::Arc};
+
+use serde_json::Value;
+
+use super::weixin::WeixinIlinkAdapter;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChannelErrorKind {
+    Unavailable,
+    MissingConfig,
+    SessionExpired,
+    RateLimited,
+    Retryable,
+    Fatal,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChannelError {
+    pub kind: ChannelErrorKind,
+    pub message: String,
+}
+
+impl ChannelError {
+    pub fn unavailable(message: impl Into<String>) -> Self {
+        Self {
+            kind: ChannelErrorKind::Unavailable,
+            message: message.into(),
+        }
+    }
+
+    pub fn missing_config(message: impl Into<String>) -> Self {
+        Self {
+            kind: ChannelErrorKind::MissingConfig,
+            message: message.into(),
+        }
+    }
+
+    pub fn session_expired(message: impl Into<String>) -> Self {
+        Self {
+            kind: ChannelErrorKind::SessionExpired,
+            message: message.into(),
+        }
+    }
+
+    pub fn rate_limited(message: impl Into<String>) -> Self {
+        Self {
+            kind: ChannelErrorKind::RateLimited,
+            message: message.into(),
+        }
+    }
+
+    pub fn retryable(message: impl Into<String>) -> Self {
+        Self {
+            kind: ChannelErrorKind::Retryable,
+            message: message.into(),
+        }
+    }
+
+    pub fn fatal(message: impl Into<String>) -> Self {
+        Self {
+            kind: ChannelErrorKind::Fatal,
+            message: message.into(),
+        }
+    }
+}
+
+pub type ChannelResult<T> = Result<T, ChannelError>;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChatType {
+    Direct,
+    Group,
+}
+
+impl ChatType {
+    pub fn as_gateway_str(&self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Group => "group",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MessageRoute {
+    pub platform: String,
+    pub chat_id: String,
+    pub chat_type: ChatType,
+    pub user_id: String,
+    pub display_name: String,
+    pub thread_id: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct NormalizedInboundMessage {
+    pub id: String,
+    pub text: String,
+    pub route: MessageRoute,
+    pub metadata: Value,
+}
+
+#[derive(Clone, Debug)]
+pub struct OutboundMessage {
+    pub route: MessageRoute,
+    pub text: String,
+    pub reply_to_message_id: Option<String>,
+    pub metadata: Option<Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlatformSendOutcome {
+    pub message_id: Option<String>,
+}
+
+pub trait PlatformAdapter: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn poll_updates(&self) -> ChannelResult<Vec<NormalizedInboundMessage>>;
+    fn send_typing(&self, route: &MessageRoute) -> ChannelResult<()>;
+    fn send_message(&self, message: OutboundMessage) -> ChannelResult<PlatformSendOutcome>;
+
+    fn send_media_unavailable(&self, media_kind: &str) -> ChannelResult<PlatformSendOutcome> {
+        Err(ChannelError::unavailable(format!(
+            "{} media delivery is unavailable for {}",
+            media_kind,
+            self.name()
+        )))
+    }
+}
+
+pub struct PlatformEntry {
+    pub name: &'static str,
+    pub label: &'static str,
+    pub factory: Box<dyn Fn() -> ChannelResult<Arc<dyn PlatformAdapter>> + Send + Sync>,
+    pub implemented: bool,
+}
+
+#[derive(Default)]
+pub struct PlatformRegistry {
+    entries: HashMap<&'static str, PlatformEntry>,
+}
+
+impl PlatformRegistry {
+    pub fn with_builtin_platforms() -> Self {
+        let mut registry = Self::default();
+        registry.register(PlatformEntry {
+            name: "weixin",
+            label: "Weixin iLink",
+            factory: Box::new(|| {
+                WeixinIlinkAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+            }),
+            implemented: true,
+        });
+        for (name, label) in [
+            ("telegram", "Telegram"),
+            ("slack", "Slack"),
+            ("discord", "Discord"),
+            ("webhook", "Webhook"),
+            ("api", "API"),
+            ("wecom", "WeCom"),
+            ("whatsapp", "WhatsApp"),
+        ] {
+            registry.register(PlatformEntry {
+                name,
+                label,
+                factory: Box::new(move || {
+                    Ok(Arc::new(UnsupportedPlatformAdapter { name, label }) as _)
+                }),
+                implemented: false,
+            });
+        }
+        registry
+    }
+
+    pub fn register(&mut self, entry: PlatformEntry) {
+        self.entries.insert(entry.name, entry);
+    }
+
+    pub fn get(&self, name: &str) -> Option<&PlatformEntry> {
+        self.entries.get(name)
+    }
+
+    pub fn names(&self) -> Vec<&'static str> {
+        let mut names = self.entries.keys().copied().collect::<Vec<_>>();
+        names.sort_unstable();
+        names
+    }
+}
+
+pub fn enabled_platform_names_from_env() -> Vec<String> {
+    env::var("FLYFLOR_GATEWAY_CHANNELS")
+        .or_else(|_| env::var("FLYFLOR_CHANNELS"))
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(|name| name.to_ascii_lowercase())
+        .collect()
+}
+
+struct UnsupportedPlatformAdapter {
+    name: &'static str,
+    label: &'static str,
+}
+
+impl PlatformAdapter for UnsupportedPlatformAdapter {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn poll_updates(&self) -> ChannelResult<Vec<NormalizedInboundMessage>> {
+        Err(ChannelError::unavailable(format!(
+            "{} channel is registered but not implemented in flyflor-cli",
+            self.label
+        )))
+    }
+
+    fn send_typing(&self, _route: &MessageRoute) -> ChannelResult<()> {
+        Err(ChannelError::unavailable(format!(
+            "{} sendtyping is not implemented",
+            self.label
+        )))
+    }
+
+    fn send_message(&self, _message: OutboundMessage) -> ChannelResult<PlatformSendOutcome> {
+        Err(ChannelError::unavailable(format!(
+            "{} sendmessage is not implemented",
+            self.label
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn registry_advertises_weixin_and_future_platforms_without_fake_success() {
+        let registry = PlatformRegistry::with_builtin_platforms();
+
+        assert!(
+            registry
+                .get("weixin")
+                .is_some_and(|entry| entry.implemented)
+        );
+        assert!(
+            registry
+                .get("telegram")
+                .is_some_and(|entry| !entry.implemented)
+        );
+
+        let telegram = (registry.get("telegram").unwrap().factory)().unwrap();
+        let route = MessageRoute {
+            platform: "telegram".to_string(),
+            chat_id: "chat".to_string(),
+            chat_type: ChatType::Direct,
+            user_id: "user".to_string(),
+            display_name: "User".to_string(),
+            thread_id: "chat".to_string(),
+        };
+
+        let result = telegram.send_message(OutboundMessage {
+            route,
+            text: "hello".to_string(),
+            reply_to_message_id: None,
+            metadata: None,
+        });
+
+        assert_eq!(result.unwrap_err().kind, ChannelErrorKind::Unavailable);
+    }
+}

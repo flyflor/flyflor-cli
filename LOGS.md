@@ -38,3 +38,79 @@
   原因：最终验收不能只依赖 earlier pass；内核工具面变化后要确认 TUI 可见性和终端交互没有退化。
   验证：`npm run smoke:live:tui -- --keep-tmux` 输出 `ok: true`，报告目录 `/Users/yi./Desktop/yi/flyflors/flyflor-cli/.flyflor-cli/live/2026-05-27T05-17-23-744Z/`；`cargo fmt --check`; `cargo check`; `cargo test`; `git diff --check`。
   风险：保留 `flyflor-live-kernel` 与 `flyflor-live-tui` tmux session 供人工查看完整交互。
+
+- 状态：完成
+  执行者：main-codex
+  范围：workmux-cli-gateway-coordination
+  摘要：配置 `.workmux.yaml` 为 session 模式 Codex 并发工作流，新增 `session-table.md` 记录 docs-guardrails、main-rs-split、cli-shell、gateway-runtime、gateway-channels、npm-release 六个 lane 的 worktree 路径、tmux attach、capture 和 send 命令，并启动对应 Codex 子进程。
+  原因：CLI/gateway 壳和 TUI 解耦工作需要用户可直接监控每个子智能体的完整交互与 working 细节。
+  验证：`workmux list`；`tmux list-sessions`；`tmux capture-pane -t <session>:0.0 -p -S -80`。
+  风险：首次启动 Codex 出现 hook trust 提示，已选择不信任 hooks 继续运行；当前实际 tmux session 名因首次配置前缀叠加为 `wm-wm-*`，已在 `session-table.md` 中记录真实命令，并把后续配置改为不再自动叠加前缀。
+
+- 状态：完成
+  执行者：main-codex
+  范围：workmux-shared-dependencies
+  摘要：将 `.workmux.yaml` 增加 `files.symlink` 规则，让后续 worktree 共享 `node_modules` 与 `target`；同时为已创建的六个 worktree 手动建立 `node_modules -> ../../node_modules` 和 `target -> ../../target` 软链接，并把 `.worktrees/` 加入 `.gitignore`。
+  原因：并发 Codex lane 需要共享依赖和构建缓存，避免每个 worktree 重装依赖或重复占用 Rust build 目录。
+  验证：`ls -ld .worktrees/*/node_modules .worktrees/*/target`。
+  风险：共享 `target` 能提升速度，但多个 lane 同时跑 `cargo` 时仍可能等待 Cargo build lock。
+
+- 状态：完成
+  执行者：docs-guardrails
+  范围：cli-gateway-docs-redlines
+  摘要：同步 `AGENT.md`/`AGENTS.md` docs lane 红线，并更新 README 与 docs 中 pending ASK 普通输入、公民权限 metadata、Exo timeline 状态、最后 Exo 展开、detail 请求去重和 CLI/gateway thin-client 口径。
+  原因：文档仍有普通 typed ASK answer 自动复用 continuation metadata 的旧表述，需与当前 ASK/permission/Exo 闭环和 docs-guardrails lane 约束一致。
+  验证：`cargo fmt --check`; `cargo check`; `cargo test`; `git diff --check`。
+
+- 状态：进行中
+  执行者：main-rs-split
+  范围：main-rs-low-risk-split
+  摘要：停止扩大拆分范围，仅保留低风险 owner module 提取：theme、input cursor/render/paste normalization、clipboard/OSC52 helper；不移动 socket/protocol/state code。
+  原因：本 lane 收口当前安全拆分，避免在同一 pass 扩大到 socket payload 或 app state 行为面。
+  验证：待运行 `cargo fmt --check`; `cargo check`; `cargo test`; `git diff --check`。
+
+- 状态：完成
+  执行者：cli-shell
+  范围：npm-top-level-cli-shell
+  摘要：新增 `src/cli_shell.rs` 作为 owned Rust 顶层 parser；默认无参数继续进入现有 Ratatui TUI；`-h/--help` 和 `gateway -h/--help` 在进入 raw mode 前输出帮助；gateway-runtime 仅定义预留 command enum，不在本侧实现 channel adapters。
+  原因：npm 安装后的 `flyflor` 需要稳定 shell UX，同时不能破坏当前 TUI 或绕过既有 `/ws` kernel 边界。
+  验证：主控待复跑 `cargo run -- -h`; `cargo run -- gateway -h`; `cargo fmt --check`; `cargo check`; `cargo test`; `git diff --check`。
+  风险：`flyflor gateway run/status` 目前只解析为预留 enum，执行时明确提示 gateway-runtime adapters 不属于 flyflor-cli。
+
+- 状态：完成
+  执行者：gateway-runtime
+  范围：cli-owned-gateway-shell-runtime
+  摘要：新增 `src/gateway_runtime.rs`，提供 CLI-owned runtime API：foreground run、daemon start/stop/restart/status、log tail 和 runtime path report。runtime files 使用 `.flyflor-cli/gateway/{gateway.pid,gateway.lock,gateway.stop,status.json}` 与 `.flyflor-cli/logs/gateway.log`，daemon child 通过 `FLYFLOR_GATEWAY_RUNTIME_FOREGROUND=1` 进入 foreground hook。Flyflor bridge 只连接 `FLYFLOR_WS_URL`/默认 `/ws`，并复用 `GatewayClientBootstrap` 与 `EnvelopeFactory` 发送 `flyflor.ws.v1` bootstrap envelopes。
+  原因：gateway runtime lane 只负责 CLI 侧 runtime/lifecycle 与 `/ws` bridge，不修改 kernel 或直接写 brain/scope/log DB。
+  验证：主控待复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。
+
+- 状态：完成
+  执行者：npm-release
+  范围：npm-global-install-packaging
+  摘要：为 `flyflor-cli` 增加 npm global install 包装：`flyflor` bin wrapper、platform binary `dist/<platform>-<arch>` build/install scripts、local npm pack/install smoke，并在 README 记录全局安装和 cross-build fallback。
+  原因：发布前需要保证 `npm i -g flyflor-cli` 能安装 Rust TUI binary；cli-shell 负责 `flyflor -h` 与 `flyflor gateway -h` 的进程级 help 行为。
+  验证：主控待复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`npm run smoke:npm:local`、`FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local`、`git diff --check`。
+
+- 状态：完成
+  执行者：gateway-channels
+  范围：gateway-platform-weixin-ilink
+  摘要：新增 `src/tui/gateway/channels/` platform/runtime/weixin modules；Weixin iLink adapter 覆盖账号/config 持久化、QR helper、long-poll getupdates、context_token store/echo、dedup TTL、错误分类、sendtyping/sendmessage payload 与 media unavailable metadata。未来 Telegram/Slack/Discord/Webhook/API/WeCom/WhatsApp 在 registry 中明确 unavailable，不返回假成功。
+  原因：gateway shell 需要把 channel 交互搬到 CLI 侧，并通过 `/ws` 血管把 normalized inbound message 送入 Flyflor kernel，不能直接写 kernel DB。
+  验证：主控待复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。
+  风险：channel runtime 当前作为可选 gateway surface 合入，主 TUI 尚未默认启动；模块声明暂时允许 dead_code，后续接入显式 CLI/env 开关时应移除。
+
+- 状态：完成
+  执行者：main-codex
+  范围：workmux-cli-gateway-final-verification
+  摘要：主控核对当前 worktree、workmux session table、AGENT/AGENTS guardrails、CLI shell、gateway runtime、Weixin iLink channel surface 和 npm 包装后，收口所有待验证 TODO 状态。
+  原因：完成 CLI/gateway/TUI 壳合并后，需要用当前工作树证据证明 `flyflor -h`、`flyflor gateway -h`、Cargo 门禁和 npm 全局安装包装链路都可用。
+  验证：`cargo fmt --check`; `cargo check`; `cargo test`（196 passed）；`cargo run -- -h`; `cargo run -- gateway -h`; `npm run smoke:npm:local`; `FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local`; `git diff --check`。
+  风险：gateway channels 当前是 CLI/TUI 侧可选 surface，Weixin iLink 细节已建模并测试，真实生产账号和 kernel 事件 schema 仍需接入环境做 live 验收。
+
+- 状态：完成
+  执行者：main-codex
+  范围：npm-cross-target-build
+  摘要：`scripts/build-binary.cjs` 增加 Rust target triple 到 npm `dist/<platform>-<arch>` 的映射，支持 `--target`、`--target=<triple>`、`--all` 和 `FLYFLOR_NPM_RUST_TARGETS`；`package.json` 增加 `build:binary:all`，中英文 README 同步 npm 全局安装和交叉编译入口。
+  原因：原 npm 包装只覆盖当前平台 build，不能作为发布前交叉编译入口；需要让 `npm i -g flyflor-cli` 的 bundled binary 目录可由发布流程明确产出。
+  验证：`node scripts/build-binary.cjs --target "$(rustc -vV | sed -n 's/^host: //p')"`；`npm run smoke:npm:local`；`FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local`；`cargo fmt --check`；`cargo check`；`cargo test`（196 passed）；`git diff --check`。另以 unsupported target smoke 验证未知 triple 会失败退出。
+  风险：非 host triple 是否能实际链接仍取决于本机安装的 Rust target 和系统 cross linker；脚本现在会把失败显式暴露给发布流程。

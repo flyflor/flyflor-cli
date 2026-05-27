@@ -3,6 +3,7 @@
 本仓库是 `flyflor-cli` TUI/thin client。所有自动化开发代理必须遵守以下红线。
 
 - 本 worktree 只处理 `flyflor-cli` 侧 ASK 菜单、公民权限展示、Exo timeline、history/fork/read-model UI 和 socket payload 消费。
+- `docs-guardrails` lane 只更新项目 guardrails、README/docs、TODO/LOGS 等文档闭环；除非文档工具链需要，禁止实现 feature code。
 - 禁止修改 `flyflor` 内核、`flyflor-front`、`reference` 和无关项目。
 - TUI 只能通过 socket/gateway control/event 与内核交互，禁止直接写 `brain.db`、`scope.db` 或运行态日志数据库。
 - ASK 推荐项只能高亮，不能自动提交；普通输入不能被 pending ASK 劫持成默认选择。

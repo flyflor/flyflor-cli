@@ -8,3 +8,4 @@ Current behavior is defined by the root `README.md`, root `README.zh.cn.md`, and
 
 - [2026-05-26-docs-tool-closure/](2026-05-26-docs-tool-closure/) - pre-closure documentation snapshot for the first tool-loop documentation pass.
 - [2026-05-27-post-tool-closure/](2026-05-27-post-tool-closure/) - snapshot taken before documenting `/approve`, ASK typed continuation, `/undo`, dynamic context-window authority, JSON i18n, and the current thin-client closure state.
+- [2026-05-27-cli-npm-gateway-shell/](2026-05-27-cli-npm-gateway-shell/) - snapshot taken before documenting npm binary packaging, foreground gateway shell commands, explicit ASK permission metadata, and Exo timeline display closure.

@@ -21,3 +21,53 @@
 
 - [x] 在安全 xtools 默认工具面收紧后复跑 `npm run smoke:live:tui -- --keep-tmux`，确认真实 TUI、kernel socket、ASK/history/status 路径仍 `ok: true`。
 - [x] 复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`，确认 TUI ASK/Exo/detail 去重改动无回归。
+
+## 2026-05-27 workmux CLI/Gateway 并发协调
+
+- [x] 配置 `.workmux.yaml` 为独立 tmux session 的 Codex 并发 lane。
+- [x] 创建 `session-table.md`，记录每个 lane 的 worktree、tmux attach、capture 和 send 命令。
+- [x] 启动 docs-guardrails、main-rs-split、cli-shell、gateway-runtime、gateway-channels、npm-release 六个 Codex 子进程。
+
+## 2026-05-27 Docs guardrails 同步
+
+- [x] 同步 `AGENT.md`/`AGENTS.md`，明确 `docs-guardrails` lane 只处理 guardrails/docs 闭环，不实现 feature code。
+- [x] 同步 README 与 docs 中 ASK、公民权限 metadata、Exo timeline、detail 去重和 CLI/gateway thin-client 口径。
+- [x] 复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。
+
+## 2026-05-27 main.rs 低风险机械拆分
+
+- [x] 将 `src/main.rs` 的 theme、input cursor/render/paste normalization、clipboard/OSC52 helper 机械拆到独立 owner module。
+- [x] 复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`，确认拆分无行为回归。
+
+## 2026-05-27 npm 顶层 CLI shell
+
+- [x] 新增 Rust 顶层 CLI parser，默认 `flyflor` 保持进入现有 TUI。
+- [x] `flyflor -h` 输出顶层 help，`flyflor gateway -h` 输出 gateway help，不进入 raw TUI。
+- [x] 为 gateway-runtime 预留 command enum/types，不在 CLI 侧实现 channel adapters。
+- [x] 主控合并后复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。
+
+## 2026-05-27 gateway runtime lane
+
+- [x] 新增 CLI-owned gateway runtime module/API，暴露 foreground run、start、stop、restart、status、logs 与 runtime paths。
+- [x] runtime pid/lock/status/log/stop files 落在 Flyflor CLI home，不使用 kernel `FLYFLOR_HOME`，不写 brain.db/scope.db/log DB。
+- [x] foreground runtime 只通过 Flyflor `/ws` 连接 kernel，并复用 `flyflor.ws.v1` envelope bootstrap builders。
+- [x] main 保留 daemon child env hook，并将 `flyflor gateway <run|start|stop|restart|status|logs>` 接到 runtime API。
+
+## 2026-05-27 npm 全局安装包装
+
+- [x] 增加 npm `bin` wrapper、package metadata、platform binary build/install scripts。
+- [x] 增加 local `npm pack`/global-prefix install smoke，验证 wrapper、platform binary 落位和 CLI help。
+- [x] 主控合并后复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`npm run smoke:npm:local`、`FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local`、`git diff --check`。
+
+## 2026-05-27 gateway channels / Weixin iLink
+
+- [x] 增加 gateway channel platform trait/registry，未来平台只返回 explicit unavailable，不假成功。
+- [x] 增加 Weixin iLink adapter：账号/config 持久化、QR helper、getupdates long-poll、context_token store/echo、dedup TTL、retry/backoff/session-expired/rate-limit 分类、sendtyping/sendmessage payload 和 media unavailable metadata。
+- [x] 增加 channel runtime bridge，将 normalized inbound message 通过现有 `gateway.message.send` / `/ws` 路径送入 Flyflor。
+- [x] 主控合并后复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。
+
+## 2026-05-27 npm cross-target build 收口
+
+- [x] `build:binary` 支持显式 Rust target triple，并输出到对应 `dist/<platform>-<arch>`。
+- [x] `build:binary:all` 提供发布批量构建入口。
+- [x] 复跑 host target 显式构建、npm local/global-prefix smoke、Cargo 门禁和 `git diff --check`。

@@ -4,20 +4,17 @@ use std::{
     fs::{OpenOptions, create_dir_all},
     io,
     io::ErrorKind,
-    io::IsTerminal,
     io::Write,
     mem,
     net::TcpStream,
     panic,
     path::PathBuf,
-    process::{Command, Stdio},
+    process,
     sync::mpsc::{self, Receiver, Sender},
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use arboard::Clipboard;
-use base64::Engine as _;
 use crossterm::{
     event::{
         self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
@@ -38,15 +35,29 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 use unicode_width::UnicodeWidthStr;
 
+mod cli_shell;
+mod clipboard;
 mod context;
+mod gateway_runtime;
+mod input;
 mod layout;
 mod shared;
+mod theme;
 mod tui;
 
+use cli_shell::{CliCommand, GatewayRuntimeCommand, GatewayShellCommand};
+#[cfg(test)]
+use clipboard::{OSC52_MAX_BYTES, osc52_sequence};
+use clipboard::{read_clipboard_text, write_text_to_clipboard};
+use input::{
+    input_cursor_position, input_index_for_column, input_line_start_and_column,
+    normalize_paste_text, render_input_lines,
+};
 use shared::{
     WORKING_SHIMMER_PHASES, center_text, draw_separator, in_rect, metric_line, top_bar_title,
     working_light_line, working_light_phase, working_shimmer_style, ws_url,
 };
+use theme::Theme;
 use tui::ask::{
     command::AskAnswer,
     parser::{ask_menu_from_turn_metadata, continuation_from_metadata, continuation_from_value},
@@ -76,8 +87,6 @@ use tui::terminal::{
     TerminalMode, enter_terminal, leave_terminal, mouse_capture_enabled_from_env_args,
 };
 
-const CLIPBOARD_INIT_TIMEOUT: Duration = Duration::from_millis(500);
-const OSC52_MAX_BYTES: usize = 100 * 1024;
 const DEFAULT_WS_URL: &str = "ws://127.0.0.1:8787/ws";
 const DEFAULT_CONTEXT_BAR_WIDTH: usize = 32;
 const ESC_INTERRUPT_WINDOW_MS: u64 = 1_200;
@@ -85,6 +94,101 @@ const EXO_ACTIVITY_FRAMES: [&str; 8] = ["⣏⣹", "⣇⣸", "⣧⣤", "⣿⣴", 
 const CITIZEN_PERMISSION_CHOICES: [&str; 3] = ["continue-tools", "keep-budget", "keep-subagents"];
 
 fn main() -> io::Result<()> {
+    if gateway_runtime::should_run_foreground_from_env() {
+        return gateway_runtime::run_foreground();
+    }
+
+    match cli_shell::parse_env_args() {
+        Ok(CliCommand::RunTui) => run_tui_main(),
+        Ok(CliCommand::PrintTopLevelHelp) => print_shell_text(&cli_shell::top_level_help()),
+        Ok(CliCommand::PrintVersion) => print_shell_text(&cli_shell::version_text()),
+        Ok(CliCommand::Gateway(GatewayShellCommand::PrintHelp)) => {
+            print_shell_text(&cli_shell::gateway_help())
+        }
+        Ok(CliCommand::Gateway(GatewayShellCommand::Runtime(command))) => {
+            run_gateway_runtime_command(command)
+        }
+        Err(error) => {
+            eprintln!("{error}");
+            eprintln!();
+            eprint!("{}", cli_shell::top_level_help());
+            process::exit(2);
+        }
+    }
+}
+
+fn print_shell_text(text: &str) -> io::Result<()> {
+    let mut stdout = io::stdout();
+    stdout.write_all(text.as_bytes())?;
+    stdout.flush()
+}
+
+fn run_gateway_runtime_command(command: GatewayRuntimeCommand) -> io::Result<()> {
+    match command {
+        GatewayRuntimeCommand::Run => gateway_runtime::run_foreground(),
+        GatewayRuntimeCommand::Start => {
+            let report = gateway_runtime::start()?;
+            println!(
+                "flyflor gateway started pid={} already_running={} log={}",
+                report.pid,
+                report.already_running,
+                report.paths.log_file.display()
+            );
+            Ok(())
+        }
+        GatewayRuntimeCommand::Stop => {
+            let report = gateway_runtime::stop()?;
+            println!(
+                "flyflor gateway stop state={:?} pid={} log={}",
+                report.state,
+                report
+                    .pid
+                    .map(|pid| pid.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+                report.paths.log_file.display()
+            );
+            Ok(())
+        }
+        GatewayRuntimeCommand::Restart => {
+            let report = gateway_runtime::restart()?;
+            println!(
+                "flyflor gateway restarted pid={} log={}",
+                report.pid,
+                report.paths.log_file.display()
+            );
+            Ok(())
+        }
+        GatewayRuntimeCommand::Status => {
+            let report = gateway_runtime::status()?;
+            println!(
+                "flyflor gateway state={:?} pid={}",
+                report.state,
+                report
+                    .pid
+                    .map(|pid| pid.to_string())
+                    .unwrap_or_else(|| "none".to_string())
+            );
+            println!("home={}", report.paths.home.display());
+            println!("state_dir={}", report.paths.state_dir.display());
+            println!("log_dir={}", report.paths.log_dir.display());
+            println!("pid_file={}", report.paths.pid_file.display());
+            println!("lock_file={}", report.paths.lock_file.display());
+            println!("stop_file={}", report.paths.stop_file.display());
+            println!("status_file={}", report.paths.status_file.display());
+            println!("log_file={}", report.paths.log_file.display());
+            if let Some(status_json) = report.status_json {
+                print!("{status_json}");
+            }
+            Ok(())
+        }
+        GatewayRuntimeCommand::Logs => {
+            print!("{}", gateway_runtime::logs(64 * 1024)?);
+            Ok(())
+        }
+    }
+}
+
+fn run_tui_main() -> io::Result<()> {
     install_panic_logger();
     log_event("main start");
     let terminal_mode = TerminalMode {
@@ -4987,47 +5091,6 @@ fn truncate_to_width(text: &str, width: usize) -> String {
     output
 }
 
-fn render_input_lines(input: &str, width: usize, theme: &Theme) -> Vec<Line<'static>> {
-    let content_width = width.saturating_sub(2).max(1);
-    if input.is_empty() {
-        return vec![Line::from(vec![
-            Span::styled(
-                pad_to_width("ask anything...", content_width),
-                Style::default().fg(theme.muted),
-            ),
-            Span::styled(
-                " >",
-                Style::default()
-                    .fg(theme.purple)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ])];
-    }
-
-    let mut lines = Vec::new();
-    for source_line in input.split('\n') {
-        let wrapped = wrap_plain_text(source_line, content_width);
-        for row in wrapped {
-            lines.push(Line::from(vec![Span::styled(
-                pad_to_width(&row, content_width),
-                Style::default().fg(theme.text),
-            )]));
-        }
-    }
-    if input.ends_with('\n') {
-        lines.push(Line::raw(""));
-    }
-    if let Some(last) = lines.last_mut() {
-        last.spans.push(Span::styled(
-            " >",
-            Style::default()
-                .fg(theme.purple)
-                .add_modifier(Modifier::BOLD),
-        ));
-    }
-    lines
-}
-
 fn footer_mode_text(app: &App) -> String {
     app.interaction_mode.label().to_string()
 }
@@ -5134,77 +5197,6 @@ fn format_elapsed_compact(seconds: u64) -> String {
         (seconds % 3600) / 60,
         seconds % 60
     )
-}
-
-fn input_cursor_position(
-    input: &str,
-    cursor_index: usize,
-    area: Rect,
-    scroll: usize,
-) -> Option<Position> {
-    let content_width = area.width.saturating_sub(2).max(1) as usize;
-    let (visual_line, visual_col) =
-        input_visual_cursor(input, cursor_index.min(input.len()), content_width);
-
-    let visible_line = visual_line.saturating_sub(scroll);
-    if visible_line >= area.height as usize {
-        return None;
-    }
-    Some(Position::new(
-        area.x + visual_col.min(area.width.saturating_sub(1) as usize) as u16,
-        area.y + visible_line as u16,
-    ))
-}
-
-fn input_visual_cursor(input: &str, cursor_index: usize, content_width: usize) -> (usize, usize) {
-    let mut visual_line = 0usize;
-    let mut current_line_start = 0usize;
-    for line in input.split_inclusive('\n') {
-        let has_newline = line.ends_with('\n');
-        let line_end = current_line_start + line.len() - usize::from(has_newline);
-        if cursor_index <= line_end {
-            let prefix = &input[current_line_start..cursor_index];
-            let width = UnicodeWidthStr::width(prefix);
-            return (visual_line + width / content_width, width % content_width);
-        }
-        let width = UnicodeWidthStr::width(&input[current_line_start..line_end]);
-        visual_line += width.div_ceil(content_width).max(1);
-        if has_newline {
-            current_line_start += line.len();
-        }
-    }
-    if current_line_start <= input.len() {
-        let prefix = &input[current_line_start..cursor_index.min(input.len())];
-        let width = UnicodeWidthStr::width(prefix);
-        return (visual_line + width / content_width, width % content_width);
-    }
-    (visual_line, 0)
-}
-
-fn input_line_start_and_column(input: &str, index: usize) -> (usize, usize) {
-    let index = index.min(input.len());
-    let line_start = input[..index]
-        .rfind('\n')
-        .map(|position| position + 1)
-        .unwrap_or(0);
-    let column = UnicodeWidthStr::width(&input[line_start..index]);
-    (line_start, column)
-}
-
-fn input_index_for_column(input: &str, start: usize, end: usize, target_column: usize) -> usize {
-    let mut width = 0usize;
-    for (offset, ch) in input[start..end].char_indices() {
-        let next = width + string_width_char(ch);
-        if next > target_column {
-            return start + offset;
-        }
-        width = next;
-    }
-    end
-}
-
-fn normalize_paste_text(text: &str) -> String {
-    text.replace("\r\n", "\n").replace('\r', "\n")
 }
 
 fn apply_selection_to_lines(
@@ -5336,93 +5328,6 @@ fn strip_transcript_rails(text: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn clipboard_with_timeout() -> Option<Clipboard> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = tx.send(Clipboard::new().ok());
-    });
-    rx.recv_timeout(CLIPBOARD_INIT_TIMEOUT).ok().flatten()
-}
-
-fn read_clipboard_text() -> Result<String, String> {
-    let Some(mut clipboard) = clipboard_with_timeout() else {
-        return Err("system clipboard unavailable or timed out".to_string());
-    };
-    clipboard.get_text().map_err(|error| error.to_string())
-}
-
-fn write_text_to_clipboard(text: &str) -> Result<(), String> {
-    if let Some(mut clipboard) = clipboard_with_timeout()
-        && clipboard.set_text(text.to_string()).is_ok()
-    {
-        return Ok(());
-    }
-
-    #[cfg(target_os = "macos")]
-    if write_text_with_command("pbcopy", &[], text).is_ok() {
-        return Ok(());
-    }
-
-    #[cfg(target_os = "windows")]
-    if write_text_with_command(
-        "powershell.exe",
-        &["-NoProfile", "-Command", "Set-Clipboard -Value $input"],
-        text,
-    )
-    .is_ok()
-    {
-        return Ok(());
-    }
-
-    write_text_with_osc52(text)
-}
-
-fn write_text_with_command(command: &str, args: &[&str], text: &str) -> Result<(), String> {
-    let mut child = Command::new(command)
-        .args(args)
-        .stdin(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("failed to run {command}: {error}"))?;
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(text.as_bytes())
-            .map_err(|error| format!("failed to write to {command}: {error}"))?;
-    }
-    let status = child
-        .wait()
-        .map_err(|error| format!("failed to wait for {command}: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("{command} failed"))
-    }
-}
-
-fn write_text_with_osc52(text: &str) -> Result<(), String> {
-    if !io::stdout().is_terminal() {
-        return Err("OSC52 clipboard fallback requires a terminal".to_string());
-    }
-    let sequence = osc52_sequence(text, env::var_os("TMUX").is_some())?;
-    io::stdout()
-        .write_all(sequence.as_bytes())
-        .map_err(|error| format!("write OSC52 failed: {error}"))?;
-    io::stdout()
-        .flush()
-        .map_err(|error| format!("flush OSC52 failed: {error}"))
-}
-
-fn osc52_sequence(text: &str, in_tmux: bool) -> Result<String, String> {
-    if text.len() > OSC52_MAX_BYTES {
-        return Err("selection is too large for OSC 52 clipboard fallback".to_string());
-    }
-    let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
-    let sequence = format!("\x1b]52;c;{encoded}\x07");
-    if in_tmux {
-        return Ok(format!("\x1bPtmux;\x1b{sequence}\x1b\\"));
-    }
-    Ok(sequence)
 }
 
 enum SocketCommand {
@@ -7415,43 +7320,6 @@ fn iso8601_from_millis(millis: u64) -> String {
         .unwrap_or_else(|_| millis.to_string())
 }
 
-struct Theme {
-    bg: Color,
-    text: Color,
-    muted: Color,
-    dim: Color,
-    blue: Color,
-    purple: Color,
-    pink: Color,
-    danger: Color,
-    green: Color,
-    overlay: Color,
-    scroll_thumb: Color,
-    scroll_track: Color,
-    status_active_bg: Color,
-    user_bg: Color,
-    code_bg: Color,
-    rail: Color,
-    thread_accent: Color,
-    thought_bar: Color,
-    thought_text: Color,
-    footer_icon_color: Color,
-    footer_primary: Color,
-    footer_muted: Color,
-    code_label: Color,
-    mermaid_label: Color,
-    mermaid_text: Color,
-    rail_char: char,
-    thought_bar_char: char,
-    user_leading_bar: char,
-    footer_icon: char,
-    thread_gutter: usize,
-    user_pad: usize,
-    user_right_gap: usize,
-    answer_left_pad: usize,
-    answer_right_pad: usize,
-}
-
 #[derive(Clone, Deserialize)]
 struct ThoughtData {
     #[serde(default)]
@@ -7685,47 +7553,6 @@ struct MermaidEdge {
     from: String,
     to: String,
     label: String,
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        Self {
-            bg: Color::Rgb(12, 18, 32),
-            text: Color::Rgb(232, 235, 245),
-            muted: Color::Rgb(147, 156, 182),
-            dim: Color::Rgb(67, 77, 105),
-            blue: Color::Rgb(126, 160, 255),
-            purple: Color::Rgb(185, 140, 255),
-            pink: Color::Rgb(255, 120, 170),
-            danger: Color::Rgb(255, 72, 72),
-            green: Color::Rgb(91, 228, 155),
-            overlay: Color::Rgb(10, 14, 28),
-            scroll_thumb: Color::Rgb(218, 220, 228),
-            scroll_track: Color::Rgb(107, 116, 144),
-            status_active_bg: Color::Rgb(42, 38, 84),
-            user_bg: Color::Rgb(32, 33, 36),
-            code_bg: Color::Rgb(18, 20, 24),
-            rail: Color::Rgb(150, 150, 156),
-            thread_accent: Color::Rgb(0, 210, 230),
-            thought_bar: Color::Rgb(150, 150, 156),
-            thought_text: Color::Rgb(137, 137, 145),
-            footer_icon_color: Color::Rgb(0, 210, 230),
-            footer_primary: Color::Rgb(220, 223, 228),
-            footer_muted: Color::Rgb(137, 137, 145),
-            code_label: Color::Rgb(175, 180, 196),
-            mermaid_label: Color::Rgb(175, 180, 196),
-            mermaid_text: Color::Rgb(214, 218, 228),
-            rail_char: '┃',
-            thought_bar_char: '┃',
-            user_leading_bar: '┃',
-            footer_icon: '◻',
-            thread_gutter: 1,
-            user_pad: 1,
-            user_right_gap: 3,
-            answer_left_pad: 2,
-            answer_right_pad: 4,
-        }
-    }
 }
 
 #[cfg(test)]

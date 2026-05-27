@@ -158,6 +158,7 @@ pub struct GatewayMessagePayload {
     thread_id: String,
     user_id: String,
     display_name: String,
+    chat_type: String,
 }
 
 impl GatewayMessagePayload {
@@ -174,6 +175,7 @@ impl GatewayMessagePayload {
             thread_id: "flyflor-cli".to_string(),
             user_id: "flyflor-cli-user".to_string(),
             display_name: "Flyflor CLI User".to_string(),
+            chat_type: "direct".to_string(),
         }
     }
 
@@ -215,12 +217,17 @@ impl GatewayMessagePayload {
         self
     }
 
+    pub fn chat_type(mut self, chat_type: impl Into<String>) -> Self {
+        self.chat_type = chat_type.into();
+        self
+    }
+
     fn into_value(self) -> Value {
         let mut payload = json!({
             "id": self.message_id,
             "text": self.text,
             "conversationKey": self.conversation_key,
-            "chatType": "direct",
+            "chatType": self.chat_type,
             "threadId": self.thread_id,
             "user": {
                 "id": self.user_id,
