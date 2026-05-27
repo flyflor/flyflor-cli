@@ -35,35 +35,21 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 use unicode_width::UnicodeWidthStr;
 
-mod cli_shell;
-mod clipboard;
-mod context;
-mod gateway_runtime;
-mod input;
-mod layout;
-mod shared;
-mod theme;
+mod cli;
+mod gateway;
 mod tui;
 
-use cli_shell::{CliCommand, GatewayRuntimeCommand, GatewayShellCommand};
-#[cfg(test)]
-use clipboard::{OSC52_MAX_BYTES, osc52_sequence};
-use clipboard::{read_clipboard_text, write_text_to_clipboard};
-use input::{
-    input_cursor_position, input_index_for_column, input_line_start_and_column,
-    normalize_paste_text, render_input_lines,
-};
-use shared::{
-    WORKING_SHIMMER_PHASES, center_text, draw_separator, in_rect, metric_line, top_bar_title,
-    working_light_line, working_light_phase, working_shimmer_style, ws_url,
-};
-use theme::Theme;
+use cli::{CliCommand, GatewayRuntimeCommand, GatewayShellCommand};
+use gateway::runtime as gateway_runtime;
 use tui::ask::{
     command::AskAnswer,
     parser::{ask_menu_from_turn_metadata, continuation_from_metadata, continuation_from_value},
     state::AskMenu,
     view::visible_item_count,
 };
+#[cfg(test)]
+use tui::clipboard::{OSC52_MAX_BYTES, osc52_sequence};
+use tui::clipboard::{read_clipboard_text, write_text_to_clipboard};
 use tui::execution::{
     state::ExecutionRowStatus, view::execution_context_rows as build_execution_context_rows,
 };
@@ -72,20 +58,30 @@ use tui::fork::{
     state::ActiveForkSession,
     view::session_summary,
 };
-use tui::gateway::{
+use tui::i18n::{CopyKey, text as ui_text, text_key as ui_text_key};
+use tui::input::{
+    input_cursor_position, input_index_for_column, input_line_start_and_column,
+    normalize_paste_text, render_input_lines,
+};
+use tui::kernel::{
     client::GatewayClientBootstrap,
     command::{GatewayCommandBuilder, GatewayMessagePayload},
     envelope::EnvelopeFactory,
 };
-use tui::i18n::{CopyKey, text as ui_text, text_key as ui_text_key};
+use tui::layout;
 use tui::plan::{
     menu::default_plan_menu,
     state::{PlanAction, PlanMenu, PlanPendingAction},
 };
 use tui::run_timeline::{state::RunTimeline, view::run_panel_lines};
+use tui::shared::{
+    WORKING_SHIMMER_PHASES, draw_separator, in_rect, metric_line, top_bar_title,
+    working_light_line, working_light_phase, working_shimmer_style, ws_url,
+};
 use tui::terminal::{
     TerminalMode, enter_terminal, leave_terminal, mouse_capture_enabled_from_env_args,
 };
+use tui::theme::Theme;
 
 const DEFAULT_WS_URL: &str = "ws://127.0.0.1:8787/ws";
 const DEFAULT_CONTEXT_BAR_WIDTH: usize = 32;
@@ -94,16 +90,16 @@ const EXO_ACTIVITY_FRAMES: [&str; 8] = ["⣏⣹", "⣇⣸", "⣧⣤", "⣿⣴", 
 const CITIZEN_PERMISSION_CHOICES: [&str; 3] = ["continue-tools", "keep-budget", "keep-subagents"];
 
 fn main() -> io::Result<()> {
-    if gateway_runtime::should_run_foreground_from_env() {
-        return gateway_runtime::run_foreground();
+    if gateway::runtime::should_run_foreground_from_env() {
+        return gateway::runtime::run_foreground();
     }
 
-    match cli_shell::parse_env_args() {
+    match cli::parse_env_args() {
         Ok(CliCommand::RunTui) => run_tui_main(),
-        Ok(CliCommand::PrintTopLevelHelp) => print_shell_text(&cli_shell::top_level_help()),
-        Ok(CliCommand::PrintVersion) => print_shell_text(&cli_shell::version_text()),
+        Ok(CliCommand::PrintTopLevelHelp) => print_shell_text(&cli::top_level_help()),
+        Ok(CliCommand::PrintVersion) => print_shell_text(&cli::version_text()),
         Ok(CliCommand::Gateway(GatewayShellCommand::PrintHelp)) => {
-            print_shell_text(&cli_shell::gateway_help())
+            print_shell_text(&cli::gateway_help())
         }
         Ok(CliCommand::Gateway(GatewayShellCommand::Runtime(command))) => {
             run_gateway_runtime_command(command)
@@ -111,7 +107,7 @@ fn main() -> io::Result<()> {
         Err(error) => {
             eprintln!("{error}");
             eprintln!();
-            eprint!("{}", cli_shell::top_level_help());
+            eprint!("{}", cli::top_level_help());
             process::exit(2);
         }
     }
@@ -7558,9 +7554,10 @@ struct MermaidEdge {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
+    use crate::tui::{
+        ask::state::{AskChoice, AskQuestion},
         layout::shell::{app_layout, content_root},
-        tui::ask::state::{AskChoice, AskQuestion},
+        shared,
     };
 
     fn separator_text(width: u16) -> String {
@@ -11484,7 +11481,7 @@ mod tests {
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
 
-        assert_eq!(types, tui::gateway::subscription::SUBSCRIPTION_EVENT_TYPES);
+        assert_eq!(types, tui::kernel::subscription::SUBSCRIPTION_EVENT_TYPES);
         assert!(types.contains(&"executive.loop.paused"));
         assert!(types.contains(&"blackboard.message.appended"));
         assert!(types.contains(&"subagent.child.end"));

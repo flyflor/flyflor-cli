@@ -3,10 +3,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
 };
 
-use crate::{
-    Theme,
+use crate::tui::{
     context::{bulletin_board, conversion},
     layout::state::ContextLayoutState,
+    theme::Theme,
 };
 
 pub fn render(frame: &mut Frame, area: Rect, state: &mut ContextLayoutState, theme: &Theme) {

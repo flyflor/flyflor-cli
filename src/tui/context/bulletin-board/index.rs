@@ -6,10 +6,13 @@ use ratatui::{
     widgets::{Paragraph, Wrap},
 };
 
-use crate::context::conversion::state::slice_by_char;
 use crate::{
-    Theme, draw_scrollbar,
-    shared::{draw_separator, metric_line},
+    draw_scrollbar,
+    tui::{
+        context::conversion::state::slice_by_char,
+        shared::{draw_separator, metric_line},
+        theme::Theme,
+    },
     update_scroll_state,
 };
 

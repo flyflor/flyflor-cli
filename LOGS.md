@@ -114,3 +114,10 @@
   原因：原 npm 包装只覆盖当前平台 build，不能作为发布前交叉编译入口；需要让 `npm i -g flyflor-cli` 的 bundled binary 目录可由发布流程明确产出。
   验证：`node scripts/build-binary.cjs --target "$(rustc -vV | sed -n 's/^host: //p')"`；`npm run smoke:npm:local`；`FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local`；`cargo fmt --check`；`cargo check`；`cargo test`（196 passed）；`git diff --check`。另以 unsupported target smoke 验证未知 triple 会失败退出。
   风险：非 host triple 是否能实际链接仍取决于本机安装的 Rust target 和系统 cross linker；脚本现在会把失败显式暴露给发布流程。
+
+- 状态：完成
+  执行者：dir-foundation
+  范围：module-layout-only
+  摘要：将 TUI helper modules 收拢到 `src/tui/`，将 context/layout 收拢到 `src/tui/context/` 与 `src/tui/layout/`，将 kernel WebSocket client/envelope/command/subscription 从 `src/tui/gateway/` 改名为 `src/tui/kernel/`；同时把 CLI parser 放入 `src/cli/`，把 gateway runtime 和 channel adapters 放入 `src/gateway/` 与 `src/gateway/channels/`。
+  原因：为 CLI/gateway/TUI ownership 建立目录边界，保持 TUI 只通过 kernel socket/gateway payload 消费，不引入 session concept 或行为改动。
+  验证：`cargo fmt --check`; `cargo check`; `cargo test`（196 passed）；`git diff --check`; `rg "tui::gateway|src/tui/gateway|crate::gateway" src` 仅剩新外部 `crate::gateway::channels` 路径。

@@ -5,7 +5,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::{Theme, pad_to_width, string_width_char, wrap_plain_text};
+use crate::{pad_to_width, string_width_char, tui::theme::Theme, wrap_plain_text};
 
 pub(crate) fn render_input_lines(input: &str, width: usize, theme: &Theme) -> Vec<Line<'static>> {
     let content_width = width.saturating_sub(2).max(1);

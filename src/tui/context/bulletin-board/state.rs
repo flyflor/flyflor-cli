@@ -2,11 +2,14 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 
 use crate::{
-    RightPanelData, ScrollState, Theme,
-    shared::{in_rect, wrap_plain_text},
+    RightPanelData, ScrollState,
+    tui::{
+        shared::{in_rect, wrap_plain_text},
+        theme::Theme,
+    },
 };
 
-use crate::context::conversion::state::slice_by_char;
+use crate::tui::context::conversion::state::slice_by_char;
 
 use super::todo::state::TodoState;
 

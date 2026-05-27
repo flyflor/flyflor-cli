@@ -20,11 +20,11 @@ use super::platform::{
     PlatformRegistry, enabled_platform_names_from_env,
 };
 use crate::{
-    shared::ws_url,
-    tui::gateway::{
+    tui::kernel::{
         command::{GatewayCommandBuilder, GatewayMessagePayload},
         envelope::EnvelopeFactory,
     },
+    tui::shared::ws_url,
 };
 
 pub fn spawn_gateway_channel_runtime() {
@@ -292,7 +292,7 @@ fn channel_log(message: impl AsRef<str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::gateway::channels::platform::ChatType;
+    use crate::gateway::channels::platform::ChatType;
 
     #[test]
     fn conversation_key_keeps_platform_and_chat() {

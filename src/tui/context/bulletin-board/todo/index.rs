@@ -6,7 +6,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::{Theme, center_text};
+use crate::tui::{shared::center_text, theme::Theme};
 
 use super::state::TodoState;
 

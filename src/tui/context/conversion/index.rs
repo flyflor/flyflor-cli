@@ -9,10 +9,12 @@ use ratatui_interact::components::{Input, InputStyle};
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    Theme,
-    context::conversion::state::{ConversionState, slice_by_char},
     draw_scrollbar,
-    shared::draw_separator,
+    tui::{
+        context::conversion::state::{ConversionState, slice_by_char},
+        shared::draw_separator,
+        theme::Theme,
+    },
 };
 
 pub fn render(frame: &mut Frame, area: Rect, state: &mut ConversionState, theme: &Theme) {

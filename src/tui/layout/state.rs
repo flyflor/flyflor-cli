@@ -1,6 +1,6 @@
 use ratatui::layout::Rect;
 
-use crate::context::{
+use crate::tui::context::{
     bulletin_board::state::BulletinBoardState, conversion::state::ConversionState,
 };
 
@@ -29,7 +29,7 @@ impl Default for ContextLayoutState {
             conversion: ConversionState::default(),
             bulletin_board: BulletinBoardState::new(
                 crate::RightPanelData::default_live(),
-                crate::context::bulletin_board::todo::state::TodoState::new(Vec::new()),
+                crate::tui::context::bulletin_board::todo::state::TodoState::new(Vec::new()),
             ),
         }
     }
