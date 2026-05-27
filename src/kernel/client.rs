@@ -55,7 +55,7 @@ impl GatewayClientBootstrap {
 mod tests {
     use serde_json::Value;
 
-    use crate::tui::kernel::subscription::BOOTSTRAP_COMMAND_TYPES;
+    use crate::kernel::subscription::BOOTSTRAP_COMMAND_TYPES;
 
     use super::*;
 

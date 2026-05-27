@@ -35,15 +35,24 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 use unicode_width::UnicodeWidthStr;
 
+mod cli;
+mod i18n;
+mod kernel;
 mod tui;
 
+use cli::{CliCommand, GatewayConfigCommand, GatewayRuntimeCommand, GatewayShellCommand};
+use i18n::{CopyKey, text as ui_text, text_key as ui_text_key};
+use kernel::{
+    client::GatewayClientBootstrap,
+    command::{GatewayCommandBuilder, GatewayMessagePayload},
+    envelope::EnvelopeFactory,
+};
 use tui::ask::{
     command::AskAnswer,
     parser::{ask_menu_from_turn_metadata, continuation_from_metadata, continuation_from_value},
     state::AskMenu,
     view::visible_item_count,
 };
-use tui::cli::{CliCommand, GatewayRuntimeCommand, GatewayShellCommand};
 #[cfg(test)]
 use tui::clipboard::{OSC52_MAX_BYTES, osc52_sequence};
 use tui::clipboard::{read_clipboard_text, write_text_to_clipboard};
@@ -56,15 +65,9 @@ use tui::fork::{
     view::session_summary,
 };
 use tui::gateway::runtime as gateway_runtime;
-use tui::i18n::{CopyKey, text as ui_text, text_key as ui_text_key};
 use tui::input::{
     input_cursor_position, input_index_for_column, input_line_start_and_column,
     normalize_paste_text, render_input_lines,
-};
-use tui::kernel::{
-    client::GatewayClientBootstrap,
-    command::{GatewayCommandBuilder, GatewayMessagePayload},
-    envelope::EnvelopeFactory,
 };
 use tui::layout;
 use tui::plan::{
@@ -92,20 +95,23 @@ fn main() -> io::Result<()> {
         return tui::gateway::runtime::run_foreground();
     }
 
-    match tui::cli::parse_env_args() {
+    match cli::parse_env_args() {
         Ok(CliCommand::RunTui) => run_tui_main(),
-        Ok(CliCommand::PrintTopLevelHelp) => print_shell_text(&tui::cli::top_level_help()),
-        Ok(CliCommand::PrintVersion) => print_shell_text(&tui::cli::version_text()),
+        Ok(CliCommand::PrintTopLevelHelp) => print_shell_text(&cli::top_level_help()),
+        Ok(CliCommand::PrintVersion) => print_shell_text(&cli::version_text()),
         Ok(CliCommand::Gateway(GatewayShellCommand::PrintHelp)) => {
-            print_shell_text(&tui::cli::gateway_help())
+            print_shell_text(&cli::gateway_help())
         }
         Ok(CliCommand::Gateway(GatewayShellCommand::Runtime(command))) => {
             run_gateway_runtime_command(command)
         }
+        Ok(CliCommand::Gateway(GatewayShellCommand::Config(command))) => {
+            run_gateway_config_command(command)
+        }
         Err(error) => {
             eprintln!("{error}");
             eprintln!();
-            eprint!("{}", tui::cli::top_level_help());
+            eprint!("{}", cli::top_level_help());
             process::exit(2);
         }
     }
@@ -115,6 +121,80 @@ fn print_shell_text(text: &str) -> io::Result<()> {
     let mut stdout = io::stdout();
     stdout.write_all(text.as_bytes())?;
     stdout.flush()
+}
+
+fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
+    match command {
+        GatewayConfigCommand::Init => {
+            let report = tui::gateway::config::init_default().map_err(io::Error::other)?;
+            println!(
+                "flyflor gateway config path={} created={}",
+                report.path.display(),
+                report.created
+            );
+        }
+        GatewayConfigCommand::Show => {
+            print!(
+                "{}",
+                tui::gateway::config::show_default().map_err(io::Error::other)?
+            );
+        }
+        GatewayConfigCommand::Validate => {
+            let report = tui::gateway::config::validate_default().map_err(io::Error::other)?;
+            println!(
+                "flyflor gateway config valid path={} enabled={}",
+                report.path.display(),
+                report.enabled_channels.join(",")
+            );
+        }
+        GatewayConfigCommand::List => {
+            for item in tui::gateway::config::list_channels_default().map_err(io::Error::other)? {
+                println!(
+                    "{}\t{}\tnative_runtime={}\tenabled={}\tsource={}",
+                    item.name, item.label, item.native_runtime, item.enabled, item.source_channel
+                );
+            }
+        }
+        GatewayConfigCommand::Doctor => {
+            let report = tui::gateway::config::doctor_default().map_err(io::Error::other)?;
+            println!(
+                "flyflor gateway doctor path={} enabled={}",
+                report.path.display(),
+                report.validation.enabled_channels.join(",")
+            );
+            for item in report.channels {
+                println!(
+                    "{}\tnative_runtime={}\tenabled={}\tpresent_env={}\tmissing_env={}",
+                    item.name,
+                    item.native_runtime,
+                    item.enabled,
+                    item.present_env_aliases.join(","),
+                    item.missing_env_aliases.join(",")
+                );
+            }
+        }
+        GatewayConfigCommand::Enable(platform) => {
+            let report = tui::gateway::config::set_channel_default(&platform, true)
+                .map_err(io::Error::other)?;
+            println!(
+                "flyflor gateway config channel={} enabled={} path={}",
+                report.platform,
+                report.enabled,
+                report.path.display()
+            );
+        }
+        GatewayConfigCommand::Disable(platform) => {
+            let report = tui::gateway::config::set_channel_default(&platform, false)
+                .map_err(io::Error::other)?;
+            println!(
+                "flyflor gateway config channel={} enabled={} path={}",
+                report.platform,
+                report.enabled,
+                report.path.display()
+            );
+        }
+    }
+    Ok(())
 }
 
 fn run_gateway_runtime_command(command: GatewayRuntimeCommand) -> io::Result<()> {
@@ -2027,6 +2107,9 @@ impl App {
 
     fn handle_menu_confirm_or_next(&mut self, confirm: bool) -> bool {
         if self.ask_menu.is_some() {
+            if confirm && !self.input.trim().is_empty() {
+                return false;
+            }
             if self
                 .ask_menu
                 .as_ref()
@@ -9685,6 +9768,48 @@ mod tests {
     }
 
     #[test]
+    fn enter_with_plain_text_does_not_confirm_open_ask_menu() {
+        let mut app = App::new();
+        let (tx, rx) = mpsc::channel();
+        app.socket_tx = tx;
+        app.socket_connected = true;
+        app.turns.push(Turn {
+            message_id: Some("ask-message-1".to_string()),
+            event_id: Some("event-1".to_string()),
+            user: "需要处理工具暂停".to_string(),
+            thought: None,
+            answer: "请选择下一步".to_string(),
+            metadata: Some(json!({
+                "ask": {
+                    "prompt": "继续工具循环吗？",
+                    "snapshotId": "ask-snapshot-1",
+                    "recommendedChoiceId": "continue",
+                    "choices": [
+                        { "id": "continue", "label": "继续", "value": "continue-tools" },
+                        { "id": "stop", "label": "停止", "value": "stop" }
+                    ]
+                }
+            })),
+            context_rows: Vec::new(),
+            pending_continuation: None,
+            footer: String::new(),
+        });
+        assert!(app.open_latest_ask_menu());
+        app.input = "这是普通消息，不是授权".to_string();
+
+        handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+
+        match rx.try_recv().expect("send command") {
+            SocketCommand::SendMessage { metadata, text, .. } => {
+                assert_eq!(text, "这是普通消息，不是授权");
+                assert!(metadata.is_none());
+            }
+            _ => panic!("unexpected command"),
+        }
+        assert!(app.ask_menu.is_some());
+    }
+
+    #[test]
     fn executive_tool_loop_does_not_create_ask_resume_or_continuation() {
         let metadata = Some(json!({
             "executiveToolLoop": {
@@ -11479,7 +11604,7 @@ mod tests {
             .filter_map(Value::as_str)
             .collect::<Vec<_>>();
 
-        assert_eq!(types, tui::kernel::subscription::SUBSCRIPTION_EVENT_TYPES);
+        assert_eq!(types, kernel::subscription::SUBSCRIPTION_EVENT_TYPES);
         assert!(types.contains(&"executive.loop.paused"));
         assert!(types.contains(&"blackboard.message.appended"));
         assert!(types.contains(&"subagent.child.end"));

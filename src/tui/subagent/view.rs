@@ -3,9 +3,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::tui::{
+use crate::{
     i18n::{CopyKey, text},
-    subagent::state::{
+    tui::subagent::state::{
         ModelAllocation, SubagentAskPause, SubagentChild, SubagentProcess, SubagentStatus,
         SubagentToolCall, SubagentTree,
     },

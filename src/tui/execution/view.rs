@@ -1,9 +1,11 @@
-use crate::tui::{
-    execution::state::{ExecutionContextRow, ExecutionRowStatus},
+use crate::{
     i18n::{CopyKey, text},
-    run_timeline::state::{RunTimeline, RunTimelineItemStatus},
-    subagent::state::{
-        ModelAllocation, SubagentChild, SubagentProcess, SubagentStatus, SubagentToolCall,
+    tui::{
+        execution::state::{ExecutionContextRow, ExecutionRowStatus},
+        run_timeline::state::{RunTimeline, RunTimelineItemStatus},
+        subagent::state::{
+            ModelAllocation, SubagentChild, SubagentProcess, SubagentStatus, SubagentToolCall,
+        },
     },
 };
 

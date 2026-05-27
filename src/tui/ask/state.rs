@@ -41,16 +41,7 @@ pub struct AskSelection {
 
 impl AskMenu {
     pub fn new(turn_index: usize, continuation: Value, questions: Vec<AskQuestion>) -> Self {
-        let selected_by_question = questions
-            .iter()
-            .map(|question| {
-                question
-                    .choices
-                    .iter()
-                    .position(|choice| choice.recommended)
-                    .unwrap_or(0)
-            })
-            .collect::<Vec<_>>();
+        let selected_by_question = vec![0; questions.len()];
         let freeform_by_question = vec![None; questions.len()];
         Self {
             turn_index,

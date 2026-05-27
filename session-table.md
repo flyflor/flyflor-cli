@@ -31,3 +31,28 @@
 4. `gateway-runtime`
 5. `gateway-channels`
 6. `npm-release`
+
+## 2026-05-28 固定 Codex Lane
+
+入口：
+
+```bash
+npm run codex:lanes
+npm run codex:lanes -- --launch-codex
+```
+
+查看全部 session：
+
+```bash
+tmux list-sessions | rg '^ff-cli-'
+```
+
+| Lane | Branch | Worktree Path | Tmux Attach | Capture Working 细节 | Scope |
+|---|---|---|---|---|---|
+| gateway-core-runtime | `feature/gateway-core-runtime` | `.worktrees/gateway-core-runtime` | `tmux attach -t ff-cli-gateway-core-runtime` | `tmux capture-pane -t ff-cli-gateway-core-runtime:0.0 -p -S -5000` | gateway config、registry、capability、doctor、bridge、unavailable/degraded 语义。 |
+| channels-western | `feature/channels-western` | `.worktrees/channels-western` | `tmux attach -t ff-cli-channels-western` | `tmux capture-pane -t ff-cli-channels-western:0.0 -p -S -5000` | Telegram、Discord、Slack、Matrix、WhatsApp、Email、Webhook。 |
+| channels-cn | `feature/channels-cn` | `.worktrees/channels-cn` | `tmux attach -t ff-cli-channels-cn` | `tmux capture-pane -t ff-cli-channels-cn:0.0 -p -S -5000` | Feishu、DingTalk、WeCom、WeCom Callback、Weixin、QQBot、Yuanbao。 |
+| channels-longtail | `feature/channels-longtail` | `.worktrees/channels-longtail` | `tmux attach -t ff-cli-channels-longtail` | `tmux capture-pane -t ff-cli-channels-longtail:0.0 -p -S -5000` | Google Chat、IRC、ntfy、SimpleX、LINE、Mattermost、Signal、SMS、BlueBubbles、Home Assistant、Open WebUI、Teams、Graph webhook。 |
+| tui-ask-layout | `feature/tui-ask-layout` | `.worktrees/tui-ask-layout` | `tmux attach -t ff-cli-tui-ask-layout` | `tmux capture-pane -t ff-cli-tui-ask-layout:0.0 -p -S -5000` | ASK/layout 拆分，不破坏 ASK 菜单视觉样式。 |
+
+依赖软链规则：脚本只软链 `node_modules` 与 `target`；禁止软链运行态 home、账号状态、密钥、日志数据库或 kernel DB。

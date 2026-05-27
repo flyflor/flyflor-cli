@@ -20,3 +20,12 @@
 cargo check
 cargo test
 ```
+
+## 2026-05-28 channel parity 与 Codex lane 红线
+
+- 参考项目名只允许出现在历史日志或人工说明中，禁止进入新增源码字段、运行时输出、协议 key、env 前缀或业务 vocabulary；新增源码使用 `source`、`reference`、`channel`、`native_runtime` 等中性命名。
+- 所有 channel 名称 canonicalization 只属于配置解析，不能用于意图、路由、记忆、ASK、Scope、结晶等业务语义判断；业务语义继续遵守零字符匹配红线。
+- channel identity 只能进入 routing、audit、dedup、reply anchor 和显式 metadata；不能成为 prompt context、Memory owner、Scope owner 或 session。
+- `scripts/codex-lanes.sh` 是固定并发入口；子 Codex 必须运行在独立 git worktree + 独立 tmux session 中，禁止在 dirty 主 worktree 直接写实现。
+- 查看子 Codex working 细节必须记录在 `session-table.md`：`tmux attach -t <session>` 与 `tmux capture-pane -t <session>:0.0 -p -S -5000`。
+- worktree 仅允许软链 `node_modules` 与 `target`；禁止软链运行态 home、日志数据库、账号状态、密钥、`brain.db` 或 `scope.db`。

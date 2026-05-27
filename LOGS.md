@@ -185,3 +185,14 @@
   原因：用户要求真实场景不能只依赖单元测试；即使本次是显示层小改，也需要保留 live 证据。
   验证：`npm run smoke:live:tui` 输出 `ok: true`、`failedChecks: []`，报告目录 `.flyflor-cli/live/2026-05-27T13-08-49-999Z/`。
   风险：该 live smoke 验证 TUI 真实交互闭环与无 `unknown`/panic；nested external failure 形态由 targeted parser tests 覆盖。
+
+## 2026-05-28
+
+- 状态：进行中
+  执行者：main-codex
+  范围：channel-registry-codex-lanes
+  变动文件：`src/tui/gateway/platforms.rs`、`src/tui/gateway/config.rs`、`src/main.rs`、`scripts/codex-lanes.sh`、`package.json`、`AGENTS.md`、`TODO.md`、`LOGS.md`
+  摘要：将 gateway channel registry 扩展为全量 channel surface，使用中性 `source_channel`、`native_runtime`、capability feature、required/optional env 和 details 元数据；新增固定 worktree/tmux/Codex lane 脚本，输出 attach/capture 命令并软链依赖缓存。
+  原因：用户要求支持参考项目的所有 channel 和细节，同时要求源码不出现参考项目关键字，并且必须能查看子 Codex working 细节。
+  验证：已运行 `cargo check` 通过；待运行 `cargo fmt --check`、`cargo test`、`git diff --check`。
+  风险：本条先闭合 registry/config/doctor/协作脚手架，除 Weixin 现有 adapter 外，其余平台仍标记 `planned` 并 explicit unavailable，真实 adapter 需要后续按 lane 分批落地。

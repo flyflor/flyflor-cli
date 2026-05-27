@@ -238,7 +238,7 @@ pub struct PlatformEntry {
     pub name: &'static str,
     pub label: &'static str,
     pub factory: Box<dyn Fn() -> ChannelResult<Arc<dyn PlatformAdapter>> + Send + Sync>,
-    pub implemented: bool,
+    pub native_runtime: bool,
 }
 
 #[derive(Default)]
@@ -259,7 +259,7 @@ impl PlatformRegistry {
                     factory: Box::new(|| {
                         WeixinIlinkAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
                     }),
-                    implemented: true,
+                    native_runtime: true,
                 });
                 continue;
             }
@@ -269,7 +269,7 @@ impl PlatformRegistry {
                 factory: Box::new(move || {
                     Ok(Arc::new(UnsupportedPlatformAdapter { name, label }) as _)
                 }),
-                implemented: false,
+                native_runtime: false,
             });
         }
         registry
@@ -353,17 +353,17 @@ mod tests {
         assert!(
             registry
                 .get("weixin")
-                .is_some_and(|entry| entry.implemented)
+                .is_some_and(|entry| entry.native_runtime)
         );
         assert!(
             registry
                 .get("telegram")
-                .is_some_and(|entry| !entry.implemented)
+                .is_some_and(|entry| !entry.native_runtime)
         );
         assert!(
             registry
-                .get("microsoft-teams")
-                .is_some_and(|entry| !entry.implemented)
+                .get("teams")
+                .is_some_and(|entry| !entry.native_runtime)
         );
 
         let telegram = (registry.get("telegram").unwrap().factory)().unwrap();

@@ -12,6 +12,7 @@ pub enum CliCommand {
 pub enum GatewayShellCommand {
     PrintHelp,
     Runtime(GatewayRuntimeCommand),
+    Config(GatewayConfigCommand),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -22,6 +23,17 @@ pub enum GatewayRuntimeCommand {
     Restart,
     Status,
     Logs,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GatewayConfigCommand {
+    Init,
+    Show,
+    Validate,
+    List,
+    Doctor,
+    Enable(String),
+    Disable(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,9 +111,62 @@ where
         "logs" => {
             parse_gateway_runtime_args(GatewayRuntimeCommand::Logs, "flyflor gateway logs", args)
         }
+        "config" => parse_gateway_config_args(args),
         value if value.starts_with('-') => Err(CliParseError::UnknownOption(value.to_string())),
         value => Err(CliParseError::UnknownCommand(format!("gateway {value}"))),
     }
+}
+
+fn parse_gateway_config_args<I>(
+    mut args: std::iter::Peekable<I>,
+) -> Result<CliCommand, CliParseError>
+where
+    I: Iterator<Item = String>,
+{
+    let Some(arg) = args.next() else {
+        return Ok(CliCommand::Gateway(GatewayShellCommand::PrintHelp));
+    };
+    let command = match arg.as_str() {
+        "-h" | "--help" => return Ok(CliCommand::Gateway(GatewayShellCommand::PrintHelp)),
+        "init" => GatewayConfigCommand::Init,
+        "show" => GatewayConfigCommand::Show,
+        "validate" => GatewayConfigCommand::Validate,
+        "list" => GatewayConfigCommand::List,
+        "doctor" => GatewayConfigCommand::Doctor,
+        "enable" => {
+            let Some(platform) = args.next() else {
+                return Err(CliParseError::UnexpectedArgument {
+                    command: "flyflor gateway config enable".to_string(),
+                    argument: "<missing-channel>".to_string(),
+                });
+            };
+            GatewayConfigCommand::Enable(platform)
+        }
+        "disable" => {
+            let Some(platform) = args.next() else {
+                return Err(CliParseError::UnexpectedArgument {
+                    command: "flyflor gateway config disable".to_string(),
+                    argument: "<missing-channel>".to_string(),
+                });
+            };
+            GatewayConfigCommand::Disable(platform)
+        }
+        value if value.starts_with('-') => {
+            return Err(CliParseError::UnknownOption(value.to_string()));
+        }
+        value => {
+            return Err(CliParseError::UnknownCommand(format!(
+                "gateway config {value}"
+            )));
+        }
+    };
+    if let Some(argument) = args.next() {
+        return Err(CliParseError::UnexpectedArgument {
+            command: "flyflor gateway config".to_string(),
+            argument,
+        });
+    }
+    Ok(CliCommand::Gateway(GatewayShellCommand::Config(command)))
 }
 
 fn parse_gateway_runtime_args<I>(
@@ -167,6 +232,14 @@ Commands:
   restart              Restart gateway runtime daemon
   status               Print gateway runtime status
   logs                 Print gateway runtime log tail
+  config init          Create default gateway JSONC config
+  config show          Print gateway JSONC config
+  config validate      Validate gateway config
+  config list          List known gateway channels
+  config doctor        Validate enabled channels and environment
+  config enable <name> Enable a gateway channel
+  config disable <name>
+                       Disable a gateway channel
 
 Options:
   -h, --help           Print gateway help
@@ -238,6 +311,28 @@ mod tests {
             parse_args(["gateway", "status"]),
             Ok(CliCommand::Gateway(GatewayShellCommand::Runtime(
                 GatewayRuntimeCommand::Status
+            )))
+        );
+    }
+
+    #[test]
+    fn parses_gateway_config_commands() {
+        assert_eq!(
+            parse_args(["gateway", "config", "init"]),
+            Ok(CliCommand::Gateway(GatewayShellCommand::Config(
+                GatewayConfigCommand::Init
+            )))
+        );
+        assert_eq!(
+            parse_args(["gateway", "config", "enable", "weixin"]),
+            Ok(CliCommand::Gateway(GatewayShellCommand::Config(
+                GatewayConfigCommand::Enable("weixin".to_string())
+            )))
+        );
+        assert_eq!(
+            parse_args(["gateway", "config", "disable", "feishu"]),
+            Ok(CliCommand::Gateway(GatewayShellCommand::Config(
+                GatewayConfigCommand::Disable("feishu".to_string())
             )))
         );
     }

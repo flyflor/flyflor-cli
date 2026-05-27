@@ -112,3 +112,12 @@
 - [x] Timeline parser 提取外部工具 nested failure/unavailable 字段，避免 browser/computer sidecar 错误变成 raw JSON 或空白 detail。
 - [x] Subagent tree 同步显示 nested failure detail，让 Exo/child 工具失败在展开区可见。
 - [x] 增加 targeted parser tests，覆盖 `result.response.error/reason/code` 形态且禁止 `unknown`/raw JSON 回退。
+
+## 2026-05-28 全 channel registry 与 Codex lane 固化
+
+- [x] 新增中性命名的全 channel registry 元数据，覆盖 Telegram、Discord、Slack、Matrix、WhatsApp、Feishu、DingTalk、WeCom、WeCom Callback、Weixin、QQBot、Email、Webhook、Teams、Microsoft Graph webhook、Google Chat、IRC、ntfy、SimpleX、LINE、Mattermost、Signal、SMS、BlueBubbles、Home Assistant、Open WebUI、Yuanbao。
+- [x] 每个 channel 记录 required env、optional env、source channel、capability feature、细节标签与 `native/planned` runtime 状态；未原生实现的平台仍必须 explicit unavailable，不允许假成功。
+- [x] 新增源码红线：新增源码、协议 key、运行时输出和 env 前缀不使用参考项目关键字；历史日志中的旧词仅作为历史记录保留。
+- [x] 新增 `scripts/codex-lanes.sh`，固定 `gateway-core-runtime`、`channels-western`、`channels-cn`、`channels-longtail`、`tui-ask-layout` 五个 worktree/tmux lane，并自动软链 `node_modules` 与 `target`。
+- [ ] 逐 lane 落地真实 channel adapter：先补 generic core runtime tests，再分 western、CN、longtail adapters；每个 adapter 至少覆盖 config doctor、missing credential unavailable、inbound normalization、outbound send、ASK/approval metadata。
+- [ ] 把 TUI 目录继续按 `progress/components/layout/context/bulletin_board` 拆分，但不改 ASK 菜单视觉样式。

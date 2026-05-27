@@ -254,7 +254,7 @@ mod tests {
         assert_eq!(menu.questions.len(), 2);
         assert_eq!(menu.questions[0].choices.len(), 3);
         assert_eq!(menu.questions[1].choices.len(), 2);
-        assert_eq!(menu.selected_by_question[0], 1);
+        assert_eq!(menu.selected_by_question[0], 0);
         assert_eq!(menu.questions[0].choices[1].id, "fast");
         assert!(menu.questions[0].choices[1].recommended);
         assert_eq!(

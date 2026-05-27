@@ -71,9 +71,14 @@ pub struct ChannelToggleReport {
 pub struct ChannelListItem {
     pub name: &'static str,
     pub label: &'static str,
-    pub hermes_channel: &'static str,
+    pub source_channel: &'static str,
     pub enabled: bool,
-    pub implemented: bool,
+    pub native_runtime: bool,
+    pub status: &'static str,
+    pub features: Vec<&'static str>,
+    pub details: &'static [&'static str],
+    pub required_env: &'static [&'static str],
+    pub optional_env: &'static [&'static str],
     pub env_aliases: &'static [&'static str],
 }
 
@@ -81,9 +86,15 @@ pub struct ChannelListItem {
 pub struct ChannelDoctorItem {
     pub name: &'static str,
     pub enabled: bool,
-    pub implemented: bool,
+    pub native_runtime: bool,
+    pub status: &'static str,
+    pub features: Vec<&'static str>,
+    pub details: &'static [&'static str],
     pub present_env_aliases: Vec<&'static str>,
     pub missing_env_aliases: Vec<&'static str>,
+    pub present_required_env: Vec<&'static str>,
+    pub missing_required_env: Vec<&'static str>,
+    pub optional_env: &'static [&'static str],
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -293,9 +304,25 @@ pub fn doctor_at(path: &Path) -> Result<ChannelDoctorReport, GatewayConfigError>
             ChannelDoctorItem {
                 name: item.name,
                 enabled: item.enabled,
-                implemented: item.implemented,
+                native_runtime: item.native_runtime,
+                status: item.status,
+                features: item.features,
+                details: item.details,
                 present_env_aliases,
                 missing_env_aliases,
+                present_required_env: item
+                    .required_env
+                    .iter()
+                    .copied()
+                    .filter(|alias| env::var(alias).is_ok_and(|value| !value.trim().is_empty()))
+                    .collect(),
+                missing_required_env: item
+                    .required_env
+                    .iter()
+                    .copied()
+                    .filter(|alias| !env::var(alias).is_ok_and(|value| !value.trim().is_empty()))
+                    .collect(),
+                optional_env: item.optional_env,
             }
         })
         .collect();
@@ -417,9 +444,14 @@ fn channel_list(config: &GatewayConfig) -> Vec<ChannelListItem> {
         .map(|platform| ChannelListItem {
             name: platform.name,
             label: platform.label,
-            hermes_channel: platform.hermes_channel,
+            source_channel: platform.source_channel,
             enabled: is_platform_enabled(config, platform),
-            implemented: platform.implemented,
+            native_runtime: platform.native_runtime(),
+            status: platform.status.as_str(),
+            features: platform.capability.feature_names(),
+            details: platform.details,
+            required_env: platform.required_env,
+            optional_env: platform.optional_env,
             env_aliases: platform.env_aliases,
         })
         .collect()
@@ -610,7 +642,7 @@ mod tests {
         let config = parse_jsonc(
             r#"
             {
-              // gateway channels may use Hermes aliases
+              // gateway channels may use source aliases
               "schemaVersion": 1,
               "gateway": { "enabledChannels": ["weixin-ilink",], },
               "platforms": {

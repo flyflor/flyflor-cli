@@ -21,7 +21,7 @@ use super::platform::{
     PlatformRegistry, StreamDeliveryMode, enabled_platform_names_from_env,
 };
 use crate::{
-    tui::kernel::{
+    kernel::{
         command::{GatewayCommandBuilder, GatewayMessagePayload},
         envelope::EnvelopeFactory,
     },
@@ -41,8 +41,8 @@ pub fn spawn_gateway_channel_runtime() {
                 continue;
             };
             channel_log(format!(
-                "channel {} selected label={} implemented={}",
-                entry.name, entry.label, entry.implemented
+                "channel {} selected label={} native_runtime={}",
+                entry.name, entry.label, entry.native_runtime
             ));
             match (entry.factory.as_ref())() {
                 Ok(adapter) => spawn_platform_runtime(adapter),
