@@ -13,6 +13,7 @@ pub enum GatewayShellCommand {
     PrintHelp,
     Runtime(GatewayRuntimeCommand),
     Config(GatewayConfigCommand),
+    Channel(GatewayChannelCommand),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -34,6 +35,11 @@ pub enum GatewayConfigCommand {
     Doctor,
     Enable(String),
     Disable(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GatewayChannelCommand {
+    Doctor(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -112,9 +118,48 @@ where
             parse_gateway_runtime_args(GatewayRuntimeCommand::Logs, "flyflor gateway logs", args)
         }
         "config" => parse_gateway_config_args(args),
+        "channel" => parse_gateway_channel_args(args),
         value if value.starts_with('-') => Err(CliParseError::UnknownOption(value.to_string())),
         value => Err(CliParseError::UnknownCommand(format!("gateway {value}"))),
     }
+}
+
+fn parse_gateway_channel_args<I>(
+    mut args: std::iter::Peekable<I>,
+) -> Result<CliCommand, CliParseError>
+where
+    I: Iterator<Item = String>,
+{
+    let Some(arg) = args.next() else {
+        return Ok(CliCommand::Gateway(GatewayShellCommand::PrintHelp));
+    };
+    let command = match arg.as_str() {
+        "-h" | "--help" => return Ok(CliCommand::Gateway(GatewayShellCommand::PrintHelp)),
+        "doctor" => {
+            let Some(platform) = args.next() else {
+                return Err(CliParseError::UnexpectedArgument {
+                    command: "flyflor gateway channel doctor".to_string(),
+                    argument: "<missing-channel>".to_string(),
+                });
+            };
+            GatewayChannelCommand::Doctor(platform)
+        }
+        value if value.starts_with('-') => {
+            return Err(CliParseError::UnknownOption(value.to_string()));
+        }
+        value => {
+            return Err(CliParseError::UnknownCommand(format!(
+                "gateway channel {value}"
+            )));
+        }
+    };
+    if let Some(argument) = args.next() {
+        return Err(CliParseError::UnexpectedArgument {
+            command: "flyflor gateway channel".to_string(),
+            argument,
+        });
+    }
+    Ok(CliCommand::Gateway(GatewayShellCommand::Channel(command)))
 }
 
 fn parse_gateway_config_args<I>(
@@ -240,6 +285,8 @@ Commands:
   config enable <name> Enable a gateway channel
   config disable <name>
                        Disable a gateway channel
+  channel doctor <name>
+                       Diagnose one channel, including planned/unavailable state
 
 Options:
   -h, --help           Print gateway help
@@ -333,6 +380,16 @@ mod tests {
             parse_args(["gateway", "config", "disable", "feishu"]),
             Ok(CliCommand::Gateway(GatewayShellCommand::Config(
                 GatewayConfigCommand::Disable("feishu".to_string())
+            )))
+        );
+    }
+
+    #[test]
+    fn parses_gateway_channel_commands() {
+        assert_eq!(
+            parse_args(["gateway", "channel", "doctor", "telegram"]),
+            Ok(CliCommand::Gateway(GatewayShellCommand::Channel(
+                GatewayChannelCommand::Doctor("telegram".to_string())
             )))
         );
     }

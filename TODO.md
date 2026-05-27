@@ -121,3 +121,17 @@
 - [x] 新增 `scripts/codex-lanes.sh`，固定 `gateway-core-runtime`、`channels-western`、`channels-cn`、`channels-longtail`、`tui-ask-layout` 五个 worktree/tmux lane，并自动软链 `node_modules` 与 `target`。
 - [ ] 逐 lane 落地真实 channel adapter：先补 generic core runtime tests，再分 western、CN、longtail adapters；每个 adapter 至少覆盖 config doctor、missing credential unavailable、inbound normalization、outbound send、ASK/approval metadata。
 - [ ] 把 TUI 目录继续按 `progress/components/layout/context/bulletin_board` 拆分，但不改 ASK 菜单视觉样式。
+
+## 2026-05-28 gateway channel doctor core
+
+- [x] 增加 `flyflor gateway channel doctor <name>` 单通道诊断入口，输出 `native/planned`、`available/unavailable`、required/missing env、features 和 details。
+- [x] `config doctor` 输出补充 availability，不改变已有 enabled-channel 诊断入口。
+- [x] 增加全 27 channel 缺失 required env 时均为 explicit unavailable 的 generic core tests；planned channel 即使 env 存在也不能假装 available。
+- [ ] 继续按 lane 落地真实 adapter；本轮只闭合 generic doctor/status 契约，不宣称 western、CN、longtail adapter 已完成。
+
+## 2026-05-28 live TUI send closure
+
+- [x] 修复 tmux 场景下普通 Enter 被识别成 Control+Enter 后只换行的问题，保证真实 TUI smoke 能提交消息。
+- [x] 加强 `smoke:live:tui`，等待 CLI socket connected 后再驱动输入，并强制断言 kernel log 出现 `gateway.message.send` 与 `mcp.tool.call.executed`。
+- [x] 复跑 `cargo fmt --check && cargo test --quiet` 与真实 `npm run smoke:live:tui`，保留报告目录 `.flyflor-cli/live/2026-05-27T17-24-11-303Z/`。
+- [ ] 后续 TUI 需要区分 `Confirm` 与 `ASK`：高风险工具授权只渲染 Confirm，不进入 ASK 结晶样式；ASK 答案发送后等待内核自动续跑。

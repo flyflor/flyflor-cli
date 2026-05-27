@@ -44,6 +44,7 @@ pub const SUBSCRIPTION_EVENT_TYPES: &[&str] = &[
     "tool.budget.exhausted",
     "sandbox.tool.approval.requested",
     "sandbox.tool.approval.denied",
+    "sandbox.tool.confirmed",
     "sandbox.tool.denied",
     "subagent.batch.start",
     "subagent.child.start",

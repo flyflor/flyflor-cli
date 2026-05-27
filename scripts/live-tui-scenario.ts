@@ -170,15 +170,15 @@ function startTui(wsUrl: string): void {
     "cargo run -- --dev",
   ].join(" ");
   tmux(["new-session", "-d", "-s", tuiSession, "-n", "tui", `cd ${shellQuote(root)} && ${command}`]);
-  sleep(4_000);
+  waitForText(cliLogPath, "socket connected", 45_000, "CLI socket connection");
 }
 
 function driveTui(): void {
-  sendKeys("/approve");
+  sendKeys("/confirm");
   sleep(500);
   sendKeys([
     "Use the Flyflor live TUI path. Reply briefly after inspecting live-note.txt if tools are available; ",
-    "if a permission ASK appears, wait for my menu confirmation.",
+    "if a tool Confirm appears, wait for my menu confirmation.",
   ].join(""));
   sleep(18_000);
   sendKeys("/ask");
@@ -212,6 +212,15 @@ function waitForWsUrl(path: string): string {
   throw new Error(`kernel did not publish ws url in ${path}`);
 }
 
+function waitForText(path: string, needle: string, timeoutMs: number, label: string): void {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (existsSync(path) && readFileSync(path, "utf8").includes(needle)) return;
+    sleep(250);
+  }
+  throw new Error(`${label} did not appear in ${path}`);
+}
+
 function buildReport(wsUrl: string, capture: string): LiveTuiReport {
   const cliLog = existsSync(cliLogPath) ? readFileSync(cliLogPath, "utf8") : "";
   const kernelLog = existsSync(kernelLogPath) ? readFileSync(kernelLogPath, "utf8") : "";
@@ -222,6 +231,8 @@ function buildReport(wsUrl: string, capture: string): LiveTuiReport {
   if (cliLog.includes("panic")) failedChecks.push("CLI log contains panic");
   if (kernelLog.includes("turn.error")) failedChecks.push("kernel log contains turn.error");
   if (!kernelLog.includes("start.ready")) failedChecks.push("kernel log lacks socket start.ready");
+  if (!kernelLog.includes("gateway.message.send")) failedChecks.push("kernel log lacks gateway.message.send");
+  if (!kernelLog.includes("mcp.tool.call.executed")) failedChecks.push("kernel log lacks mcp.tool.call.executed");
   return {
     capturePath,
     cliLogPath,

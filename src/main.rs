@@ -40,7 +40,10 @@ mod i18n;
 mod kernel;
 mod tui;
 
-use cli::{CliCommand, GatewayConfigCommand, GatewayRuntimeCommand, GatewayShellCommand};
+use cli::{
+    CliCommand, GatewayChannelCommand, GatewayConfigCommand, GatewayRuntimeCommand,
+    GatewayShellCommand,
+};
 use i18n::{CopyKey, text as ui_text, text_key as ui_text_key};
 use kernel::{
     client::GatewayClientBootstrap,
@@ -108,6 +111,9 @@ fn main() -> io::Result<()> {
         Ok(CliCommand::Gateway(GatewayShellCommand::Config(command))) => {
             run_gateway_config_command(command)
         }
+        Ok(CliCommand::Gateway(GatewayShellCommand::Channel(command))) => {
+            run_gateway_channel_command(command)
+        }
         Err(error) => {
             eprintln!("{error}");
             eprintln!();
@@ -164,9 +170,10 @@ fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
             );
             for item in report.channels {
                 println!(
-                    "{}\tnative_runtime={}\tenabled={}\tpresent_env={}\tmissing_env={}",
+                    "{}\tnative_runtime={}\tavailability={}\tenabled={}\tpresent_env={}\tmissing_env={}",
                     item.name,
                     item.native_runtime,
+                    item.availability.as_str(),
                     item.enabled,
                     item.present_env_aliases.join(","),
                     item.missing_env_aliases.join(",")
@@ -192,6 +199,32 @@ fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
                 report.enabled,
                 report.path.display()
             );
+        }
+    }
+    Ok(())
+}
+
+fn run_gateway_channel_command(command: GatewayChannelCommand) -> io::Result<()> {
+    match command {
+        GatewayChannelCommand::Doctor(platform) => {
+            let item = tui::gateway::config::doctor_channel_default(&platform)
+                .map_err(io::Error::other)?;
+            println!(
+                "flyflor gateway channel={} status={} availability={} native_runtime={} enabled={}",
+                item.name,
+                item.status,
+                item.availability.as_str(),
+                item.native_runtime,
+                item.enabled
+            );
+            println!("required_env={}", item.present_required_env.join(","));
+            println!(
+                "missing_required_env={}",
+                item.missing_required_env.join(",")
+            );
+            println!("optional_env={}", item.optional_env.join(","));
+            println!("features={}", item.features.join(","));
+            println!("details={}", item.details.join(","));
         }
     }
     Ok(())
@@ -368,7 +401,6 @@ fn handle_key(app: &mut App, key: KeyEvent) {
         KeyCode::Tab if app.handle_menu_confirm_or_next(false) => {}
         KeyCode::Enter
             if key.modifiers.contains(KeyModifiers::ALT)
-                || key.modifiers.contains(KeyModifiers::CONTROL)
                 || key.modifiers.contains(KeyModifiers::SHIFT) =>
         {
             app.insert_input_text("\n")
@@ -697,6 +729,12 @@ fn slash_commands() -> Vec<SlashCommand> {
             title: ui_text_key("slash.yolo.title"),
             detail: ui_text_key("slash.yolo.detail"),
             kind: SlashCommandKind::Yolo,
+        },
+        SlashCommand {
+            name: "confirm",
+            title: ui_text_key("slash.confirm.title"),
+            detail: ui_text_key("slash.confirm.detail"),
+            kind: SlashCommandKind::Confirm,
         },
         SlashCommand {
             name: "approve",
@@ -1317,6 +1355,7 @@ enum SlashCommandKind {
     Help,
     Yolo,
     Approve,
+    Confirm,
     Undo,
     Model,
     Status,
@@ -2218,7 +2257,7 @@ impl App {
             SlashCommandKind::Help => {
                 self.right_source.blackboard_status = ui_text(CopyKey::HelpCommandText);
             }
-            SlashCommandKind::Approve => {
+            SlashCommandKind::Approve | SlashCommandKind::Confirm => {
                 self.tool_approval_next_turn = !self.tool_approval_next_turn;
                 self.right_source.blackboard_status = if self.tool_approval_next_turn {
                     ui_text(CopyKey::ApprovalEnabled)
@@ -5820,7 +5859,7 @@ fn gateway_message_payload(
         payload = payload.metadata(metadata.clone());
     }
     if yolo || approve_tools {
-        payload = payload.tool_approvals(true, true);
+        payload = payload.tool_confirmations(true, true);
     }
     payload
 }
@@ -8791,6 +8830,7 @@ mod tests {
         app.confirm_command_palette_selection();
         assert!(app.input.is_empty());
         assert!(app.right_source.blackboard_status.contains("/help"));
+        assert!(app.right_source.blackboard_status.contains("/confirm"));
         assert!(app.right_source.blackboard_status.contains("/approve"));
         assert!(app.right_source.blackboard_status.contains("/undo"));
         assert!(app.right_source.blackboard_status.contains("/yolo"));
@@ -9367,6 +9407,21 @@ mod tests {
 
         assert_eq!(app.input, "第一行\n第二行\n第三行");
         assert_eq!(app.turns.len(), initial_turns);
+    }
+
+    #[test]
+    fn control_enter_submits_for_tmux_compatibility() {
+        let mut app = App::new();
+        app.socket_connected = true;
+        app.input = "tmux enter".to_string();
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL),
+        );
+
+        assert_eq!(app.turns.last().expect("sent turn").user, "tmux enter");
+        assert!(app.input.is_empty());
     }
 
     #[test]
@@ -10687,13 +10742,13 @@ mod tests {
     }
 
     #[test]
-    fn slash_command_approve_sets_one_turn_tool_approval_without_yolo() {
+    fn slash_command_confirm_sets_one_turn_tool_confirmation_without_yolo() {
         let mut app = App::new();
         let (tx, rx) = mpsc::channel();
         app.socket_tx = tx;
         app.socket_connected = true;
 
-        app.input = "/approve".to_string();
+        app.input = "/confirm".to_string();
         app.refresh_command_palette();
         app.confirm_command_palette_selection();
 
@@ -11798,7 +11853,7 @@ mod tests {
     }
 
     #[test]
-    fn gateway_message_builder_can_approve_tools_without_yolo() {
+    fn gateway_message_builder_can_confirm_tools_without_yolo() {
         let message = gateway_command_builder()
             .gateway_message_send(
                 1,
@@ -11827,7 +11882,7 @@ mod tests {
             payload
                 .get("context")
                 .and_then(|context| context.get("toolApprovals"))
-                .and_then(|approval| approval.get("mcpToolCalls"))
+                .and_then(|confirmation| confirmation.get("mcpToolCalls"))
                 .and_then(Value::as_bool),
             Some(true)
         );
@@ -11835,7 +11890,7 @@ mod tests {
             payload
                 .get("context")
                 .and_then(|context| context.get("toolApprovals"))
-                .and_then(|approval| approval.get("userToolCalls"))
+                .and_then(|confirmation| confirmation.get("userToolCalls"))
                 .and_then(Value::as_bool),
             Some(true)
         );

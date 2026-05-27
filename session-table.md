@@ -56,3 +56,29 @@ tmux list-sessions | rg '^ff-cli-'
 | tui-ask-layout | `feature/tui-ask-layout` | `.worktrees/tui-ask-layout` | `tmux attach -t ff-cli-tui-ask-layout` | `tmux capture-pane -t ff-cli-tui-ask-layout:0.0 -p -S -5000` | ASK/layout 拆分，不破坏 ASK 菜单视觉样式。 |
 
 依赖软链规则：脚本只软链 `node_modules` 与 `target`；禁止软链运行态 home、账号状态、密钥、日志数据库或 kernel DB。
+
+## 2026-05-28 本轮主控真实交互记录
+
+主控没有启动新的实现型子 Codex；沿用固定 lane 表和现有 preview tmux session。查看命令：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core)-'
+tmux capture-pane -t ff-cli-preview-gateway-core-runtime:0.0 -p -S -5000
+tmux capture-pane -t ff-cli-preview-tui-ask-layout:0.0 -p -S -5000
+tmux capture-pane -t ff-core-preview-kernel-tool-loop:0.0 -p -S -5000
+```
+
+本轮真实 TUI smoke 证据：
+
+```bash
+npm run smoke:live:tui
+cat .flyflor-cli/live/2026-05-27T17-24-11-303Z/report.json
+rg 'gateway.message.send|mcp.tool.call.executed|turn.error' .flyflor-cli/live/2026-05-27T17-24-11-303Z/kernel.log
+```
+
+复检后的最新 TUI smoke 证据：
+
+```bash
+cat .flyflor-cli/live/2026-05-27T17-34-31-376Z/report.json
+rg 'gateway.message.send|mcp.tool.call.executed|turn.error' .flyflor-cli/live/2026-05-27T17-34-31-376Z/kernel.log
+```

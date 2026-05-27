@@ -152,7 +152,7 @@ pub struct GatewayMessagePayload {
     context: Option<Value>,
     context_fork_id: Option<String>,
     metadata: Option<Value>,
-    tool_approvals: Option<GatewayToolApprovals>,
+    tool_confirmations: Option<GatewayToolConfirmations>,
     mode: &'static str,
     yolo: bool,
     conversation_key: String,
@@ -170,7 +170,7 @@ impl GatewayMessagePayload {
             context: None,
             context_fork_id: None,
             metadata: None,
-            tool_approvals: None,
+            tool_confirmations: None,
             mode: "act",
             yolo: false,
             conversation_key: "flyflor-cli".to_string(),
@@ -196,8 +196,8 @@ impl GatewayMessagePayload {
         self
     }
 
-    pub fn tool_approvals(mut self, mcp_tool_calls: bool, user_tool_calls: bool) -> Self {
-        self.tool_approvals = Some(GatewayToolApprovals {
+    pub fn tool_confirmations(mut self, mcp_tool_calls: bool, user_tool_calls: bool) -> Self {
+        self.tool_confirmations = Some(GatewayToolConfirmations {
             mcp_tool_calls,
             user_tool_calls,
         });
@@ -241,7 +241,9 @@ impl GatewayMessagePayload {
                 "displayName": self.display_name
             }
         });
-        if self.context.is_some() || self.context_fork_id.is_some() || self.tool_approvals.is_some()
+        if self.context.is_some()
+            || self.context_fork_id.is_some()
+            || self.tool_confirmations.is_some()
         {
             let mut context = Map::new();
             if let Some(Value::Object(existing)) = self.context {
@@ -250,12 +252,12 @@ impl GatewayMessagePayload {
             if let Some(context_fork_id) = self.context_fork_id {
                 context.insert("contextForkId".to_string(), json!(context_fork_id));
             }
-            if let Some(approvals) = self.tool_approvals {
+            if let Some(confirmations) = self.tool_confirmations {
                 context.insert(
                     "toolApprovals".to_string(),
                     json!({
-                        "mcpToolCalls": approvals.mcp_tool_calls,
-                        "userToolCalls": approvals.user_tool_calls
+                        "mcpToolCalls": confirmations.mcp_tool_calls,
+                        "userToolCalls": confirmations.user_tool_calls
                     }),
                 );
             }
@@ -270,7 +272,7 @@ impl GatewayMessagePayload {
 }
 
 #[derive(Clone, Debug)]
-struct GatewayToolApprovals {
+struct GatewayToolConfirmations {
     mcp_tool_calls: bool,
     user_tool_calls: bool,
 }
@@ -548,7 +550,7 @@ mod tests {
                     .identity("weixin:chat-2", "thread-2", "user-2", "User Two")
                     .chat_type("direct")
                     .context_fork_id("fork-2")
-                    .tool_approvals(true, true),
+                    .tool_confirmations(true, true),
             )
             .into_value();
 

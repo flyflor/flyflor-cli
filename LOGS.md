@@ -196,3 +196,30 @@
   原因：用户要求支持参考项目的所有 channel 和细节，同时要求源码不出现参考项目关键字，并且必须能查看子 Codex working 细节。
   验证：已运行 `cargo check` 通过；待运行 `cargo fmt --check`、`cargo test`、`git diff --check`。
   风险：本条先闭合 registry/config/doctor/协作脚手架，除 Weixin 现有 adapter 外，其余平台仍标记 `planned` 并 explicit unavailable，真实 adapter 需要后续按 lane 分批落地。
+
+- 状态：完成
+  执行者：main-codex
+  范围：gateway-channel-doctor-core
+  变动文件：`src/cli/mod.rs`、`src/main.rs`、`src/tui/gateway/config.rs`、`TODO.md`、`LOGS.md`
+  摘要：新增 `flyflor gateway channel doctor <name>`，并在 doctor item 中加入 availability；`config doctor` 同步输出 availability。新增 generic core tests，证明全 27 channel 在 required env 缺失时均为 explicit unavailable，planned channel 即使 env 存在也不会返回假 available。
+  原因：真实 adapter 分 lane 落地前，必须先把 channel status/doctor 的失败态和不可假成功契约固定住，避免 TUI/gateway 把未实现通道当成可用执行面。
+  验证：`cargo fmt --check`；`cargo check`；`cargo test`（216 passed）。
+  风险：本轮只覆盖 doctor/status 契约；除既有 Weixin native runtime 外，planned channel 的真实 inbound/outbound adapter 仍未落地。
+
+- 状态：完成
+  执行者：main-codex
+  范围：live-tui-send-closure
+  变动文件：`src/main.rs`、`scripts/live-tui-scenario.ts`、`TODO.md`、`LOGS.md`
+  摘要：修复 tmux 下普通 Enter 被当成换行导致 live smoke 只把内容留在 composer 的问题；live TUI 脚本改为等待 CLI socket connected 后再驱动，并要求 kernel log 出现真实 `gateway.message.send` 与 `mcp.tool.call.executed`。
+  原因：用户要求 Rust TUI 必须用真实交互测试，不接受只渲染界面或 mock；原 smoke 断言过弱，无法证明 TUI 到内核工具调用闭环。
+  验证：`cargo fmt --check && cargo test --quiet`（217 passed）；`npm run smoke:live:tui`（ok true，failedChecks 空，报告目录 `.flyflor-cli/live/2026-05-27T17-24-11-303Z/`）。
+  风险：本轮只修复提交键和 smoke 强度；Confirm/ASK 视觉与协议分层仍待后续拆分。
+
+- 状态：完成
+  执行者：main-codex
+  范围：cli-final-verification
+  变动文件：`LOGS.md`
+  摘要：补充最终验证证据：真实 TUI smoke 复跑到最新报告目录，本地 npm pack/install smoke 通过，diff whitespace 检查通过。
+  原因：提交前需要证明 Rust TUI、npm 全局安装路径和工作区差异均处于可交付状态。
+  验证：`npm run smoke:live:tui`（ok true，报告目录 `.flyflor-cli/live/2026-05-27T17-34-31-376Z/`）；`npm run smoke:npm:local`（local npm pack/install smoke passed）；`git diff --check`。
+  风险：`Confirm` 独立 UI 仍未拆出；当前 TUI 继续消费既有 sandbox approval/ASK metadata。

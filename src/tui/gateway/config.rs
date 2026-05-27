@@ -88,6 +88,7 @@ pub struct ChannelDoctorItem {
     pub enabled: bool,
     pub native_runtime: bool,
     pub status: &'static str,
+    pub availability: ChannelAvailability,
     pub features: Vec<&'static str>,
     pub details: &'static [&'static str],
     pub present_env_aliases: Vec<&'static str>,
@@ -95,6 +96,21 @@ pub struct ChannelDoctorItem {
     pub present_required_env: Vec<&'static str>,
     pub missing_required_env: Vec<&'static str>,
     pub optional_env: &'static [&'static str],
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ChannelAvailability {
+    Available,
+    Unavailable,
+}
+
+impl ChannelAvailability {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Available => "available",
+            Self::Unavailable => "unavailable",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -244,6 +260,11 @@ pub fn doctor_default() -> Result<ChannelDoctorReport, GatewayConfigError> {
     doctor_at(&config_path_from_env())
 }
 
+pub fn doctor_channel_default(platform: &str) -> Result<ChannelDoctorItem, GatewayConfigError> {
+    let config = read_config_if_exists(&config_path_from_env())?.unwrap_or_default();
+    doctor_channel_in_config(&config, platform)
+}
+
 pub fn set_channel_default(
     platform: &str,
     enabled: bool,
@@ -295,42 +316,77 @@ pub fn doctor_at(path: &Path) -> Result<ChannelDoctorReport, GatewayConfigError>
     let channels = channel_list(&config)
         .into_iter()
         .filter(|item| item.enabled)
-        .map(|item| {
-            let (present_env_aliases, missing_env_aliases) = item
-                .env_aliases
-                .iter()
-                .copied()
-                .partition(|alias| env::var(alias).is_ok_and(|value| !value.trim().is_empty()));
-            ChannelDoctorItem {
-                name: item.name,
-                enabled: item.enabled,
-                native_runtime: item.native_runtime,
-                status: item.status,
-                features: item.features,
-                details: item.details,
-                present_env_aliases,
-                missing_env_aliases,
-                present_required_env: item
-                    .required_env
-                    .iter()
-                    .copied()
-                    .filter(|alias| env::var(alias).is_ok_and(|value| !value.trim().is_empty()))
-                    .collect(),
-                missing_required_env: item
-                    .required_env
-                    .iter()
-                    .copied()
-                    .filter(|alias| !env::var(alias).is_ok_and(|value| !value.trim().is_empty()))
-                    .collect(),
-                optional_env: item.optional_env,
-            }
-        })
+        .map(doctor_item_from_list_item)
         .collect();
     Ok(ChannelDoctorReport {
         path: path.to_path_buf(),
         validation,
         channels,
     })
+}
+
+fn doctor_channel_in_config(
+    config: &GatewayConfig,
+    platform: &str,
+) -> Result<ChannelDoctorItem, GatewayConfigError> {
+    let Some(canonical) = canonical_platform_name(platform) else {
+        return Err(GatewayConfigError::UnknownPlatform(platform.to_string()));
+    };
+    channel_list(config)
+        .into_iter()
+        .find(|item| item.name == canonical)
+        .map(doctor_item_from_list_item)
+        .ok_or_else(|| GatewayConfigError::UnknownPlatform(platform.to_string()))
+}
+
+fn doctor_item_from_list_item(item: ChannelListItem) -> ChannelDoctorItem {
+    doctor_item_from_list_item_with_env(item, env_present)
+}
+
+fn doctor_item_from_list_item_with_env(
+    item: ChannelListItem,
+    mut has_env: impl FnMut(&str) -> bool,
+) -> ChannelDoctorItem {
+    let (present_env_aliases, missing_env_aliases) = item
+        .env_aliases
+        .iter()
+        .copied()
+        .partition(|alias| has_env(alias));
+    let present_required_env = item
+        .required_env
+        .iter()
+        .copied()
+        .filter(|alias| has_env(alias))
+        .collect::<Vec<_>>();
+    let missing_required_env = item
+        .required_env
+        .iter()
+        .copied()
+        .filter(|alias| !has_env(alias))
+        .collect::<Vec<_>>();
+    let availability = if item.native_runtime && missing_required_env.is_empty() {
+        ChannelAvailability::Available
+    } else {
+        ChannelAvailability::Unavailable
+    };
+    ChannelDoctorItem {
+        name: item.name,
+        enabled: item.enabled,
+        native_runtime: item.native_runtime,
+        status: item.status,
+        availability,
+        features: item.features,
+        details: item.details,
+        present_env_aliases,
+        missing_env_aliases,
+        present_required_env,
+        missing_required_env,
+        optional_env: item.optional_env,
+    }
+}
+
+fn env_present(alias: &str) -> bool {
+    env::var(alias).is_ok_and(|value| !value.trim().is_empty())
 }
 
 pub fn set_channel_at(
@@ -707,6 +763,66 @@ mod tests {
         assert!(!disabled.platforms["weixin"].enabled);
         assert!(enabled_channel_names(&disabled).is_empty());
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn single_channel_doctor_reports_unavailable_without_required_env() {
+        let config = GatewayConfig::default();
+        let weixin = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "weixin")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(weixin, |_| false);
+
+        assert_eq!(item.name, "weixin");
+        assert_eq!(item.availability, ChannelAvailability::Unavailable);
+        assert_eq!(item.missing_required_env, vec!["WEIXIN_ACCOUNT_ID"]);
+        assert!(item.native_runtime);
+    }
+
+    #[test]
+    fn all_channels_are_unavailable_when_required_env_is_missing() {
+        let config = GatewayConfig::default();
+        let items = channel_list(&config)
+            .into_iter()
+            .map(|item| doctor_item_from_list_item_with_env(item, |_| false))
+            .collect::<Vec<_>>();
+
+        assert_eq!(items.len(), 27);
+        assert!(
+            items
+                .iter()
+                .all(|item| item.availability == ChannelAvailability::Unavailable)
+        );
+        assert!(
+            items
+                .iter()
+                .all(|item| !item.missing_required_env.is_empty())
+        );
+        assert!(
+            items
+                .iter()
+                .any(|item| item.name == "weixin" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
+                .any(|item| item.name == "telegram" && !item.native_runtime)
+        );
+    }
+
+    #[test]
+    fn planned_channel_stays_unavailable_even_with_env_present() {
+        let config = GatewayConfig::default();
+        let telegram = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "telegram")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(telegram, |_| true);
+
+        assert_eq!(item.availability, ChannelAvailability::Unavailable);
+        assert!(!item.native_runtime);
+        assert!(item.missing_required_env.is_empty());
     }
 
     fn temp_config_path(label: &str) -> PathBuf {
