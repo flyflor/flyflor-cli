@@ -129,3 +129,11 @@
   原因：CLI/gateway 只能作为 thin client，经 `/ws` 发送 routing/audit metadata 与显式上下文，不能把 history/read-model snapshots 或 channel identity 当作 prompt context。
   验证：`cargo fmt --check`；`cargo check`；`cargo test`（198 passed）；`git diff --check`。
   风险：运行时代码中仍有历史内部函数/test 名称包含旧词汇，本次未做不相关重命名，避免扩大行为面。
+
+- 状态：完成
+  执行者：gateway-jsonc-config
+  范围：gateway-jsonc-config-registry
+  摘要：新增 CLI-owned `gateway.jsonc` schema、JSONC parser、init/validate/doctor/channel toggle helpers、Hermes-compatible channel registry、canonical aliases 与 env alias metadata；channel env fallback 在未设置 `FLYFLOR_GATEWAY_CHANNELS` 时读取默认 JSONC enabled channels。
+  原因：gateway config 必须由 CLI 侧拥有，使用 JSONC 作为唯一配置格式，同时保持 no-session contract 和 explicit unavailable/degraded channel surface。
+  验证：`cargo fmt --check`；`cargo check`；`cargo test`；`git diff --check`。
+  风险：本 lane 只提供配置/schema/registry 能力，真实平台 listener 与 transport 由后续 channel lanes 接入。

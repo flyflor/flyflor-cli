@@ -37,6 +37,8 @@ use unicode_width::UnicodeWidthStr;
 
 mod cli;
 mod gateway;
+mod gateway_config;
+mod gateway_platforms;
 mod tui;
 
 use cli::{CliCommand, GatewayRuntimeCommand, GatewayShellCommand};

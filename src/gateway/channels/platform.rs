@@ -2,6 +2,8 @@ use std::{collections::HashMap, env, sync::Arc};
 
 use serde_json::Value;
 
+use crate::gateway_platforms::all_platforms;
+
 use super::weixin::WeixinIlinkAdapter;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -142,23 +144,20 @@ pub struct PlatformRegistry {
 impl PlatformRegistry {
     pub fn with_builtin_platforms() -> Self {
         let mut registry = Self::default();
-        registry.register(PlatformEntry {
-            name: "weixin",
-            label: "Weixin iLink",
-            factory: Box::new(|| {
-                WeixinIlinkAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
-            }),
-            implemented: true,
-        });
-        for (name, label) in [
-            ("telegram", "Telegram"),
-            ("slack", "Slack"),
-            ("discord", "Discord"),
-            ("webhook", "Webhook"),
-            ("api", "API"),
-            ("wecom", "WeCom"),
-            ("whatsapp", "WhatsApp"),
-        ] {
+        for platform in all_platforms() {
+            let name = platform.name;
+            let label = platform.label;
+            if name == "weixin" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        WeixinIlinkAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    implemented: true,
+                });
+                continue;
+            }
             registry.register(PlatformEntry {
                 name,
                 label,
@@ -189,12 +188,15 @@ impl PlatformRegistry {
 pub fn enabled_platform_names_from_env() -> Vec<String> {
     env::var("FLYFLOR_GATEWAY_CHANNELS")
         .or_else(|_| env::var("FLYFLOR_CHANNELS"))
-        .unwrap_or_default()
-        .split(',')
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(|name| name.to_ascii_lowercase())
-        .collect()
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+                .map(|name| name.to_ascii_lowercase())
+                .collect()
+        })
+        .unwrap_or_else(|_| crate::gateway_config::enabled_channel_names_from_default_config())
 }
 
 struct UnsupportedPlatformAdapter {
@@ -245,6 +247,11 @@ mod tests {
         assert!(
             registry
                 .get("telegram")
+                .is_some_and(|entry| !entry.implemented)
+        );
+        assert!(
+            registry
+                .get("microsoft-teams")
                 .is_some_and(|entry| !entry.implemented)
         );
 
