@@ -479,4 +479,84 @@ mod tests {
         assert_eq!(PlanAction::Revise.as_str(), "revise");
         assert_eq!(PlanAction::Abandon.as_str(), "abandon");
     }
+
+    #[test]
+    fn channel_identity_does_not_create_context() {
+        let message = builder()
+            .gateway_message_send(
+                20,
+                GatewayMessagePayload::new("channel-message-1", "from channel")
+                    .identity("weixin:chat-1", "thread-1", "user-1", "User One")
+                    .chat_type("group")
+                    .metadata(json!({
+                        "gateway": {
+                            "platform": "weixin",
+                            "chatId": "chat-1"
+                        }
+                    })),
+            )
+            .into_value();
+
+        let payload = message.get("payload").expect("payload");
+        assert_eq!(
+            payload.get("conversationKey").and_then(Value::as_str),
+            Some("weixin:chat-1")
+        );
+        assert_eq!(
+            payload.get("threadId").and_then(Value::as_str),
+            Some("thread-1")
+        );
+        assert_eq!(
+            payload.get("chatType").and_then(Value::as_str),
+            Some("group")
+        );
+        assert_eq!(
+            payload
+                .get("user")
+                .and_then(|user| user.get("id"))
+                .and_then(Value::as_str),
+            Some("user-1")
+        );
+        assert!(payload.get("context").is_none());
+        assert_eq!(
+            payload
+                .get("metadata")
+                .and_then(|metadata| metadata.get("gateway"))
+                .and_then(|gateway| gateway.get("platform"))
+                .and_then(Value::as_str),
+            Some("weixin")
+        );
+    }
+
+    #[test]
+    fn explicit_context_does_not_absorb_channel_identity() {
+        let message = builder()
+            .gateway_message_send(
+                21,
+                GatewayMessagePayload::new("channel-message-2", "approved")
+                    .identity("weixin:chat-2", "thread-2", "user-2", "User Two")
+                    .chat_type("direct")
+                    .context_fork_id("fork-2")
+                    .tool_approvals(true, true),
+            )
+            .into_value();
+
+        let context = message
+            .get("payload")
+            .and_then(|payload| payload.get("context"))
+            .and_then(Value::as_object)
+            .expect("context object");
+        let mut keys = context.keys().map(String::as_str).collect::<Vec<_>>();
+        keys.sort_unstable();
+
+        assert_eq!(keys, vec!["contextForkId", "toolApprovals"]);
+        assert_eq!(
+            context.get("contextForkId").and_then(Value::as_str),
+            Some("fork-2")
+        );
+        assert!(context.get("conversationKey").is_none());
+        assert!(context.get("threadId").is_none());
+        assert!(context.get("chatType").is_none());
+        assert!(context.get("user").is_none());
+    }
 }

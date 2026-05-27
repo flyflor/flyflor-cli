@@ -74,7 +74,7 @@ Dev runner 和 Rust TUI 都会把诊断追加到 `.flyflor-cli/logs/dev.log`。
 - pending ASK 不会劫持普通 composer 输入；只有显式 ASK menu 操作才发送 continuation metadata。
 - 公民权限 answer 发送结构化 metadata，不写成普通消息 token。
 - Plan confirmation/revision/abandon command。
-- Context fork creation 和 active fork session display。
+- Context fork creation 和 active fork display。
 - Route、recall、blackboard、tool、ASK、plan、fork、loop、subagent event 的 Run timeline。
 - Exo timeline rows 不展示 `unknown`，最后一个 Exo 自动展开，并对 detail 请求去重。
 - 右侧 TODO、Run、model/status、context-window 和 fork-memory section。

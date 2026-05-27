@@ -78,3 +78,10 @@
 - [x] 将顶层 `context/`、`layout/` 移入 `src/tui/context/` 与 `src/tui/layout/`。
 - [x] 将 TUI kernel socket module 从 `src/tui/gateway/` 改为 `src/tui/kernel/`，并准备 `src/cli/`、`src/gateway/channels/` roots。
 - [x] 复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check` 与 stale path search。
+
+## 2026-05-27 kernel contract audit
+
+- [x] 对齐 kernel socket docs，明确 channel identity 只进入 routing/audit fields，不进入 prompt context。
+- [x] 增加 gateway message payload tests，证明 `conversationKey`、`threadId`、`chatType`、`user` 和 gateway metadata 不会创建 `payload.context`。
+- [x] 明确 `history.list` 与 read-model snapshots 只用于 query/display，不回灌为 `gateway.message.send` prompt context。
+- [x] 复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。

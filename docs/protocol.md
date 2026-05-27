@@ -59,6 +59,14 @@ The UI can send these socket commands:
 
 `gateway.message.send` includes conversation, thread, user identity, optional `context.contextForkId`, optional continuation metadata, optional one-turn `context.toolApprovals`, and TUI mode metadata: `act`, `plan`, or `act` with `yolo: true`.
 
+## Routing And Context Boundary
+
+Channel identity is routing and audit metadata only. It maps to `conversationKey`, `threadId`, `chatType`, `user`, and gateway-specific metadata. The CLI must not move channel identity into `payload.context` or treat it as prompt continuity.
+
+`gateway.message.send.payload.context` is the explicit context boundary. Valid context fields are `activeScope`, `contextForkId`, `skillNames`, and `toolApprovals`. The current CLI sends `contextForkId` for explicit fork work and `toolApprovals` for one-turn approval; future `activeScope` or `skillNames` payloads must come from explicit user/kernel state, not from channel identity or history data.
+
+`history.list` and read-model snapshots are query/display data. They may narrow the UI by `contextForkId`, but they must not be fed back into `gateway.message.send` as prompt context.
+
 `/approve` submits `context.toolApprovals.mcpToolCalls=true` and `context.toolApprovals.userToolCalls=true` for the next send only. YOLO also submits these approvals, but carries separate high-privilege metadata. The CLI must not execute approved tools locally.
 
 Pending ASK state must not hijack ordinary composer input. Normal typed text remains a normal `gateway.message.send` without continuation metadata unless the user explicitly confirms an ASK menu action.
@@ -84,7 +92,7 @@ The CLI maps kernel snapshots into local state:
 - `gateway.status.snapshot`, `gateway.status`, or `status.snapshot` become `StatusSnapshot` model/provider/context data.
 - `fork.memory.snapshot`, `memory.fork.snapshot`, `fork.memory`, `fork.memory.result`, or `fork.list.snapshot` become `ForkMemorySnapshot`.
 - `thought.snapshot`, `recall.snapshot`, `memory.snapshot`, `blackboard.snapshot`, and `ask.snapshot` become synthetic context turns for display.
-- `fork.snapshot` creates or enters a fork session when a fork id is present.
+- `fork.snapshot` creates or enters an active fork view when a fork id is present.
 
 Snapshot parsing is deliberately tolerant about payload shape because the CLI is a compatibility display layer. Tolerance does not make the CLI authoritative; kernel state still wins.
 

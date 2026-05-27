@@ -121,3 +121,11 @@
   摘要：将 TUI helper modules 收拢到 `src/tui/`，将 context/layout 收拢到 `src/tui/context/` 与 `src/tui/layout/`，将 kernel WebSocket client/envelope/command/subscription 从 `src/tui/gateway/` 改名为 `src/tui/kernel/`；同时把 CLI parser 放入 `src/cli/`，把 gateway runtime 和 channel adapters 放入 `src/gateway/` 与 `src/gateway/channels/`。
   原因：为 CLI/gateway/TUI ownership 建立目录边界，保持 TUI 只通过 kernel socket/gateway payload 消费，不引入 session concept 或行为改动。
   验证：`cargo fmt --check`; `cargo check`; `cargo test`（196 passed）；`git diff --check`; `rg "tui::gateway|src/tui/gateway|crate::gateway" src` 仅剩新外部 `crate::gateway::channels` 路径。
+
+- 状态：完成
+  执行者：kernel-contract-audit
+  范围：channel-identity-explicit-context-contract
+  摘要：阅读 kernel socket/control/runtime turn docs 后，更新 CLI 协议与 TUI 文档，明确 channel identity 只映射到 `conversationKey`、`threadId`、`chatType`、`user` 和 gateway metadata；`payload.context` 只承载显式 `activeScope`、`contextForkId`、`skillNames`、`toolApprovals`。新增 gateway message payload tests，证明 channel identity 不会创建或污染 `payload.context`。
+  原因：CLI/gateway 只能作为 thin client，经 `/ws` 发送 routing/audit metadata 与显式上下文，不能把 history/read-model snapshots 或 channel identity 当作 prompt context。
+  验证：`cargo fmt --check`；`cargo check`；`cargo test`（198 passed）；`git diff --check`。
+  风险：运行时代码中仍有历史内部函数/test 名称包含旧词汇，本次未做不相关重命名，避免扩大行为面。
