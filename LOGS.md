@@ -114,3 +114,11 @@
   原因：原 npm 包装只覆盖当前平台 build，不能作为发布前交叉编译入口；需要让 `npm i -g flyflor-cli` 的 bundled binary 目录可由发布流程明确产出。
   验证：`node scripts/build-binary.cjs --target "$(rustc -vV | sed -n 's/^host: //p')"`；`npm run smoke:npm:local`；`FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local`；`cargo fmt --check`；`cargo check`；`cargo test`（196 passed）；`git diff --check`。另以 unsupported target smoke 验证未知 triple 会失败退出。
   风险：非 host triple 是否能实际链接仍取决于本机安装的 Rust target 和系统 cross linker；脚本现在会把失败显式暴露给发布流程。
+
+- 状态：完成
+  执行者：kernel-contract-audit
+  范围：channel-identity-explicit-context-contract
+  摘要：阅读 kernel socket/control/runtime turn docs 后，更新 CLI 协议与 TUI 文档，明确 channel identity 只映射到 `conversationKey`、`threadId`、`chatType`、`user` 和 gateway metadata；`payload.context` 只承载显式 `activeScope`、`contextForkId`、`skillNames`、`toolApprovals`。新增 gateway message payload tests，证明 channel identity 不会创建或污染 `payload.context`。
+  原因：CLI/gateway 只能作为 thin client，经 `/ws` 发送 routing/audit metadata 与显式上下文，不能把 history/read-model snapshots 或 channel identity 当作 prompt context。
+  验证：`cargo fmt --check`；`cargo check`；`cargo test`（198 passed）；`git diff --check`。
+  风险：运行时代码中仍有历史内部函数/test 名称包含旧词汇，本次未做不相关重命名，避免扩大行为面。

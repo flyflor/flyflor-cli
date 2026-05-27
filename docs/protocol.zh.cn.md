@@ -59,6 +59,14 @@ UI 可以发送这些 socket commands：
 
 `gateway.message.send` 包含 conversation、thread、user identity、可选 `context.contextForkId`、可选 continuation metadata、可选单轮 `context.toolApprovals`，以及 TUI mode metadata：`act`、`plan` 或带 `yolo: true` 的 `act`。
 
+## Routing And Context Boundary
+
+Channel identity 只用于 routing 和 audit metadata。它映射到 `conversationKey`、`threadId`、`chatType`、`user` 和 gateway-specific metadata。CLI 不得把 channel identity 移入 `payload.context`，也不得把它当作 prompt continuity。
+
+`gateway.message.send.payload.context` 是显式 context 边界。合法 context fields 只有 `activeScope`、`contextForkId`、`skillNames` 和 `toolApprovals`。当前 CLI 会为显式 fork work 发送 `contextForkId`，为单轮 approval 发送 `toolApprovals`；未来的 `activeScope` 或 `skillNames` payload 必须来自显式用户/kernel state，不能来自 channel identity 或 history data。
+
+`history.list` 和 read-model snapshots 是 query/display data。它们可以用 `contextForkId` 收窄 UI 范围，但不得被回灌进 `gateway.message.send` 作为 prompt context。
+
 `/approve` 只为下一次发送提交 `context.toolApprovals.mcpToolCalls=true` 和 `context.toolApprovals.userToolCalls=true`。YOLO 也会提交这些 approvals，但它额外携带高权限 metadata。CLI 不得本地执行已批准工具。
 
 pending ASK state 不得劫持普通 composer input。普通 typed text 仍作为不带 continuation metadata 的普通 `gateway.message.send` 发送，除非用户显式确认 ASK menu action。
@@ -84,7 +92,7 @@ CLI 将 kernel snapshots 映射到本地状态：
 - `gateway.status.snapshot`、`gateway.status` 或 `status.snapshot` 变成 `StatusSnapshot` model/provider/context data。
 - `fork.memory.snapshot`、`memory.fork.snapshot`、`fork.memory`、`fork.memory.result` 或 `fork.list.snapshot` 变成 `ForkMemorySnapshot`。
 - `thought.snapshot`、`recall.snapshot`、`memory.snapshot`、`blackboard.snapshot` 和 `ask.snapshot` 变成用于展示的 synthetic context turns。
-- `fork.snapshot` 在存在 fork id 时创建或进入 fork session。
+- `fork.snapshot` 在存在 fork id 时创建或进入 active fork view。
 
 Snapshot parsing 对 payload shape 保持兼容宽容，因为 CLI 是 compatibility display layer。宽容不代表 CLI 权威；kernel state 仍然胜出。
 

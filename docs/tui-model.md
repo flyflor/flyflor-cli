@@ -6,7 +6,7 @@ The TUI displays kernel state and local interaction state together. Kernel state
 
 The main screen has:
 
-- A header with socket/history status, session label, and turn count.
+- A header with socket/history status, connection/fork label, and turn count.
 - A left transcript with user prompts, assistant answers, context rows, ASK continuation rows, blackboard/replay rows, recall/thought rows, and create fork affordances.
 - A right panel with TODO, Run timeline, model/status, context window, and fork/memory.
 - A composer footer with interaction mode, active fork label, and local command hints.
@@ -43,11 +43,11 @@ Fork data appears in three places:
 
 - Transcript context rows aggregate `planning.contextForks` metadata and expose fork summaries.
 - The create-fork row or `/fork` command sends `fork.create` from the latest structured assistant turn anchor.
-- The header and composer footer show the active fork session label when the CLI enters a fork.
+- The header and composer footer show the active fork label when the CLI enters a fork.
 
-When a `fork.snapshot` creates an active fork session, the CLI stores the root turns, clears the transcript for the fork conversation, requests fork-scoped history, and carries `context.contextForkId` on subsequent messages.
+When a `fork.snapshot` enters an active fork view, the CLI stores the root turns, clears the transcript for the fork conversation, requests fork-scoped history, and carries `context.contextForkId` on subsequent messages.
 
-`/exit fork` leaves the fork session and restores root or parent state when available. The kernel remains the authority for actual fork data.
+`/exit fork` leaves the active fork view and restores root or parent display state when available. The kernel remains the authority for actual fork data.
 
 ## Blackboard Display
 

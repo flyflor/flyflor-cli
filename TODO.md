@@ -71,3 +71,10 @@
 - [x] `build:binary` 支持显式 Rust target triple，并输出到对应 `dist/<platform>-<arch>`。
 - [x] `build:binary:all` 提供发布批量构建入口。
 - [x] 复跑 host target 显式构建、npm local/global-prefix smoke、Cargo 门禁和 `git diff --check`。
+
+## 2026-05-27 kernel contract audit
+
+- [x] 对齐 kernel socket docs，明确 channel identity 只进入 routing/audit fields，不进入 prompt context。
+- [x] 增加 gateway message payload tests，证明 `conversationKey`、`threadId`、`chatType`、`user` 和 gateway metadata 不会创建 `payload.context`。
+- [x] 明确 `history.list` 与 read-model snapshots 只用于 query/display，不回灌为 `gateway.message.send` prompt context。
+- [x] 复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`。

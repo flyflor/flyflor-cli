@@ -79,7 +79,7 @@ The dev runner and Rust TUI both append diagnostics to `.flyflor-cli/logs/dev.lo
 - Pending ASK does not capture ordinary composer input; only explicit ASK menu actions send continuation metadata
 - Citizen permission answers send structured metadata, not plain message tokens
 - Plan confirmation/revision/abandon commands
-- Context fork creation and active fork session display
+- Context fork creation and active fork display
 - Run timeline for route, recall, blackboard, tool, ASK, plan, fork, loop, and
   subagent events
 - Exo timeline rows avoid `unknown`, auto-expand the latest Exo, and dedupe detail requests
