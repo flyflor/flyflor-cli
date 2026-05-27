@@ -138,6 +138,14 @@
   验证：`cargo fmt --check`；`cargo check`；`cargo test`；`git diff --check`。
   风险：本 lane 只提供配置/schema/registry 能力，真实平台 listener 与 transport 由后续 channel lanes 接入。
 
+- 状态：完成
+  执行者：main-codex
+  范围：src-tui-directory-alignment
+  摘要：按最新目录约束，将已合并的 `cli`、`gateway runtime`、`gateway channels`、`gateway config`、`gateway platforms` 全部迁入 `src/tui`，并让 `src/main.rs` 只通过 `mod tui` 访问 `tui::cli` 与 `tui::gateway`。
+  原因：用户已将此前功能迁入 `src/tui`，本轮只保证 `src/tui` 内部结构可用，避免继续维护外层 `src/cli` 或 `src/gateway` 分层。
+  验证：`cargo fmt --check`；`cargo check`；`cargo test`（207 passed）；`git diff --check`。
+  风险：`gateway config` 的部分 public API 当前为后续 CLI command wiring 预留，编译会提示 dead_code warning；本轮未扩大到未完成的全渠道 concrete adapter merge。
+
 - 状态：进行中
   执行者：gateway-bridge-streaming
   范围：gateway-channel-ws-bridge-streaming

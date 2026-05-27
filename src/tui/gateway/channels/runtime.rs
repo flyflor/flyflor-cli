@@ -490,7 +490,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    use crate::gateway::channels::platform::{
+    use crate::tui::gateway::channels::platform::{
         ChannelCapabilityState, ChannelResult, ChatType, PlatformSendOutcome,
     };
 

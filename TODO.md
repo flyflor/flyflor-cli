@@ -93,6 +93,12 @@
 - [x] 增加 JSONC parse/init/validate/doctor/channel toggle tests，禁止 session/sessions config fields。
 - [x] 将未显式设置 `FLYFLOR_GATEWAY_CHANNELS` 时的 channel 选择回退到默认 JSONC config。
 
+## 2026-05-27 src/tui directory alignment
+
+- [x] 将已合并的 CLI shell、gateway runtime、gateway channels、gateway JSONC config 和 platform registry 统一迁入 `src/tui`。
+- [x] `src/main.rs` 只挂载 `mod tui`，通过 `tui::cli` 与 `tui::gateway` 使用功能入口。
+- [x] 复跑 `cargo fmt --check`、`cargo check`、`cargo test`、`git diff --check`，确认 `src/tui` 内结构可用。
+
 ## 2026-05-27 gateway bridge streaming
 
 - [x] inbound normalized channel message 映射为 `gateway.message.send`，保留 routing/audit/reply anchor 与显式 `payload.context`。

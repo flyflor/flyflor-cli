@@ -35,20 +35,15 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 use unicode_width::UnicodeWidthStr;
 
-mod cli;
-mod gateway;
-mod gateway_config;
-mod gateway_platforms;
 mod tui;
 
-use cli::{CliCommand, GatewayRuntimeCommand, GatewayShellCommand};
-use gateway::runtime as gateway_runtime;
 use tui::ask::{
     command::AskAnswer,
     parser::{ask_menu_from_turn_metadata, continuation_from_metadata, continuation_from_value},
     state::AskMenu,
     view::visible_item_count,
 };
+use tui::cli::{CliCommand, GatewayRuntimeCommand, GatewayShellCommand};
 #[cfg(test)]
 use tui::clipboard::{OSC52_MAX_BYTES, osc52_sequence};
 use tui::clipboard::{read_clipboard_text, write_text_to_clipboard};
@@ -60,6 +55,7 @@ use tui::fork::{
     state::ActiveForkSession,
     view::session_summary,
 };
+use tui::gateway::runtime as gateway_runtime;
 use tui::i18n::{CopyKey, text as ui_text, text_key as ui_text_key};
 use tui::input::{
     input_cursor_position, input_index_for_column, input_line_start_and_column,
@@ -92,16 +88,16 @@ const EXO_ACTIVITY_FRAMES: [&str; 8] = ["⣏⣹", "⣇⣸", "⣧⣤", "⣿⣴", 
 const CITIZEN_PERMISSION_CHOICES: [&str; 3] = ["continue-tools", "keep-budget", "keep-subagents"];
 
 fn main() -> io::Result<()> {
-    if gateway::runtime::should_run_foreground_from_env() {
-        return gateway::runtime::run_foreground();
+    if tui::gateway::runtime::should_run_foreground_from_env() {
+        return tui::gateway::runtime::run_foreground();
     }
 
-    match cli::parse_env_args() {
+    match tui::cli::parse_env_args() {
         Ok(CliCommand::RunTui) => run_tui_main(),
-        Ok(CliCommand::PrintTopLevelHelp) => print_shell_text(&cli::top_level_help()),
-        Ok(CliCommand::PrintVersion) => print_shell_text(&cli::version_text()),
+        Ok(CliCommand::PrintTopLevelHelp) => print_shell_text(&tui::cli::top_level_help()),
+        Ok(CliCommand::PrintVersion) => print_shell_text(&tui::cli::version_text()),
         Ok(CliCommand::Gateway(GatewayShellCommand::PrintHelp)) => {
-            print_shell_text(&cli::gateway_help())
+            print_shell_text(&tui::cli::gateway_help())
         }
         Ok(CliCommand::Gateway(GatewayShellCommand::Runtime(command))) => {
             run_gateway_runtime_command(command)
@@ -109,7 +105,7 @@ fn main() -> io::Result<()> {
         Err(error) => {
             eprintln!("{error}");
             eprintln!();
-            eprint!("{}", cli::top_level_help());
+            eprint!("{}", tui::cli::top_level_help());
             process::exit(2);
         }
     }
