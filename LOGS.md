@@ -114,3 +114,11 @@
   原因：原 npm 包装只覆盖当前平台 build，不能作为发布前交叉编译入口；需要让 `npm i -g flyflor-cli` 的 bundled binary 目录可由发布流程明确产出。
   验证：`node scripts/build-binary.cjs --target "$(rustc -vV | sed -n 's/^host: //p')"`；`npm run smoke:npm:local`；`FLYFLOR_NPM_SMOKE_HELP=1 npm run smoke:npm:local`；`cargo fmt --check`；`cargo check`；`cargo test`（196 passed）；`git diff --check`。另以 unsupported target smoke 验证未知 triple 会失败退出。
   风险：非 host triple 是否能实际链接仍取决于本机安装的 Rust target 和系统 cross linker；脚本现在会把失败显式暴露给发布流程。
+
+- 状态：完成
+  执行者：gateway-jsonc-config
+  范围：gateway-jsonc-config-registry
+  摘要：新增 CLI-owned `gateway.jsonc` schema、JSONC parser、init/validate/doctor/channel toggle helpers、Hermes-compatible channel registry、canonical aliases 与 env alias metadata；channel env fallback 在未设置 `FLYFLOR_GATEWAY_CHANNELS` 时读取默认 JSONC enabled channels。
+  原因：gateway config 必须由 CLI 侧拥有，使用 JSONC 作为唯一配置格式，同时保持 no-session contract 和 explicit unavailable/degraded channel surface。
+  验证：`cargo fmt --check`；`cargo check`；`cargo test`；`git diff --check`。
+  风险：本 lane 只提供配置/schema/registry 能力，真实平台 listener 与 transport 由后续 channel lanes 接入。

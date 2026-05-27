@@ -38,6 +38,8 @@ use unicode_width::UnicodeWidthStr;
 mod cli_shell;
 mod clipboard;
 mod context;
+mod gateway_config;
+mod gateway_platforms;
 mod gateway_runtime;
 mod input;
 mod layout;

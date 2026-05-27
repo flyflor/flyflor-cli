@@ -71,3 +71,10 @@
 - [x] `build:binary` 支持显式 Rust target triple，并输出到对应 `dist/<platform>-<arch>`。
 - [x] `build:binary:all` 提供发布批量构建入口。
 - [x] 复跑 host target 显式构建、npm local/global-prefix smoke、Cargo 门禁和 `git diff --check`。
+
+## 2026-05-27 Gateway JSONC Config
+
+- [x] 增加 CLI-owned `gateway.jsonc` schema，覆盖 core、gateway、streaming、display、platforms。
+- [x] 增加 Hermes-compatible channel registry、canonical alias、env alias metadata 和默认 platform config。
+- [x] 增加 JSONC parse/init/validate/doctor/channel toggle tests，禁止 session/sessions config fields。
+- [x] 将未显式设置 `FLYFLOR_GATEWAY_CHANNELS` 时的 channel 选择回退到默认 JSONC config。
