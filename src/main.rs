@@ -536,19 +536,20 @@ fn draw_top_bar(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         ),
     ]);
     let (status_dot, status_text) = match app.history_status {
-        HistoryStatus::Loading => (theme.blue, "loading history"),
-        HistoryStatus::Live => (theme.green, "connected"),
-        HistoryStatus::Offline => (theme.muted, "mock history"),
-        HistoryStatus::Error => (theme.pink, "history unavailable"),
+        HistoryStatus::Loading => (theme.blue, ui_text_key("history.loading")),
+        HistoryStatus::Live => (theme.green, ui_text_key("history.live")),
+        HistoryStatus::Offline => (theme.muted, ui_text_key("history.offline")),
+        HistoryStatus::Error => (theme.pink, ui_text_key("history.error")),
     };
     let right = Line::from(vec![
         Span::styled("●", Style::default().fg(status_dot)),
         Span::styled(
             format!(
-                " flyflor · {} · {} · {status_text} · {} turns",
+                " flyflor · {} · {} · {status_text} · {} {}",
                 app.interaction_mode.label(),
                 app.fork_session_label(),
-                app.turns.len()
+                app.turns.len(),
+                ui_text_key("topBar.turns")
             ),
             Style::default().fg(theme.text),
         ),
@@ -570,9 +571,40 @@ fn fork_footer_suffix(app: &App) -> String {
         .as_ref()
         .map(|fork| {
             let label = session_summary(Some(fork)).unwrap_or(&fork.fork_id);
-            format!("   fork {}", truncate_to_width(label, 18))
+            format!(
+                "   {} {}",
+                ui_text_key("fork.label"),
+                truncate_to_width(label, 18)
+            )
         })
         .unwrap_or_default()
+}
+
+fn ui_detail_status(key: &str, detail: impl AsRef<str>) -> String {
+    format!("{} · {}", ui_text_key(key), detail.as_ref())
+}
+
+fn ui_colon_status(key: &str, detail: impl AsRef<str>) -> String {
+    format!("{}：{}", ui_text_key(key), detail.as_ref())
+}
+
+fn request_failed_status(message: impl AsRef<str>) -> String {
+    ui_colon_status("status.requestFailed", message)
+}
+
+fn socket_unavailable_status(message: impl AsRef<str>) -> String {
+    ui_detail_status("status.socketUnavailable", message)
+}
+
+fn socket_worker_not_running_status() -> String {
+    ui_detail_status(
+        "status.socketWorkerNotRunning",
+        ui_text_key("status.notRunning"),
+    )
+}
+
+fn unknown_command_status(command: impl AsRef<str>) -> String {
+    ui_colon_status("command.unknown", command)
 }
 
 fn draw_left_panel(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme) {
@@ -1567,7 +1599,7 @@ impl App {
                 Err(error) => {
                     log_event(format!("clipboard paste failed {error}"));
                     self.right_source.blackboard_status =
-                        format!("clipboard unavailable · {error}");
+                        ui_detail_status("status.clipboardUnavailable", error);
                 }
             }
         }
@@ -1625,7 +1657,8 @@ impl App {
                 if let Some(status) = status {
                     self.right_source.blackboard_status = status;
                 } else if let Some(item) = item {
-                    self.right_source.blackboard_status = format!("runtime event · {}", item.title);
+                    self.right_source.blackboard_status =
+                        ui_detail_status("status.runtimeEvent", item.title);
                 }
             }
             SocketEvent::ConfirmSnapshot(records) => {
@@ -1641,13 +1674,15 @@ impl App {
                     latest_title = item.map(|item| item.title);
                 }
                 if let Some(title) = latest_title {
-                    self.right_source.blackboard_status = format!("runtime event · {title}");
+                    self.right_source.blackboard_status =
+                        ui_detail_status("status.runtimeEvent", title);
                 }
             }
             SocketEvent::ExecutionJobSnapshot(snapshot) => {
                 self.run_timeline.apply_execution_job_snapshot(&snapshot);
                 self.attach_execution_row_to_active_turn();
-                self.right_source.blackboard_status = "execution job snapshot updated".to_string();
+                self.right_source.blackboard_status =
+                    ui_text_key("status.executionJobSnapshotUpdated");
             }
             SocketEvent::ContextSnapshotLoaded(snapshot) => {
                 if let Some(turn) = turn_from_context_snapshot(&snapshot) {
@@ -1726,7 +1761,7 @@ impl App {
                 self.chat_render_key = None;
                 self.left.initial_scroll_applied = false;
                 self.left.stick_to_bottom = true;
-                self.right_source.blackboard_status = format!("已进入 fork 对话 · {fork_id}");
+                self.right_source.blackboard_status = ui_detail_status("fork.entered", &fork_id);
                 let _ = self.socket_tx.send(SocketCommand::HistoryList {
                     context_fork_id: self.active_context_fork_id.clone(),
                 });
@@ -1745,7 +1780,7 @@ impl App {
                 ));
                 if let Some(turn_index) = self.pending_turns.remove(&message_id) {
                     if let Some(turn) = self.turns.get_mut(turn_index) {
-                        turn.answer = format!("请求失败：{message}");
+                        turn.answer = request_failed_status(message);
                         turn.footer = "flyflor · turn error".to_string();
                         self.left.stick_to_bottom = true;
                     }
@@ -1759,7 +1794,7 @@ impl App {
                 log_event(format!("socket disconnected {message}"));
                 self.socket_connected = false;
                 self.history_status = HistoryStatus::Error;
-                self.right_source.blackboard_status = format!("socket unavailable · {message}");
+                self.right_source.blackboard_status = socket_unavailable_status(message.clone());
                 self.pending_fork_create = false;
                 self.fail_pending_turns(&format!("socket unavailable: {message}"));
             }
@@ -1771,28 +1806,36 @@ impl App {
         match event_type {
             "memory.task_plan.written" | "memory.task_plan.decided" => {
                 if self.socket_tx.send(SocketCommand::TaskList).is_err() {
-                    Some("task refresh failed · socket worker is not running".to_string())
+                    Some(ui_detail_status(
+                        "status.taskRefreshFailed",
+                        socket_worker_not_running_status(),
+                    ))
                 } else {
-                    Some("task plan updated · refreshing".to_string())
+                    Some(ui_detail_status(
+                        "status.taskPlanUpdated",
+                        ui_text_key("status.refreshing"),
+                    ))
                 }
             }
             "blackboard.message.appended" => {
                 let text = event_text_from_payload(event)
-                    .unwrap_or_else(|| "收到 blackboard.message.appended".to_string());
+                    .unwrap_or_else(|| ui_text_key("blackboard.messageFallback"));
                 self.right_source.blackboard_stream.push(format!(
-                    "流式记录：{}",
+                    "{}：{}",
+                    ui_text_key("blackboard.streamPrefix"),
                     truncate_to_width(&text.replace('\n', " "), 120)
                 ));
-                Some("blackboard 正在更新".to_string())
+                Some(ui_text_key("blackboard.updating"))
             }
             "blackboard.turn.end" => {
                 let summary = event_text_from_payload(event)
-                    .unwrap_or_else(|| "收到 blackboard.turn.end".to_string());
+                    .unwrap_or_else(|| ui_text_key("blackboard.turnEndFallback"));
                 self.right_source.blackboard_stream.push(format!(
-                    "回合结束：{}",
+                    "{}：{}",
+                    ui_text_key("blackboard.turnEndPrefix"),
                     truncate_to_width(&summary.replace('\n', " "), 120)
                 ));
-                Some("blackboard turn 已结束".to_string())
+                Some(ui_text_key("blackboard.turnEnded"))
             }
             _ => None,
         }
@@ -1860,7 +1903,7 @@ impl App {
             if let Some(turn) = self.turns.get_mut(turn_index)
                 && turn.answer.trim().is_empty()
             {
-                turn.answer = format!("请求失败：{message}");
+                turn.answer = request_failed_status(message);
                 turn.footer = "flyflor · send error".to_string();
             }
         }
@@ -1952,11 +1995,12 @@ impl App {
             .as_ref()
             .map(|fork| {
                 format!(
-                    "fork {}",
+                    "{} {}",
+                    ui_text_key("fork.label"),
                     truncate_to_width(fork.summary.as_deref().unwrap_or(&fork.fork_id), 24)
                 )
             })
-            .unwrap_or_else(|| "root".to_string())
+            .unwrap_or_else(|| ui_text_key("fork.root"))
     }
 
     fn toggle_interaction_mode(&mut self) {
@@ -2177,7 +2221,7 @@ impl App {
             if menu.start_current_other_input() {
                 self.input.clear();
                 self.input_cursor = None;
-                self.right_source.blackboard_status = "请输入 ASK Other 回答后发送".to_string();
+                self.right_source.blackboard_status = ui_text_key("ask.otherInputRequired");
             }
             return true;
         }
@@ -2288,7 +2332,7 @@ impl App {
         else {
             let command = self.input.clone();
             self.command_palette = None;
-            self.right_source.blackboard_status = format!("未知命令：{command}");
+            self.right_source.blackboard_status = unknown_command_status(command);
             return;
         };
         self.command_palette = None;
@@ -2321,31 +2365,36 @@ impl App {
                 };
                 self.yolo_mode = self.interaction_mode.yolo();
                 self.right_source.blackboard_status = if self.yolo_mode {
-                    "YOLO 已开启：外模式/高权限，可能绕过沙箱执行".to_string()
+                    ui_text_key("yolo.enabled")
                 } else {
-                    "YOLO 已关闭：恢复普通权限模式".to_string()
+                    ui_text_key("yolo.disabled")
                 };
             }
             SlashCommandKind::Model => {
                 self.right_source.blackboard_status = format!(
-                    "模型只读 · 上下文窗口={} · 最大输出={}",
+                    "{} · {}={} · {}={}",
+                    ui_text_key("model.readOnly"),
+                    ui_text_key("rightPanel.contextWindow"),
                     self.model_context_window_tokens
                         .map(|value| value.to_string())
-                        .unwrap_or_else(|| "未收到上下文窗口".to_string()),
+                        .unwrap_or_else(|| ui_text_key("contextWindow.missing")),
+                    ui_text_key("model.maxOutput"),
                     self.max_output_tokens
                         .map(|value| value.to_string())
-                        .unwrap_or_else(|| "暂无数据".to_string())
+                        .unwrap_or_else(|| ui_text_key("common.noData"))
                 );
             }
             SlashCommandKind::Status => {
-                self.right_source.blackboard_status = "已请求刷新 status".to_string();
+                self.right_source.blackboard_status = ui_text_key("status.refreshRequested");
                 if self.socket_tx.send(SocketCommand::StatusGet).is_err() {
-                    self.right_source.blackboard_status =
-                        "status refresh failed · socket worker is not running".to_string();
+                    self.right_source.blackboard_status = ui_detail_status(
+                        "status.refreshFailed",
+                        socket_worker_not_running_status(),
+                    );
                 }
             }
             SlashCommandKind::History => {
-                self.right_source.blackboard_status = "已请求刷新历史".to_string();
+                self.right_source.blackboard_status = ui_text_key("history.refreshRequested");
                 if self
                     .socket_tx
                     .send(SocketCommand::HistoryList {
@@ -2353,8 +2402,10 @@ impl App {
                     })
                     .is_err()
                 {
-                    self.right_source.blackboard_status =
-                        "history refresh failed · socket worker is not running".to_string();
+                    self.right_source.blackboard_status = ui_detail_status(
+                        "history.refreshFailed",
+                        socket_worker_not_running_status(),
+                    );
                 }
             }
             SlashCommandKind::Fork => {
@@ -2364,43 +2415,50 @@ impl App {
                         &self.active_context_fork_id,
                     ) {
                         if self.socket_tx.send(command).is_err() {
-                            self.right_source.blackboard_status =
-                                "fork create failed · socket worker is not running".to_string();
+                            self.right_source.blackboard_status = ui_detail_status(
+                                "fork.createFailed",
+                                socket_worker_not_running_status(),
+                            );
                         } else {
                             self.mark_fork_create_pending();
                         }
                     }
                 } else {
-                    self.right_source.blackboard_status = "暂无可创建 fork 的回答".to_string();
+                    self.right_source.blackboard_status = ui_text_key("fork.noAnswerToCreate");
                 }
             }
             SlashCommandKind::Ask => {
                 if !self.open_latest_ask_menu() {
-                    self.right_source.blackboard_status = "暂无待回答 ASK".to_string();
+                    self.right_source.blackboard_status = ui_text_key("ask.nonePending");
                 }
             }
             SlashCommandKind::Blackboard => {
                 self.right_source.blackboard_status = latest_context_summary(
                     &self.turns,
                     ContextRowKind::Blackboard,
-                    "暂无 blackboard 摘要",
+                    &ui_text_key("blackboard.noSummary"),
                 );
             }
             SlashCommandKind::Todo => {
                 if self.plan_state() == PlanState::AwaitingConfirmation {
                     self.open_plan_menu();
-                    self.right_source.blackboard_status = "请选择计划操作".to_string();
+                    self.right_source.blackboard_status = ui_text_key("plan.chooseAction");
                 } else {
-                    self.right_source.blackboard_status = "已请求刷新 TODO".to_string();
+                    self.right_source.blackboard_status = ui_text_key("todo.refreshRequested");
                     if self.socket_tx.send(SocketCommand::TaskList).is_err() {
-                        self.right_source.blackboard_status =
-                            "TODO refresh failed · socket worker is not running".to_string();
+                        self.right_source.blackboard_status = ui_detail_status(
+                            "todo.refreshFailed",
+                            socket_worker_not_running_status(),
+                        );
                     }
                 }
             }
             SlashCommandKind::Memory => {
-                self.right_source.blackboard_status =
-                    latest_context_summary(&self.turns, ContextRowKind::Recall, "暂无回忆摘要");
+                self.right_source.blackboard_status = latest_context_summary(
+                    &self.turns,
+                    ContextRowKind::Recall,
+                    &ui_text_key("memory.noSummary"),
+                );
             }
         }
     }
@@ -2466,7 +2524,7 @@ impl App {
 
     fn exit_fork_session(&mut self) {
         let Some(fork) = self.active_fork.take() else {
-            self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
+            self.right_source.blackboard_status = ui_text_key("fork.notInSession");
             return;
         };
         self.active_context_fork_id = fork.parent_fork_id;
@@ -2474,12 +2532,12 @@ impl App {
             self.active_context_fork_id = Some(parent_fork.fork_id.clone());
             self.active_fork = Some(parent_fork);
             self.turns = parent_turns;
-            self.right_source.blackboard_status = "已退出当前 fork，回到父级 fork 对话".to_string();
+            self.right_source.blackboard_status = ui_text_key("fork.exitedToParentFork");
         } else if !self.root_turns.is_empty() {
             self.turns = std::mem::take(&mut self.root_turns);
-            self.right_source.blackboard_status = "已退出 fork，回到父级/root 对话".to_string();
+            self.right_source.blackboard_status = ui_text_key("fork.exitedToRoot");
         } else {
-            self.right_source.blackboard_status = "已退出 fork，回到父级/root 对话".to_string();
+            self.right_source.blackboard_status = ui_text_key("fork.exitedToRoot");
         }
         self.pending_turns.clear();
         self.requested_execution_detail_job_ids.clear();
@@ -2509,13 +2567,14 @@ impl App {
             return false;
         };
         self.ask_menu = Some(menu);
-        self.right_source.blackboard_status = format!("ASK 选项来自 turn {turn_index}");
+        self.right_source.blackboard_status =
+            ui_detail_status("ask.optionsFromTurn", turn_index.to_string());
         true
     }
 
     fn mark_fork_create_pending(&mut self) {
         self.pending_fork_create = true;
-        self.right_source.blackboard_status = "fork 创建中...".to_string();
+        self.right_source.blackboard_status = ui_text_key("fork.creating");
     }
 
     fn confirm_ask_menu_selection(&mut self) {
@@ -2525,7 +2584,7 @@ impl App {
         if menu.start_current_other_input() {
             self.input.clear();
             self.input_cursor = None;
-            self.right_source.blackboard_status = "请输入 ASK Other 回答后发送".to_string();
+            self.right_source.blackboard_status = ui_text_key("ask.otherInputRequired");
             return;
         }
         let Some(menu) = self.ask_menu.take() else {
@@ -2571,14 +2630,14 @@ impl App {
                 self.pending_plan_action = Some(PlanPendingAction::Revise);
                 self.input.clear();
                 self.input_cursor = None;
-                self.right_source.blackboard_status = "请输入计划补充后发送".to_string();
+                self.right_source.blackboard_status = ui_text_key("plan.revisionInputRequired");
             }
         }
     }
 
     fn send_plan_command(&mut self, action: PlanAction, revision: Option<String>) {
         let Some(plan_id) = self.active_plan_id() else {
-            self.right_source.blackboard_status = "暂无待确认计划 id".to_string();
+            self.right_source.blackboard_status = ui_text_key("plan.noPendingId");
             return;
         };
         if self
@@ -2591,11 +2650,13 @@ impl App {
             .is_err()
         {
             self.right_source.blackboard_status =
-                "task.plan.decide failed · socket worker is not running".to_string();
+                ui_detail_status("plan.decideFailed", socket_worker_not_running_status());
             return;
         }
-        self.right_source.blackboard_status =
-            format!("已发送计划决策：{} · {plan_id}", action.as_str());
+        self.right_source.blackboard_status = ui_detail_status(
+            "plan.decisionSent",
+            format!("{} · {plan_id}", action.as_str()),
+        );
     }
 
     fn send_ask_answers(
@@ -2636,9 +2697,9 @@ impl App {
         });
         if !socket_connected {
             if let Some(turn) = self.turns.get_mut(new_turn_index) {
-                turn.answer = format!("请求失败：socket unavailable · {}", ws_url());
+                turn.answer = request_failed_status(socket_unavailable_status(ws_url()));
             }
-            self.right_source.blackboard_status = format!("socket unavailable · {}", ws_url());
+            self.right_source.blackboard_status = socket_unavailable_status(ws_url());
             self.left.stick_to_bottom = true;
             return;
         }
@@ -2660,7 +2721,7 @@ impl App {
             .is_err()
         {
             if let Some(turn) = self.turns.get_mut(new_turn_index) {
-                turn.answer = "请求失败：socket worker is not running".to_string();
+                turn.answer = request_failed_status(socket_worker_not_running_status());
                 turn.footer = "flyflor · send error".to_string();
             }
         }
@@ -2747,38 +2808,38 @@ impl App {
         data.thinking_label = if self.interaction_mode == InteractionMode::Yolo {
             "YOLO".to_string()
         } else if self.pending_fork_create {
-            "fork 创建中".to_string()
+            ui_text_key("fork.creating")
         } else if self.is_working() {
-            "接收中".to_string()
+            ui_text_key("status.receiving")
         } else {
             self.interaction_mode.label().to_string()
         };
         data.model_stats = vec![
             StatItem {
-                label: "mode".to_string(),
+                label: ui_text_key("model.stat.mode"),
                 value: self.interaction_mode.label().to_string(),
             },
             StatItem {
-                label: "权限".to_string(),
+                label: ui_text_key("model.stat.permission"),
                 value: if self.yolo_mode {
-                    "YOLO 外模式/高权限".to_string()
+                    ui_text_key("yolo.permissionHigh")
                 } else {
-                    "普通模式".to_string()
+                    ui_text_key("yolo.permissionNormal")
                 },
             },
             StatItem {
-                label: "model".to_string(),
+                label: ui_text_key("model"),
                 value: self
                     .model_name
                     .clone()
-                    .unwrap_or_else(|| "未知模型".to_string()),
+                    .unwrap_or_else(|| ui_text_key("model.unknown")),
             },
             StatItem {
-                label: "provider".to_string(),
+                label: ui_text_key("model.provider"),
                 value: self
                     .model_provider
                     .clone()
-                    .unwrap_or_else(|| "暂无数据".to_string()),
+                    .unwrap_or_else(|| ui_text_key("common.noData")),
             },
         ];
         let context = estimate_context_window(
@@ -2808,9 +2869,9 @@ impl App {
         data.context_max = context
             .max_tokens
             .map(compact_token_count)
-            .unwrap_or_else(|| "未知".to_string());
+            .unwrap_or_else(|| ui_text_key("common.unknown"));
         data.run_timeline = self.run_timeline.clone();
-        data.footer = "Shift+Tab 切换模式".to_string();
+        data.footer = ui_text_key("rightPanel.footer");
         data
     }
 
@@ -2899,8 +2960,10 @@ impl App {
                     fork_create_command_from_turn(turn, &self.active_context_fork_id)
                 {
                     if self.socket_tx.send(command).is_err() {
-                        self.right_source.blackboard_status =
-                            "fork create failed · socket worker is not running".to_string();
+                        self.right_source.blackboard_status = ui_detail_status(
+                            "fork.createFailed",
+                            socket_worker_not_running_status(),
+                        );
                     } else {
                         self.mark_fork_create_pending();
                     }
@@ -2915,7 +2978,7 @@ impl App {
             return;
         };
         let Some(continuation) = continuation_from_turn(turn) else {
-            self.right_source.blackboard_status = "no ASK continuation on this turn".to_string();
+            self.right_source.blackboard_status = ui_text_key("ask.noContinuationOnTurn");
             return;
         };
         let text = turn.user.trim().to_string();
@@ -2943,9 +3006,9 @@ impl App {
         });
         if !socket_connected {
             if let Some(turn) = self.turns.get_mut(new_turn_index) {
-                turn.answer = format!("请求失败：socket unavailable · {}", ws_url());
+                turn.answer = request_failed_status(socket_unavailable_status(ws_url()));
             }
-            self.right_source.blackboard_status = format!("socket unavailable · {}", ws_url());
+            self.right_source.blackboard_status = socket_unavailable_status(ws_url());
             self.left.stick_to_bottom = true;
             return;
         }
@@ -2967,7 +3030,7 @@ impl App {
             .is_err()
         {
             if let Some(turn) = self.turns.get_mut(new_turn_index) {
-                turn.answer = "请求失败：socket worker is not running".to_string();
+                turn.answer = request_failed_status(socket_worker_not_running_status());
                 turn.footer = "flyflor · send error".to_string();
             }
         }
@@ -3092,11 +3155,12 @@ impl App {
         };
         match write_text_to_clipboard(&text) {
             Ok(()) => {
-                self.right_source.blackboard_status = "selection copied".to_string();
+                self.right_source.blackboard_status = ui_text_key("selection.copied");
                 log_event(format!("selection copied chars={}", text.chars().count()));
             }
             Err(error) => {
-                self.right_source.blackboard_status = format!("copy failed · {error}");
+                self.right_source.blackboard_status =
+                    ui_detail_status("selection.copyFailed", &error);
                 log_event(format!("selection copy failed {error}"));
             }
         }
@@ -3210,7 +3274,7 @@ impl App {
             if self.active_fork.is_some() {
                 self.exit_fork_session();
             } else {
-                self.right_source.blackboard_status = "当前不在 fork 对话".to_string();
+                self.right_source.blackboard_status = ui_text_key("fork.notInSession");
             }
             self.input.clear();
             self.input_cursor = None;
@@ -3221,7 +3285,7 @@ impl App {
             if self.command_palette.is_some() {
                 self.confirm_command_palette_selection();
             } else {
-                self.right_source.blackboard_status = format!("未知命令：{text}");
+                self.right_source.blackboard_status = unknown_command_status(text);
                 self.input.clear();
                 self.input_cursor = None;
             }
@@ -3233,7 +3297,7 @@ impl App {
         if !self.socket_connected {
             log_event(format!("send blocked: socket unavailable url={}", ws_url()));
             self.history_status = HistoryStatus::Error;
-            self.right_source.blackboard_status = format!("socket unavailable · {}", ws_url());
+            self.right_source.blackboard_status = socket_unavailable_status(ws_url());
             return;
         }
         let turn_index = self.turns.len();
@@ -3267,7 +3331,7 @@ impl App {
         {
             log_event("send failed: socket worker channel closed");
             if let Some(turn) = self.turns.get_mut(turn_index) {
-                turn.answer = "请求失败：socket worker is not running".to_string();
+                turn.answer = request_failed_status(socket_worker_not_running_status());
                 turn.footer = "flyflor · send error".to_string();
             }
         }
@@ -4857,9 +4921,13 @@ fn fork_memory_rows(snapshot: &ForkMemorySnapshot) -> Vec<String> {
 }
 
 fn fork_memory_rows_for_width(snapshot: &ForkMemorySnapshot, width: usize) -> Vec<String> {
-    let mut rows = vec!["fork 最近 5 条".to_string()];
+    let mut rows = vec![ui_text_key("forkMemory.recentTitle")];
     if snapshot.forks.is_empty() {
-        rows.push("fork: 暂无数据".to_string());
+        rows.push(format!(
+            "{}: {}",
+            ui_text_key("fork.label"),
+            ui_text_key("common.noData")
+        ));
     } else {
         rows.extend(
             snapshot
@@ -4868,9 +4936,12 @@ fn fork_memory_rows_for_width(snapshot: &ForkMemorySnapshot, width: usize) -> Ve
                 .take(5)
                 .enumerate()
                 .map(|(index, fork)| {
-                    let time = fork.time.as_deref().unwrap_or("时间未知");
+                    let time = fork
+                        .time
+                        .clone()
+                        .unwrap_or_else(|| ui_text_key("time.unknown"));
                     truncate_to_width(
-                        &format!("{}. {} · {}", index + 1, fork.summary, time),
+                        &format!("{}. {} · {}", index + 1, fork.summary, &time),
                         width.saturating_sub(3).max(1),
                     )
                 }),
@@ -4882,12 +4953,12 @@ fn fork_memory_rows_for_width(snapshot: &ForkMemorySnapshot, width: usize) -> Ve
 
 fn brain_db_label(snapshot: &ForkMemorySnapshot) -> String {
     match snapshot.brain_db_status.as_deref() {
-        Some("unavailable") => "不可用".to_string(),
-        Some("unknown") => "未收到".to_string(),
+        Some("unavailable") => ui_text_key("common.unavailable"),
+        Some("unknown") => ui_text_key("common.notReceived"),
         _ => snapshot
             .brain_db_human
             .clone()
-            .unwrap_or_else(|| "未收到".to_string()),
+            .unwrap_or_else(|| ui_text_key("common.notReceived")),
     }
 }
 
@@ -9646,7 +9717,7 @@ mod tests {
         assert!(
             app.right_source
                 .blackboard_status
-                .contains("socket unavailable")
+                .contains(&ui_text_key("status.socketUnavailable"))
         );
     }
 
@@ -10564,7 +10635,11 @@ mod tests {
         assert!(!model.contains("空闲"));
         assert!(!model.contains("ws:"));
         assert!(!model.contains(DEFAULT_WS_URL));
-        assert!(model.contains("model: 未知模型"));
+        assert!(model.contains(&format!(
+            "{}: {}",
+            ui_text_key("model"),
+            ui_text_key("model.unknown")
+        )));
     }
 
     #[test]
@@ -11282,7 +11357,7 @@ mod tests {
         assert!(
             app.right_source
                 .blackboard_status
-                .contains("task plan updated")
+                .contains(&ui_text_key("status.taskPlanUpdated"))
         );
         assert!(
             app.run_timeline

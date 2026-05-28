@@ -808,3 +808,12 @@
   原因：延续多语言红线，清理 `src/main.rs` 中 owner 明确、风险较小的生产 UI 文案，保留协议 token、测试 fixture 和状态归一化匹配词不动。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：仍有 blackboard/status/fork/context detail 等历史文案散落在 `src/main.rs`，需要后续按 owner 拆模块时继续迁移。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-main-status-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 `src/main.rs` 中顶部连接状态、runtime/status 反馈、fork 状态、selection 反馈、right-panel mode/model/fork-memory 文案继续接入 i18n。
+  原因：用户指出 flyflor-cli 已配置多语言但生产 UI 仍有硬编码；本轮继续按明确 owner 小批量清理，不改 TUI 布局和视觉结构。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮只清理用户可见 UI copy；协议 token、日志、测试 fixture、状态归一化匹配词和 `/ws` 行为不变；`src/main.rs` 中仍有上下文窗口估算等历史文案待后续 owner 拆分时继续迁移。
