@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use crate::tui::gateway::platforms::all_platforms;
 
 use super::bluebubbles::BlueBubblesAdapter;
+use super::discord::DiscordAdapter;
 use super::email::EmailAdapter;
 use super::homeassistant::HomeAssistantAdapter;
 use super::irc::IrcAdapter;
@@ -275,6 +276,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "discord" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        DiscordAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "ntfy" {
                 registry.register(PlatformEntry {
                     name,
@@ -502,6 +514,11 @@ mod tests {
         assert!(
             registry
                 .get("telegram")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("discord")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(

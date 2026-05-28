@@ -265,3 +265,12 @@
 - [x] Gateway registry/doctor 将 Email 标记为 native，并收紧 capability 只声明当前真实可用的 env payload / plain SMTP text。
 - [x] 新增 Email 本地 mock SMTP smoke：env message -> `gateway.message.send` -> `turn.final` -> SMTP DATA。
 - [ ] 后续补 IMAP polling、TLS/STARTTLS、OAuth/app password profiles、HTML stripping、attachment cache、thread discovery 和 noreply policy；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Discord Native Channel Adapter
+
+- [x] 新增 Discord REST native adapter，支持 channel messages polling 和 create message 出站。
+- [x] Discord 入站 normalization 覆盖 guild/channel route、author allowlist、bot/self filter、source message id 和 channel metadata。
+- [x] Discord outbound 覆盖 Bot token auth、allowed_mentions 空 parse、message_reference reply、text chunking、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 Discord 标记为 native，并收紧 capability 只声明当前真实可用的 REST polling / group text。
+- [x] 新增 Discord 本地 mock HTTP smoke：messages poll -> `gateway.message.send` -> `turn.final` -> create message。
+- [ ] 后续补 Gateway websocket events、interactions/slash commands、approval components、typing、message edit/stream update、attachments/media、voice 和 richer thread/DM routing；这些能力当前仍保持 explicit unavailable 或未声明。

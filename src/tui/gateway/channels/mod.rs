@@ -1,4 +1,5 @@
 pub mod bluebubbles;
+pub mod discord;
 pub mod email;
 pub mod homeassistant;
 pub mod irc;

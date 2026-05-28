@@ -601,3 +601,21 @@
   原因：确认 Email 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 env JSON message 到 `/ws` 再到 SMTP DATA reply 的进程级闭环。
   验证：`cargo test email -- --nocapture`（5 passed）；`npm run smoke:gateway:email`（ok: true）；`cargo test gateway -- --nocapture`（97 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（289 passed）；`git diff --check`。
   风险：本轮只实现 env payload 与 plain SMTP text path；IMAP polling、TLS/STARTTLS、OAuth/app password profiles、HTML stripping、attachment cache、thread discovery 和 noreply policy 后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：discord-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/discord.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/discord-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Discord REST native adapter 与 `smoke:gateway:discord`，完成 messages poll 入站、`gateway.message.send`、`turn.final`、create message 出站的本地 HTTP mock 闭环。
+  原因：继续推进 western channel 真实 adapter；Discord REST polling/send path 可本地验证 `/ws` 血管层连通，同时避免把 Gateway websocket、interactions、components、media、voice 等未完成能力提前宣称 native。
+  验证：待运行 `cargo test discord -- --nocapture`、`npm run smoke:gateway:discord`、格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 REST channel messages polling 与 create message text path；Gateway websocket events、slash commands、approval components、typing、edit/stream update、attachments/media 和 voice 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：discord-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Discord REST native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Discord 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 channel messages poll 到 `/ws` 再到 create message reply 的进程级闭环。
+  验证：`cargo test discord -- --nocapture`（5 passed）；`npm run smoke:gateway:discord`（ok: true）；`cargo test gateway -- --nocapture`（102 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（294 passed）；`git diff --check`。
+  风险：本轮只实现 REST channel messages polling 与 create message text path；Gateway websocket events、slash commands、approval components、typing、edit/stream update、attachments/media、voice 和 richer thread/DM routing 后续继续补。

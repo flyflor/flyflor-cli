@@ -812,6 +812,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "discord" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "webhook" && item.native_runtime)
         );
         assert!(
@@ -867,18 +872,18 @@ mod tests {
         assert!(
             items
                 .iter()
-                .any(|item| item.name == "discord" && !item.native_runtime)
+                .any(|item| item.name == "slack" && !item.native_runtime)
         );
     }
 
     #[test]
     fn planned_channel_stays_unavailable_even_with_env_present() {
         let config = GatewayConfig::default();
-        let discord = channel_list(&config)
+        let slack = channel_list(&config)
             .into_iter()
-            .find(|item| item.name == "discord")
+            .find(|item| item.name == "slack")
             .unwrap();
-        let item = doctor_item_from_list_item_with_env(discord, |_| true);
+        let item = doctor_item_from_list_item_with_env(slack, |_| true);
 
         assert_eq!(item.availability, ChannelAvailability::Unavailable);
         assert!(!item.native_runtime);
@@ -897,6 +902,26 @@ mod tests {
         assert_eq!(item.availability, ChannelAvailability::Available);
         assert!(item.native_runtime);
         assert_eq!(item.present_required_env, vec!["TELEGRAM_BOT_TOKEN"]);
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn discord_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let discord = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "discord")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(discord, |env| {
+            matches!(env, "DISCORD_BOT_TOKEN" | "DISCORD_HOME_CHANNEL")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["DISCORD_BOT_TOKEN", "DISCORD_HOME_CHANNEL"]
+        );
         assert!(item.missing_required_env.is_empty());
     }
 
