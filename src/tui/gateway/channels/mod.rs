@@ -1,3 +1,4 @@
+pub mod matrix;
 pub mod ntfy;
 pub mod platform;
 pub mod runtime;

@@ -185,3 +185,15 @@ tmux capture-pane -t ff-cli-preview-gateway-core-runtime:0.0 -p -S -5000
 tmux capture-pane -t ff-cli-preview-tui-ask-layout:0.0 -p -S -5000
 npm run smoke:gateway:ntfy
 ```
+
+## 2026-05-28 Matrix Channel Adapter 主控切片
+
+本轮未新增实现型子 Codex；由主控在主 worktree 完成 Matrix native adapter 与本地 mock live smoke。沿用固定 lane 表，当前可用下列命令查看历史 session 或 preview 工作细节：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core|wm-)'
+tmux capture-pane -t ff-cli-preview-gateway-core-runtime:0.0 -p -S -5000
+tmux capture-pane -t ff-cli-preview-tui-ask-layout:0.0 -p -S -5000
+cargo test matrix -- --nocapture
+npm run smoke:gateway:matrix
+```

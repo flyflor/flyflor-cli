@@ -439,3 +439,21 @@
   原因：确认 ntfy daemon 真实进程链路可从 mock ntfy poll 进入 `/ws` gateway bridge，并把 `turn.final` 通过 HTTP POST publish 回 ntfy topic，同时避免成功轮询 tight loop。
   验证：`npm run smoke:gateway:ntfy`（ok: true，1 GET + 1 POST）；`cargo test poll_interval_defaults_to_one_second_and_allows_override_value -- --nocapture`；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（238 passed）；`git diff --check`。
   风险：本 smoke 使用本地 mock kernel，不依赖真实 Flyflor 内核推理；真实第三方 ntfy server 仍依赖用户 topic/token 环境。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：matrix-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/matrix.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/matrix-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Matrix Client-Server HTTP native adapter 与 `smoke:gateway:matrix`，完成 `/sync` 入站、`gateway.message.send`、`turn.final`、`m.room.message` 出站的本地 mock 闭环。
+  原因：继续推进 western channel 真实 adapter，Matrix 可用本地 homeserver mock 验证进程级 `/ws` 血管层闭环；同时避免把 E2EE、media、reaction、rich formatting 等未完成能力提前宣称 native。
+  验证：已运行 `cargo test matrix -- --nocapture`（5 passed）与 `npm run smoke:gateway:matrix`（ok: true）；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 Matrix plain text HTTP sync/send；E2EE、thread、reaction approval、media/file 后续继续 explicit unavailable。
+
+- 状态：完成
+  执行者：main-codex
+  范围：matrix-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Matrix native adapter、mock live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Matrix 已作为真实 native adapter 接入 registry/doctor/runtime，同时 Discord 等未实现 planned channel 仍保持 explicit unavailable，不假成功。
+  验证：`cargo test matrix -- --nocapture`（5 passed）；`npm run smoke:gateway:matrix`（ok: true）；`cargo test gateway -- --nocapture`（51 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（243 passed）；`git diff --check`。
+  风险：本轮只实现 Matrix plain text HTTP sync/send；E2EE、thread、reaction approval、media/file 后续继续 explicit unavailable。

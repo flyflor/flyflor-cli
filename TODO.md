@@ -184,3 +184,12 @@
 - [x] ntfy outbound 覆盖 4096 字符分片、token header、explicit media unavailable 和 curl error 分类。
 - [x] Gateway registry/doctor 将 ntfy 标记为 native，并新增测试守住 native runtime 列表包含 Telegram、Weixin、Webhook、ntfy。
 - [x] 后续补 ntfy 本地 mock HTTP smoke：poll JSONL -> `gateway.message.send` -> `turn.final` -> publish POST。
+
+## 2026-05-28 Matrix Native Channel Adapter
+
+- [x] 新增 Matrix Client-Server HTTP native adapter，支持 `/sync` 入站和 `m.room.message` 出站。
+- [x] Matrix 入站 normalization 覆盖 room route、sender allowlist、self-message filter、source event metadata 和 plain text body。
+- [x] Matrix outbound 覆盖 room path encoding、send transaction id、typing indicator、text chunking、explicit media unavailable 和 Matrix error 分类。
+- [x] Gateway registry/doctor 将 Matrix 标记为 native，并收紧 capability 只声明当前真实可用的 text/typing/polling/group chat。
+- [x] 新增 Matrix 本地 mock HTTP smoke：sync event -> `gateway.message.send` -> `turn.final` -> send PUT。
+- [ ] 后续补 Matrix E2EE、rich formatting、thread、reaction approval 和 media/file 能力；这些能力在当前 adapter 中仍保持 explicit unavailable。

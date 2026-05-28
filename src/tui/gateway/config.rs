@@ -822,6 +822,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "matrix" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "discord" && !item.native_runtime)
         );
     }
@@ -882,6 +887,29 @@ mod tests {
         assert_eq!(item.availability, ChannelAvailability::Available);
         assert!(item.native_runtime);
         assert_eq!(item.present_required_env, vec!["NTFY_TOPIC"]);
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn matrix_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let matrix = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "matrix")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(matrix, |env| {
+            matches!(
+                env,
+                "MATRIX_HOMESERVER" | "MATRIX_ACCESS_TOKEN" | "MATRIX_USER_ID"
+            )
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["MATRIX_HOMESERVER", "MATRIX_ACCESS_TOKEN", "MATRIX_USER_ID"]
+        );
         assert!(item.missing_required_env.is_empty());
     }
 

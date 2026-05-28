@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::tui::gateway::platforms::all_platforms;
 
+use super::matrix::MatrixAdapter;
 use super::ntfy::NtfyAdapter;
 use super::telegram::TelegramBotAdapter;
 use super::webhook::WebhookAdapter;
@@ -277,6 +278,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "matrix" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        MatrixAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "weixin" {
                 registry.register(PlatformEntry {
                     name,
@@ -404,6 +416,11 @@ mod tests {
         assert!(
             registry
                 .get("ntfy")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("matrix")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(

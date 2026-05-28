@@ -347,29 +347,14 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "MATRIX_USER_ID",
             "FLYFLOR_MATRIX_ACCESS_TOKEN",
         ],
-        status: PlatformRuntimeStatus::Planned,
-        capability: cap!(
-            inbound_media,
-            outbound_media,
-            typing,
-            reactions,
-            read_receipts,
-            message_edit,
-            approval_buttons,
-            threads,
-            group_chat,
-            quote_reply,
-            file_download,
-            file_upload,
-            voice,
-            websocket
-        ),
+        status: PlatformRuntimeStatus::Native,
+        capability: cap!(typing, group_chat, polling),
         details: &[
-            "E2EE degradation",
+            "client-server sync polling",
             "room routing",
-            "read receipts",
-            "rich formatting",
-            "exec approval",
+            "plain text messages",
+            "typing indicator",
+            "E2EE/media/reactions explicit unavailable",
         ],
     },
     PlatformMetadata {
@@ -1322,7 +1307,10 @@ mod tests {
             .map(|platform| platform.name)
             .collect::<Vec<_>>();
 
-        assert_eq!(native, vec!["telegram", "weixin", "webhook", "ntfy"]);
+        assert_eq!(
+            native,
+            vec!["telegram", "matrix", "weixin", "webhook", "ntfy"]
+        );
     }
 
     #[test]
