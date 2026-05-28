@@ -338,3 +338,12 @@
 - [x] Gateway registry/doctor 将 WeCom Callback 标记为 native，并收紧 capability 只声明当前真实可用的 env callback payload / Corp API direct text。
 - [x] 新增 WeCom Callback 本地 mock HTTP smoke：callback payload -> `gateway.message.send` -> `turn.final` -> Corp API `message/send`。
 - [ ] 后续补真实 HTTP callback listener、URL verification、AES/XML 解密、多 app routing、token cache、typing、message edit/stream update、media/file、群聊 route 和 callback audit；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 WeCom Native Channel Adapter
+
+- [x] 新增 WeCom AI Bot native adapter，支持 AI Bot callback JSON 入站和 WebSocket markdown 回复。
+- [x] WeCom 入站 normalization 覆盖 `aibot_msg_callback`/`aibot_callback`、group/direct route、sender/group allowlist、mention strip、reply req_id、source message id 和 channel metadata。
+- [x] WeCom outbound 覆盖 `aibot_respond_msg` 被动回复、`aibot_send_msg` 主动发送 fallback、markdown text chunking、WebSocket response error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 WeCom 标记为 native，并收紧 capability 只声明当前真实可用的 callback payload / WebSocket markdown text。
+- [x] 新增 WeCom 本地 mock WebSocket smoke：AI Bot callback payload -> `gateway.message.send` -> `turn.final` -> `aibot_respond_msg` markdown frame。
+- [ ] 后续补真实持久 WebSocket subscribe/listen、QR scan create、media upload/download、AES media decrypt、typing、message edit/stream update、per-group policy config、text batching 和 reconnect/backoff；这些能力当前仍保持 explicit unavailable 或未声明。

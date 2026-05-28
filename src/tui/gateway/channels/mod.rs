@@ -18,6 +18,7 @@ pub mod slack;
 pub mod sms;
 pub mod telegram;
 pub mod webhook;
+pub mod wecom;
 pub mod wecom_callback;
 pub mod weixin;
 pub mod whatsapp;

@@ -847,6 +847,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "wecom" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "qqbot" && item.native_runtime)
         );
         assert!(
@@ -1104,6 +1109,26 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["QQBOT_APP_ID", "QQBOT_SECRET"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn wecom_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let wecom = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "wecom")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(wecom, |env| {
+            matches!(env, "WECOM_BOT_ID" | "WECOM_SECRET")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["WECOM_BOT_ID", "WECOM_SECRET"]
         );
         assert!(item.missing_required_env.is_empty());
     }

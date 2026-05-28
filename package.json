@@ -35,6 +35,7 @@
     "smoke:live:tui": "tsx scripts/live-tui-scenario.ts",
     "smoke:gateway:dingtalk": "tsx scripts/dingtalk-gateway-smoke.ts",
     "smoke:gateway:feishu": "tsx scripts/feishu-gateway-smoke.ts",
+    "smoke:gateway:wecom": "tsx scripts/wecom-gateway-smoke.ts",
     "smoke:gateway:qqbot": "tsx scripts/qqbot-gateway-smoke.ts",
     "smoke:gateway:whatsapp": "tsx scripts/whatsapp-gateway-smoke.ts",
     "smoke:gateway:slack": "tsx scripts/slack-gateway-smoke.ts",

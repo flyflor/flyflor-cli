@@ -709,3 +709,12 @@
   原因：确认 WeCom Callback 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 env callback payload 到 `/ws` 再到 Corp API `message/send` reply 的进程级闭环。
   验证：`cargo test wecom_callback -- --nocapture`（5 passed）；`npm run smoke:gateway:wecom-callback`（ok: true）；`cargo test gateway -- --nocapture`（138 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（330 passed）；`git diff --check`。
   风险：本轮只实现 env callback JSON payload、Corp API access token 和 direct text send；真实 HTTP callback listener、URL verification、AES/XML 解密、多 app routing、token cache、typing、message edit/stream update、media/file、群聊 route 和 callback audit 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：wecom-native-channel-adapter-verification
+  变动文件：`src/tui/gateway/channels/wecom.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/wecom-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：完成 WeCom AI Bot native adapter、mock WebSocket live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 WeCom 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 AI Bot callback payload 到 `/ws` 再到 `aibot_respond_msg` markdown frame 的进程级闭环。
+  验证：`cargo test wecom -- --nocapture`（10 passed）；`npm run smoke:gateway:wecom`（ok: true）；`cargo test gateway -- --nocapture`（143 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（335 passed）；`git diff --check`。
+  风险：本轮只实现 AI Bot callback JSON payload、WebSocket markdown 被动回复/主动发送 fallback；真实持久 WebSocket subscribe/listen、QR scan create、media upload/download、AES media decrypt、typing、message edit/stream update、per-group policy config、text batching 和 reconnect/backoff 后续继续补。
