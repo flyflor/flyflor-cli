@@ -920,7 +920,7 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "NTFY_PUBLISH_TOPIC",
             "FLYFLOR_NTFY_TOKEN",
         ],
-        status: PlatformRuntimeStatus::Planned,
+        status: PlatformRuntimeStatus::Native,
         capability: cap!(long_poll),
         details: &[
             "HTTP streaming /json",
@@ -1322,7 +1322,7 @@ mod tests {
             .map(|platform| platform.name)
             .collect::<Vec<_>>();
 
-        assert_eq!(native, vec!["telegram", "weixin", "webhook"]);
+        assert_eq!(native, vec!["telegram", "weixin", "webhook", "ntfy"]);
     }
 
     #[test]

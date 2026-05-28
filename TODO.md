@@ -176,3 +176,11 @@
 - [x] Webhook outbound 使用 `WEBHOOK_PUBLIC_URL` callback 发送结构化 reply payload；未配置 callback 时 send capability 为 degraded，调用返回 explicit unavailable。
 - [x] Gateway registry/doctor 将 Webhook 标记为 native，并新增测试守住 native runtime 仅包含 Telegram、Weixin、Webhook，避免 planned channel 假成功。
 - [x] 接通 `flyflor gateway run` 启动 channel runtime，并新增 `smoke:gateway:webhook` 验证 HTTP POST -> `gateway.message.send` -> `turn.final` -> callback。
+
+## 2026-05-28 ntfy Native Channel Adapter
+
+- [x] 新增 ntfy native adapter，支持 `/topic/json?poll=1` JSON/JSONL 入站解析与 HTTP POST publish 出站。
+- [x] ntfy 入站 normalization 覆盖 topic route、sender allowlist、title/priority metadata 和 non-message event 过滤。
+- [x] ntfy outbound 覆盖 4096 字符分片、token header、explicit media unavailable 和 curl error 分类。
+- [x] Gateway registry/doctor 将 ntfy 标记为 native，并新增测试守住 native runtime 列表包含 Telegram、Weixin、Webhook、ntfy。
+- [ ] 后续补 ntfy 本地 mock HTTP smoke：poll JSONL -> `gateway.message.send` -> `turn.final` -> publish POST。

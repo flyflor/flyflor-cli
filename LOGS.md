@@ -403,3 +403,21 @@
   原因：Webhook adapter 单测不足以证明 channel runtime 被 daemon 启动，也不足以证明 HTTP 入站、`gateway.message.send`、`turn.final` 和 callback delivery 连通。
   验证：`npm run smoke:gateway:webhook`（ok: true）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（232 passed）；`git diff --check`。
   风险：本 smoke 使用 mock kernel，不依赖真实 Flyflor 内核推理；后续完整跨仓库 live 可复用同一 webhook path。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：ntfy-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/ntfy.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 ntfy native adapter，支持 JSON/JSONL poll 入站、HTTP POST publish 出站、sender allowlist、topic route 和 metadata normalization。
+  原因：继续推进 longtail channel adapter 真实落地，扩大 native channel 覆盖，同时保持 planned channel explicit unavailable 红线。
+  验证：已运行 `cargo fmt --check`、`cargo test ntfy -- --nocapture`（5 passed）、`cargo test gateway -- --nocapture`（45 passed）；待运行类型、全量和 whitespace 验证。
+  风险：本轮不启动 ntfy mock HTTP live smoke；后续需补 poll -> `/ws` -> publish 的进程级证据。
+
+- 状态：完成
+  执行者：main-codex
+  范围：ntfy-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 ntfy native adapter 第一阶段的 focused、gateway、类型、全量测试和 whitespace 验证。
+  原因：确认 ntfy JSON/JSONL poll normalization、sender allowlist、publish 分片/metadata、doctor availability 和 native runtime 状态红线无回归。
+  验证：`cargo fmt --check`；`cargo test ntfy -- --nocapture`（5 passed）；`cargo test gateway -- --nocapture`（45 passed）；`cargo check --all-targets`；`cargo test`（237 passed）；`git diff --check`。
+  风险：ntfy mock HTTP live smoke 仍待后续补齐。
