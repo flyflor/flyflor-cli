@@ -889,3 +889,12 @@
   原因：blackboard detail 是展开与复制可见内容，不能继续把 `Round`、unknown、none 作为生产 UI 硬编码。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：本轮不改 blackboard 数据结构、订阅事件、右侧布局或视觉样式；只改变显示 copy 来源和测试断言。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-socket-snapshot-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 socket/context snapshot 合成 turn 时的 blackboard snapshot 摘要 fallback 和 socket user 前缀接入 i18n。
+  原因：继续收敛 `src/main.rs` 中生产 UI 兜底文案，保持 socket snapshot 展示 copy 由 catalog 管理。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮只改 fallback 文案来源；socket envelope、metadata shape、context row 装配、TUI 布局和 gateway 行为不变。

@@ -107,6 +107,8 @@
   "snapshot.recallReceived": "received recall summary.",
   "snapshot.blackboardReceived": "received blackboard summary.",
   "snapshot.askNeedsAnswer": "ASK needs a user answer.",
+  "snapshot.blackboardFallback": "blackboard snapshot",
+  "snapshot.socketUserPrefix": "socket",
   "detail.reason": "reason",
   "detail.toolSteps": "tool steps",
   "detail.summary": "summary",

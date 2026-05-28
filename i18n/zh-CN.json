@@ -107,6 +107,8 @@
   "snapshot.recallReceived": "收到回忆摘要。",
   "snapshot.blackboardReceived": "收到 blackboard 摘要。",
   "snapshot.askNeedsAnswer": "需要用户选择 ASK 回答。",
+  "snapshot.blackboardFallback": "blackboard 快照",
+  "snapshot.socketUserPrefix": "socket",
   "detail.reason": "原因",
   "detail.toolSteps": "工具步数",
   "detail.summary": "摘要",

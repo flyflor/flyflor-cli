@@ -6443,7 +6443,7 @@ fn turn_from_context_snapshot(snapshot: &Value) -> Option<Turn> {
                             .unwrap_or_else(|| ui_text_key("blackboard.summaryFallback")),
                         "summary": value_string(blackboard, "summary")
                             .or_else(|| value_string(blackboard, "content"))
-                            .unwrap_or_else(|| "blackboard snapshot".to_string())
+                            .unwrap_or_else(|| ui_text_key("snapshot.blackboardFallback"))
                     }]
                 }
             })
@@ -6457,7 +6457,7 @@ fn turn_from_context_snapshot(snapshot: &Value) -> Option<Turn> {
     Some(Turn {
         message_id: value_string(data, "messageId"),
         event_id: value_string(data, "eventId").or_else(|| value_string(data, "id")),
-        user: format!("socket {kind}"),
+        user: format!("{} {kind}", ui_text_key("snapshot.socketUserPrefix")),
         thought: None,
         answer: match kind {
             "thought.snapshot" => ui_text_key("snapshot.thoughtReceived"),

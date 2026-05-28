@@ -492,6 +492,18 @@ cargo test
 git diff --check
 ```
 
+## 2026-05-28 TUI Socket Snapshot i18n Cleanup 主控切片
+
+本轮未新增实现型子 Codex；由主控在主 worktree 清理 socket/context snapshot 合成 turn 时的 blackboard snapshot fallback 与 socket user 前缀。沿用固定 lane 表，当前可用下列命令查看历史 session 或验证细节：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core|wm-)'
+cargo fmt --check
+cargo check --all-targets
+cargo test
+git diff --check
+```
+
 ## 2026-05-28 TUI Blackboard Detail i18n Cleanup 主控切片
 
 本轮未新增实现型子 Codex；由主控在主 worktree 清理 blackboard detail 轮次标签、未知状态和无 plan 兜底文案。沿用固定 lane 表，当前可用下列命令查看历史 session 或验证细节：
