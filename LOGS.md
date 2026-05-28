@@ -457,3 +457,21 @@
   原因：确认 Matrix 已作为真实 native adapter 接入 registry/doctor/runtime，同时 Discord 等未实现 planned channel 仍保持 explicit unavailable，不假成功。
   验证：`cargo test matrix -- --nocapture`（5 passed）；`npm run smoke:gateway:matrix`（ok: true）；`cargo test gateway -- --nocapture`（51 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（243 passed）；`git diff --check`。
   风险：本轮只实现 Matrix plain text HTTP sync/send；E2EE、thread、reaction approval、media/file 后续继续 explicit unavailable。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：irc-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/irc.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/irc-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 IRC plain TCP native adapter 与 `smoke:gateway:irc`，完成 `PRIVMSG` 入站、`gateway.message.send`、`turn.final`、出站 `PRIVMSG` 的本地 TCP mock 闭环。
+  原因：继续推进 longtail/western channel 真实 adapter；IRC 可用本地 TCP server 验证底层协议与 `/ws` 血管层连通，同时保持 TLS、NickServ、SASL、多频道等后续能力不假成功。
+  验证：已运行 `cargo test irc -- --nocapture`（5 passed）与 `npm run smoke:gateway:irc`（ok: true）；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 plain TCP IRC text path；TLS、NickServ、SASL、多频道、mention policy 和 reconnect/backoff 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：irc-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 IRC native adapter、mock TCP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 IRC 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 `PRIVMSG` 入站到 `/ws` 再到出站 `PRIVMSG` 的进程级闭环。
+  验证：`cargo test irc -- --nocapture`（5 passed）；`npm run smoke:gateway:irc`（ok: true）；`cargo test gateway -- --nocapture`（56 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（248 passed）；`git diff --check`。
+  风险：本轮只实现 plain TCP IRC text path；TLS、NickServ、SASL、多频道、mention policy 和 reconnect/backoff 后续继续补。

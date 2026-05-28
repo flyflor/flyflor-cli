@@ -874,14 +874,14 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "IRC_CHANNELS",
             "FLYFLOR_IRC_PASSWORD",
         ],
-        status: PlatformRuntimeStatus::Planned,
-        capability: cap!(group_chat, websocket),
+        status: PlatformRuntimeStatus::Native,
+        capability: cap!(group_chat),
         details: &[
-            "async IRC protocol",
-            "TLS",
-            "NickServ",
+            "plain TCP IRC protocol",
             "PING/PONG",
+            "channel and DM routing",
             "line chunking",
+            "TLS/NickServ explicit unavailable",
         ],
     },
     PlatformMetadata {
@@ -1309,7 +1309,7 @@ mod tests {
 
         assert_eq!(
             native,
-            vec!["telegram", "matrix", "weixin", "webhook", "ntfy"]
+            vec!["telegram", "matrix", "weixin", "webhook", "irc", "ntfy"]
         );
     }
 

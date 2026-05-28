@@ -193,3 +193,12 @@
 - [x] Gateway registry/doctor 将 Matrix 标记为 native，并收紧 capability 只声明当前真实可用的 text/typing/polling/group chat。
 - [x] 新增 Matrix 本地 mock HTTP smoke：sync event -> `gateway.message.send` -> `turn.final` -> send PUT。
 - [ ] 后续补 Matrix E2EE、rich formatting、thread、reaction approval 和 media/file 能力；这些能力在当前 adapter 中仍保持 explicit unavailable。
+
+## 2026-05-28 IRC Native Channel Adapter
+
+- [x] 新增 IRC plain TCP native adapter，支持 NICK/USER/JOIN、PING/PONG、PRIVMSG 入站和出站。
+- [x] IRC 入站 normalization 覆盖 channel/DM route、nick/prefix sender、allowlist、source message metadata 和 self-message filter。
+- [x] IRC outbound 覆盖 channel/DM target、line chunking、explicit media unavailable 和 TCP read/write error 分类。
+- [x] Gateway registry/doctor 将 IRC 标记为 native，并收紧 capability 只声明当前真实可用的 plain text group chat。
+- [x] 新增 IRC 本地 mock TCP smoke：PRIVMSG -> `gateway.message.send` -> `turn.final` -> outbound PRIVMSG。
+- [ ] 后续补 IRC TLS、NickServ、SASL、多频道、mention policy 和更完整 reconnect/backoff；这些能力当前仍保持 explicit unavailable 或未声明。

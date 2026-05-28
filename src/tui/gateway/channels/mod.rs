@@ -1,3 +1,4 @@
+pub mod irc;
 pub mod matrix;
 pub mod ntfy;
 pub mod platform;
