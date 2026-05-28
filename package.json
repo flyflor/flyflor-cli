@@ -50,6 +50,7 @@
     "smoke:gateway:sms": "tsx scripts/sms-gateway-smoke.ts",
     "smoke:gateway:line": "tsx scripts/line-gateway-smoke.ts",
     "smoke:gateway:bluebubbles": "tsx scripts/bluebubbles-gateway-smoke.ts",
+    "smoke:gateway:signal": "tsx scripts/signal-gateway-smoke.ts",
     "smoke:npm:local": "node scripts/smoke-npm-local.cjs",
     "logs": "tsx scripts/logs.ts",
     "codex:lanes": "sh scripts/codex-lanes.sh",

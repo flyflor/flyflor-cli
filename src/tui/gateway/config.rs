@@ -852,6 +852,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "signal" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "irc" && item.native_runtime)
         );
         assert!(
@@ -1095,6 +1100,22 @@ mod tests {
             item.present_required_env,
             vec!["QQBOT_APP_ID", "QQBOT_SECRET"]
         );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn signal_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let signal = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "signal")
+            .unwrap();
+        let item =
+            doctor_item_from_list_item_with_env(signal, |env| matches!(env, "SIGNAL_PHONE_NUMBER"));
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(item.present_required_env, vec!["SIGNAL_PHONE_NUMBER"]);
         assert!(item.missing_required_env.is_empty());
     }
 

@@ -691,3 +691,12 @@
   原因：确认 QQBot 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 env gateway event 到 `/ws` 再到 Official API v2 group message reply 的进程级闭环。
   验证：`cargo test qqbot -- --nocapture`（5 passed）；`npm run smoke:gateway:qqbot`（ok: true）；`cargo test gateway -- --nocapture`（128 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（320 passed）；`git diff --check`。
   风险：本轮只实现 env gateway event payload、app access token、Official API v2 group/direct/guild text send；真实 WebSocket Gateway、QR setup、签名/事件鉴权、typing/input_notify、markdown/keyboard/approval、媒体、语音 STT 和 sandbox/publish 检测后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：signal-native-channel-adapter-verification
+  变动文件：`src/tui/gateway/channels/signal.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/signal-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：完成 Signal signal-cli REST native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Signal 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 env envelope 到 `/ws` 再到 signal-cli JSON-RPC `send` 的进程级闭环。
+  验证：`cargo test signal -- --nocapture`（5 passed）；`npm run smoke:gateway:signal`（ok: true）；`cargo test gateway -- --nocapture`（133 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（325 passed）；`git diff --check`。
+  风险：本轮只实现 env envelope payload、JSON-RPC direct/group text send；真实 SSE event stream、health check、typing、reactions、native quote、attachments/media、voice、format bodyRanges、UUID cache 和 rate-limit scheduler 后续继续补。

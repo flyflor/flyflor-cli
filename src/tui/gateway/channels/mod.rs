@@ -13,6 +13,7 @@ pub mod openwebui;
 pub mod platform;
 pub mod qqbot;
 pub mod runtime;
+pub mod signal;
 pub mod slack;
 pub mod sms;
 pub mod telegram;

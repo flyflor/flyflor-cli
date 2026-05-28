@@ -17,6 +17,7 @@ use super::mattermost::MattermostAdapter;
 use super::ntfy::NtfyAdapter;
 use super::openwebui::OpenWebuiAdapter;
 use super::qqbot::QqBotAdapter;
+use super::signal::SignalAdapter;
 use super::slack::SlackAdapter;
 use super::sms::SmsAdapter;
 use super::telegram::TelegramBotAdapter;
@@ -369,6 +370,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "signal" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        SignalAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "irc" {
                 registry.register(PlatformEntry {
                     name,
@@ -619,6 +631,11 @@ mod tests {
         assert!(
             registry
                 .get("qqbot")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("signal")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(

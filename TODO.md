@@ -320,3 +320,12 @@
 - [x] Gateway registry/doctor 将 QQBot 标记为 native，并收紧 capability 只声明当前真实可用的 env event / REST text。
 - [x] 新增 QQBot 本地 mock HTTP smoke：gateway event -> `gateway.message.send` -> `turn.final` -> `/v2/groups/{id}/messages` POST。
 - [ ] 后续补真实 WebSocket Gateway、QR scan setup、签名/事件鉴权、typing/input_notify、markdown/keyboard/approval、媒体文件、语音 STT、guild/direct 策略和 sandbox/publish 状态检测；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Signal Native Channel Adapter
+
+- [x] 新增 Signal signal-cli REST native adapter，支持 env envelope 入站和 JSON-RPC text 出站。
+- [x] Signal 入站 normalization 覆盖 direct/group route、sender allowlist、group allowlist、source timestamp 和 channel metadata。
+- [x] Signal outbound 覆盖 JSON-RPC `send`、direct recipient/groupId routing、text chunking、RPC error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 Signal 标记为 native，并收紧 capability 只声明当前真实可用的 env envelope / JSON-RPC text。
+- [x] 新增 Signal 本地 mock HTTP smoke：envelope -> `gateway.message.send` -> `turn.final` -> `/api/v1/rpc` send。
+- [ ] 后续补真实 SSE event stream、signal-cli health check、typing、reactions、native quote、attachments/media、voice、format bodyRanges、recipient UUID cache 和 rate-limit scheduler；这些能力当前仍保持 explicit unavailable 或未声明。
