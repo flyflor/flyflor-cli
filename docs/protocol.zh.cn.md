@@ -38,7 +38,7 @@ kernel 暴露 `capability.catalog.get` 和 `capability.catalog.snapshot`；CLI s
 
 ## Subscriptions
 
-当前 `event.subscribe` payload 请求一份固定在源码中的 stable runtime events。列表位于 `src/tui/gateway/subscription.rs`，覆盖 plan、ASK、route/recall、blackboard、tool、Executive loop、subagent、process 和 worker lifecycle events。
+当前 `event.subscribe` payload 请求一份固定在源码中的 stable runtime events。列表位于 `src/tui/gateway/subscription.rs`，覆盖 plan、ASK、Confirm、route/recall、blackboard、tool、Executive loop、subagent、process 和 worker lifecycle events。
 
 它有意不订阅不存在或临时的 event 名称，例如 `fork.memory.*`；fork memory 仍在 final turn 后或显式命令中通过 `fork.memory.get` 刷新。
 
@@ -106,6 +106,7 @@ CLI 解析 turn 和 subscription events：
 - `event.publish`、`event.snapshot` 或 `event`：unwrap subscription events。
 - `memory.task_plan.written` 与 `memory.task_plan.decided`：标记 plan data updated 并请求 `task.list`。
 - `executive.loop.paused` 与 `executive.loop.resumed`：更新 ASK/run-loop process visibility。
+- `confirm.answered`：把仅确认的授权 answer 标记为可见 Confirm timeline item，但不渲染成 ASK 结晶。
 - `blackboard.*`、`tool.*`、`mcp.tool.call.executed`、`route.escalated`、`scope.recall.*`、`memory.context_fork.written`、`process.*`、`worker.task.*` 和 `subagent.*`：变成 run-timeline rows。带 job id 的事件可触发 `execution.job.detail.get`，获得更丰富的 `execution.job.snapshot`。
 - `error`：变成 `SocketEvent::Disconnected`。
 

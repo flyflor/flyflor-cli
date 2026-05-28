@@ -142,6 +142,19 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
             "ASK answered",
         )
         .with_detail(first_string(payload, &["answerText", "text", "askId"]).unwrap_or_default()),
+        "confirm.answered" => RunTimelineItem::new(
+            id,
+            RunTimelineItemKind::Confirm,
+            RunTimelineItemStatus::Completed,
+            "Confirm answered",
+        )
+        .with_detail(
+            first_string(
+                payload,
+                &["summary", "answerText", "text", "askEventId", "snapshotId"],
+            )
+            .unwrap_or_default(),
+        ),
         event_type if event_type.starts_with("ask.") || event_type.contains(".ask.") => {
             RunTimelineItem::new(
                 id,
@@ -784,6 +797,7 @@ mod tests {
             ("executive.loop.paused", RunTimelineItemKind::Loop),
             ("executive.loop.resumed", RunTimelineItemKind::Loop),
             ("memory.ask.answered", RunTimelineItemKind::Ask),
+            ("confirm.answered", RunTimelineItemKind::Confirm),
             ("memory.crystal.written", RunTimelineItemKind::Crystal),
         ];
 

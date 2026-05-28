@@ -259,3 +259,21 @@
   原因：确认 TUI 公民权限路径发送 `confirmAnswer`，普通 ASK 路径仍保持 `askAnswer`，gateway channel bridge 透传 confirm metadata。
   验证：`cargo fmt --check`；`cargo test tui::ask::command::tests`（5 passed）；`cargo test ask_citizen_permission_menu_sends_metadata_without_token_message_text`（1 passed）；`cargo test mock_ws_inbound_send_envelope_preserves_route_context_and_ask_metadata`（1 passed）；`cargo check --all-targets`；`cargo test`（218 passed）；`git diff --check`。
   风险：仍保留 `askAnswer` 兼容字段，后续可随独立 Confirm read-model/event 删除。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：confirm-event-timeline-client
+  变动文件：`src/kernel/subscription.rs`、`src/tui/run_timeline/state.rs`、`src/tui/run_timeline/view.rs`、`src/tui/run_timeline/parser.rs`、`src/tui/subagent/parser.rs`、`docs/protocol.md`、`docs/protocol.zh.cn.md`、`docs/tui-model.md`、`docs/tui-model.zh.cn.md`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：CLI 订阅 `confirm.answered`，Run timeline 以 Confirm row 展示，Subagent tree 用它关闭 pending needs-user marker。
+  原因：内核已经提供 Confirm 独立事件后，thin client 需要显示 Confirm 生命周期，而不是继续只靠 ASK-compatible payload。
+  验证：待运行 `cargo fmt --check`、focused tests、`cargo check --all-targets`、`cargo test`、`git diff --check`。
+  风险：本轮只接入事件展示；完整独立 Confirm component/read-model 仍待后续实现，ASK-compatible fallback 暂时保留。
+
+- 状态：完成
+  执行者：main-codex
+  范围：confirm-event-timeline-client-verification
+  变动文件：同上
+  摘要：完成 CLI Confirm event timeline 切片的格式、focused、类型、全量测试和 whitespace 验证。
+  原因：确认 `confirm.answered` 已进入固定 subscription、Run timeline 和 subagent pending-user 闭合路径。
+  验证：`cargo fmt --check`；`cargo test subscription_list_is_fixed_to_known_runtime_events`（1 passed）；`cargo test parses_required_event_families`（1 passed）；`cargo test ask_pause_and_answer_preserve_crystal_closure`（1 passed）；`cargo check --all-targets`；`cargo test`（218 passed）；`git diff --check`。
+  风险：完整独立 Confirm component/read-model 仍待后续实现，ASK-compatible fallback 暂时保留。

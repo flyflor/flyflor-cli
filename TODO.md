@@ -142,3 +142,10 @@
 - [x] 保留结构化 metadata 发送，不把 `continue-tools` 等授权 token 写成普通用户文本。
 - [x] 公民权限/高风险授权新增 `metadata.confirmAnswer`，`metadata.askAnswer` 仅作为 kernel 兼容保留；普通 ASK 仍只走 `askAnswer`。
 - [ ] 后续如内核提供独立 Confirm snapshot/event，再把当前 ASK-compatible permission metadata 迁移到真正独立 Confirm 组件。
+
+## 2026-05-28 Confirm Event Timeline
+
+- [x] `event.subscribe` 固定列表订阅 `confirm.answered`。
+- [x] Run timeline 将 `confirm.answered` 渲染为 `Confirm answered`，不混入 ASK crystallization 样式。
+- [x] Subagent tree 将 `confirm.answered` 用作 pending needs-user marker 的闭合信号。
+- [ ] 后续接入完整独立 Confirm component/read-model 后，移除 ASK-compatible permission fallback。

@@ -12,6 +12,7 @@ pub enum RunTimelineItemKind {
     Blackboard,
     Subagent,
     Ask,
+    Confirm,
     Plan,
     Fork,
     Loop,

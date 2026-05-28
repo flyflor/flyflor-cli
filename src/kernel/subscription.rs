@@ -9,6 +9,7 @@ pub const SUBSCRIPTION_EVENT_TYPES: &[&str] = &[
     "memory.ask.answered",
     "memory.ask.chain.capped",
     "memory.ask.mutex.violation",
+    "confirm.answered",
     "executive.loop.paused",
     "executive.loop.resumed",
     "executive.loop.guard.blocked",
@@ -104,6 +105,7 @@ mod tests {
         assert!(types.contains(&"tool.output.persisted"));
         assert!(types.contains(&"tool.budget.exhausted"));
         assert!(types.contains(&"memory.ask.chain.capped"));
+        assert!(types.contains(&"confirm.answered"));
         assert!(types.contains(&"memory.task_plan.decision.failed"));
         assert!(types.contains(&"memory.recall.assembled"));
         assert!(types.contains(&"process.start"));

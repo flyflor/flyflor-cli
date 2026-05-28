@@ -47,7 +47,7 @@ pub fn merge_event_publish(tree: &mut SubagentTree, event_type: &str, value: &Va
             merge_process(tree, payload, SubagentStatus::from_event_type(event_type));
         }
         "executive.loop.paused" => mark_needs_user(tree, payload),
-        "memory.ask.answered" => mark_ask_answered(tree, payload),
+        "memory.ask.answered" | "confirm.answered" => mark_ask_answered(tree, payload),
         _ => {}
     }
 }
@@ -797,6 +797,21 @@ mod tests {
             ask.crystal_candidate.as_deref(),
             Some("record retry policy")
         );
+
+        merge_event_publish(
+            &mut tree,
+            "confirm.answered",
+            &json!({
+                "type": "confirm.answered",
+                "payload": {
+                    "childId": "child-1",
+                    "askEventId": "ask-1"
+                }
+            }),
+        );
+        let ask = tree.loose_children[0].ask.as_ref().expect("confirm answer");
+        assert!(ask.answered);
+        assert_eq!(ask.status, SubagentStatus::Completed);
     }
 
     #[test]

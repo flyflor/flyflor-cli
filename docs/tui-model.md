@@ -62,7 +62,7 @@ The CLI does not schedule workers, decide route convergence, or write Blackboard
 
 ## Run Timeline
 
-Run is the visible execution spine for gateway events. It consumes `event.publish`, `event.snapshot`, `event`, and `execution.job.snapshot` data and renders route decisions, scope recall, blackboard turns, tool calls, ASK pauses, plan writes, forks, Executive loop transitions, process events, worker events, and subagent lifecycle updates.
+Run is the visible execution spine for gateway events. It consumes `event.publish`, `event.snapshot`, `event`, and `execution.job.snapshot` data and renders route decisions, scope recall, blackboard turns, tool calls, ASK pauses, Confirm answers, plan writes, forks, Executive loop transitions, process events, worker events, and subagent lifecycle updates.
 
 Job detail fetches are deduped or throttled by job id. Timeline display should not repeatedly request the same `execution.job.detail.get` payload while rendering.
 
@@ -74,7 +74,7 @@ Tool events and execution-job snapshots make the Executive exoskeleton visible. 
 
 Normal per-turn approval for kernel `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls` is closed through `/approve`. It marks only the next send and then clears. YOLO mode remains a separate local high-privilege interaction marker sent as metadata.
 
-Citizen permission options such as `continue-tools`, `keep-budget`, and `keep-subagents` are rendered as Confirm authorization policy choices and sent as structured `confirmAnswer` metadata, with `askAnswer` retained only for kernel compatibility. They must not be converted into ordinary user-message text or displayed with the ASK crystallization style. Normal ASK continuations still use the ASK menu and continuation metadata.
+Citizen permission options such as `continue-tools`, `keep-budget`, and `keep-subagents` are rendered as Confirm authorization policy choices and sent as structured `confirmAnswer` metadata, with `askAnswer` retained only for kernel compatibility. Subscribed `confirm.answered` events appear in Run as Confirm rows and can close pending user-needed markers, but they must not be converted into ordinary user-message text or displayed with the ASK crystallization style. Normal ASK continuations still use the ASK menu and continuation metadata.
 
 While a turn is active, the footer shows an animated Working line. Pressing Esc once arms interruption; pressing Esc again within the interrupt window sends `gateway.message.interrupt` for the pending public message id.
 

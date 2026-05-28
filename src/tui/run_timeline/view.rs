@@ -200,6 +200,7 @@ fn kind_label(kind: &RunTimelineItemKind) -> &'static str {
         RunTimelineItemKind::Blackboard => "blackboard",
         RunTimelineItemKind::Subagent => "subagent",
         RunTimelineItemKind::Ask => "ASK",
+        RunTimelineItemKind::Confirm => "Confirm",
         RunTimelineItemKind::Plan => "plan",
         RunTimelineItemKind::Fork => "fork",
         RunTimelineItemKind::Loop => "loop",

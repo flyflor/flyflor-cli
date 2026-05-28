@@ -38,7 +38,7 @@ The kernel exposes `capability.catalog.get` and `capability.catalog.snapshot`; C
 
 ## Subscriptions
 
-The current `event.subscribe` payload requests a fixed, source-controlled list of stable runtime events. The list lives in `src/tui/gateway/subscription.rs` and covers plan, ASK, route/recall, blackboard, tool, Executive loop, subagent, process, and worker lifecycle events.
+The current `event.subscribe` payload requests a fixed, source-controlled list of stable runtime events. The list lives in `src/tui/gateway/subscription.rs` and covers plan, ASK, Confirm, route/recall, blackboard, tool, Executive loop, subagent, process, and worker lifecycle events.
 
 It deliberately does not subscribe to nonexistent or provisional event names, such as `fork.memory.*`; fork memory refreshes continue through `fork.memory.get` after final turns and explicit commands.
 
@@ -106,6 +106,7 @@ The CLI parses turn and subscription events:
 - `event.publish`, `event.snapshot`, or `event`: unwraps subscription events.
 - `memory.task_plan.written` and `memory.task_plan.decided`: mark plan data as updated and request `task.list`.
 - `executive.loop.paused` and `executive.loop.resumed`: update ASK/run-loop process visibility.
+- `confirm.answered`: marks confirmation-only authorization answers as visible Confirm timeline items without rendering them as ASK crystallization.
 - `blackboard.*`, `tool.*`, `mcp.tool.call.executed`, `route.escalated`, `scope.recall.*`, `memory.context_fork.written`, `process.*`, `worker.task.*`, and `subagent.*`: become run-timeline rows. Job ids can trigger `execution.job.detail.get` for a richer `execution.job.snapshot`.
 - `error`: becomes `SocketEvent::Disconnected`.
 
