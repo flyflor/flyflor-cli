@@ -1,6 +1,7 @@
 pub mod bluebubbles;
 pub mod discord;
 pub mod email;
+pub mod feishu;
 pub mod homeassistant;
 pub mod irc;
 pub mod line;

@@ -655,3 +655,21 @@
   原因：确认 WhatsApp 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 webhook payload 到 `/ws` 再到 Graph `/messages` reply 的进程级闭环。
   验证：`cargo test whatsapp -- --nocapture`（5 passed）；`npm run smoke:gateway:whatsapp`（ok: true）；`cargo test gateway -- --nocapture`（113 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（305 passed）；`git diff --check`。
   风险：本轮只实现 Cloud API env webhook payload 与 direct text send path；真实 HTTP webhook listener、Meta signature validation、status receipts、templates、interactive buttons、media upload/download、group/DM discovery、Baileys child process 和 QR pairing 后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：feishu-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/feishu.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/feishu-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Feishu/Lark Open Platform native adapter 与 `smoke:gateway:feishu`，完成 webhook payload、`gateway.message.send`、`event.publish` card PATCH、`turn.final` card PATCH 的本地 HTTP mock 闭环。
+  原因：用户明确点名飞书卡片流式更新等 channel 细节，本轮先落地可验证的 Open Platform text/card update path，同时避免把 approval buttons、slash commands、file/doc/drive、事件签名/加密等未完成能力提前宣称 native。
+  验证：已运行 `cargo test feishu -- --nocapture`（5 passed）、`npm run smoke:gateway:feishu`（ok: true）与 `cargo test gateway -- --nocapture`（118 passed）；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 env webhook payload、tenant token、text reply/send 和 interactive card PATCH；真实 HTTP webhook listener、签名/加密、approval buttons、slash commands、文件/文档/云盘、富文本、群入场/ACL 和完整卡片交互后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：feishu-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Feishu/Lark Open Platform native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Feishu 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 webhook payload 到 `/ws`、runtime event card update、turn final card update 的进程级闭环。
+  验证：`cargo test feishu -- --nocapture`（5 passed）；`npm run smoke:gateway:feishu`（ok: true）；`cargo test gateway -- --nocapture`（118 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（310 passed）；`git diff --check`。
+  风险：本轮只实现 env webhook payload、tenant token、text reply/send 和 interactive card PATCH；真实 HTTP webhook listener、签名/加密、approval buttons、slash commands、文件/文档/云盘、富文本、群入场/ACL 和完整卡片交互后续继续补。

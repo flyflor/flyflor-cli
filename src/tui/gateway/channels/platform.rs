@@ -7,6 +7,7 @@ use crate::tui::gateway::platforms::all_platforms;
 use super::bluebubbles::BlueBubblesAdapter;
 use super::discord::DiscordAdapter;
 use super::email::EmailAdapter;
+use super::feishu::FeishuAdapter;
 use super::homeassistant::HomeAssistantAdapter;
 use super::irc::IrcAdapter;
 use super::line::LineAdapter;
@@ -333,6 +334,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "feishu" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        FeishuAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "irc" {
                 registry.register(PlatformEntry {
                     name,
@@ -568,6 +580,11 @@ mod tests {
         assert!(
             registry
                 .get("whatsapp")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("feishu")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(

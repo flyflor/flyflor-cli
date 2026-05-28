@@ -837,6 +837,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "feishu" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "irc" && item.native_runtime)
         );
         assert!(
@@ -1019,6 +1024,26 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn feishu_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let feishu = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "feishu")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(feishu, |env| {
+            matches!(env, "FEISHU_APP_ID" | "FEISHU_APP_SECRET")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["FEISHU_APP_ID", "FEISHU_APP_SECRET"]
         );
         assert!(item.missing_required_env.is_empty());
     }

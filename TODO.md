@@ -292,3 +292,13 @@
 - [x] Gateway registry/doctor 将 WhatsApp 标记为 native，并收紧 capability 只声明当前真实可用的 Cloud API direct text。
 - [x] 新增 WhatsApp 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `turn.final` -> Graph `/messages` POST。
 - [ ] 后续补真实 HTTP webhook listener、Meta signature validation、status receipts、templates、interactive buttons、media upload/download、group/DM discovery、Baileys child process 和 QR pairing；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Feishu Native Channel Adapter
+
+- [x] 新增 Feishu/Lark Open Platform native adapter，支持 message event webhook payload 入站、tenant access token 获取和文本回复/发送。
+- [x] Feishu 入站 normalization 覆盖 `event.message`、JSON content text、sender open_id、chat route、verification token、allowlist、source message id 和 channel metadata。
+- [x] Feishu outbound 覆盖 tenant token auth、message reply/send、text chunking、OpenAPI error 分类和 explicit media unavailable。
+- [x] Feishu card stream update 覆盖 `event.publish` progress 与 `turn.final` final update，通过 interactive card PATCH 更新原消息。
+- [x] Gateway registry/doctor 将 Feishu 标记为 native，并收紧 capability 只声明当前真实可用的 webhook/text/card update。
+- [x] 新增 Feishu 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `event.publish` card PATCH -> `turn.final` card PATCH。
+- [ ] 后续补真实 HTTP webhook listener、事件签名/加密、approval buttons、slash commands、file/doc/drive、富文本、群入场/ACL 和更完整卡片交互；这些能力当前仍保持 explicit unavailable 或未声明。
