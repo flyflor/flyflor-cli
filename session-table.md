@@ -82,3 +82,13 @@ rg 'gateway.message.send|mcp.tool.call.executed|turn.error' .flyflor-cli/live/20
 cat .flyflor-cli/live/2026-05-27T17-34-31-376Z/report.json
 rg 'gateway.message.send|mcp.tool.call.executed|turn.error' .flyflor-cli/live/2026-05-27T17-34-31-376Z/kernel.log
 ```
+
+## 2026-05-28 Confirm / ASK 主控切片
+
+本轮未新增实现型子 Codex；由主控在主 worktree 完成 Confirm/ASK 显示切片。沿用既有 lane 表，仍可用下列命令查看现有 session 或历史工作细节：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core|wm-)'
+tmux capture-pane -t ff-cli-preview-tui-ask-layout:0.0 -p -S -5000
+tmux capture-pane -t ff-core-preview-kernel-tool-loop:0.0 -p -S -5000
+```

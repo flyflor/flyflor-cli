@@ -873,7 +873,7 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(vec![
         Span::styled(
             if ask_menu_is_citizen_permission(menu) {
-                "ASK 授权执行策略"
+                "Confirm 授权执行策略"
             } else {
                 "ASK"
             },
@@ -9306,6 +9306,8 @@ mod tests {
                 .map(line_plain_text)
                 .collect::<Vec<_>>()
                 .join("\n");
+        assert!(menu_text.contains("Confirm 授权执行策略"));
+        assert!(!menu_text.contains("ASK 授权执行策略"));
         assert!(menu_text.contains("授权执行策略"));
         app.confirm_ask_menu_selection();
 
@@ -9331,6 +9333,38 @@ mod tests {
             }
             _ => panic!("expected ask permission send message with metadata"),
         }
+    }
+
+    #[test]
+    fn normal_ask_menu_still_renders_ask_heading() {
+        let theme = Theme::default();
+        let menu = AskMenu::new(
+            0,
+            json!({ "snapshotId": "ask-normal-1" }),
+            vec![AskQuestion {
+                id: "q1".to_string(),
+                prompt: "选择下一步".to_string(),
+                recommended_choice_id: None,
+                choices: vec![AskChoice {
+                    id: "continue".to_string(),
+                    label: "继续".to_string(),
+                    value: Some("continue".to_string()),
+                    description: None,
+                    question_id: Some("q1".to_string()),
+                    recommended: false,
+                    is_other: false,
+                }],
+            }],
+        );
+
+        let text = render_ask_menu_lines(&menu, &theme)
+            .iter()
+            .map(line_plain_text)
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(text.contains("ASK"));
+        assert!(!text.contains("Confirm 授权执行策略"));
     }
 
     #[test]

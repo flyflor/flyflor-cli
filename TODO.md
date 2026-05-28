@@ -134,4 +134,10 @@
 - [x] 修复 tmux 场景下普通 Enter 被识别成 Control+Enter 后只换行的问题，保证真实 TUI smoke 能提交消息。
 - [x] 加强 `smoke:live:tui`，等待 CLI socket connected 后再驱动输入，并强制断言 kernel log 出现 `gateway.message.send` 与 `mcp.tool.call.executed`。
 - [x] 复跑 `cargo fmt --check && cargo test --quiet` 与真实 `npm run smoke:live:tui`，保留报告目录 `.flyflor-cli/live/2026-05-27T17-24-11-303Z/`。
-- [ ] 后续 TUI 需要区分 `Confirm` 与 `ASK`：高风险工具授权只渲染 Confirm，不进入 ASK 结晶样式；ASK 答案发送后等待内核自动续跑。
+- [x] 后续 TUI 需要区分 `Confirm` 与 `ASK`：高风险工具授权只渲染 Confirm，不进入 ASK 结晶样式；ASK 答案发送后等待内核自动续跑。
+
+## 2026-05-28 Confirm / ASK Display Split
+
+- [x] 公民权限/高风险授权菜单标题渲染为 `Confirm 授权执行策略`，普通 ASK 菜单仍渲染为 `ASK`。
+- [x] 保留结构化 metadata 发送，不把 `continue-tools` 等授权 token 写成普通用户文本。
+- [ ] 后续如内核提供独立 Confirm snapshot/event，再把当前 ASK-compatible permission metadata 迁移到真正独立 Confirm 组件。

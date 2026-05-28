@@ -7,7 +7,9 @@
 - 禁止修改 `flyflor` 内核、`flyflor-front`、`reference` 和无关项目。
 - TUI 只能通过 socket/gateway control/event 与内核交互，禁止直接写 `brain.db`、`scope.db` 或运行态日志数据库。
 - ASK 推荐项只能高亮，不能自动提交；普通输入不能被 pending ASK 劫持成默认选择。
+- ASK 与 Confirm 必须分层展示：ASK 是内核一级闭环和潜在结晶入口；Confirm 只用于工具授权、写入权限、是否继续高风险动作等确认交互，不使用 ASK 结晶样式。
 - 公民权限授权必须作为结构化 metadata 发送，禁止把 `continue-tools`、`keep-budget`、`keep-subagents` 等选择写成普通用户消息。
+- 未经明确要求不要改动现有 TUI 美化、布局气质和视觉样式；涉及 ASK/Confirm 时优先复用现有菜单结构做最小行为/标题修正。
 - Exo timeline 禁止显示 `unknown`；等待权限、运行、完成、失败都必须有明确状态。
 - 最后一个 Exo 自动展开，其余默认折叠；detail 请求必须去重或节流，避免 socket 噪声。
 - 约定大于配置；目录和文件名表达 owner，代码可以重复，但不得抽无 owner 的万能 helper。

@@ -223,3 +223,21 @@
   原因：提交前需要证明 Rust TUI、npm 全局安装路径和工作区差异均处于可交付状态。
   验证：`npm run smoke:live:tui`（ok true，报告目录 `.flyflor-cli/live/2026-05-27T17-34-31-376Z/`）；`npm run smoke:npm:local`（local npm pack/install smoke passed）；`git diff --check`。
   风险：`Confirm` 独立 UI 仍未拆出；当前 TUI 继续消费既有 sandbox approval/ASK metadata。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：confirm-ask-display-split
+  变动文件：`AGENTS.md`、`src/main.rs`、`docs/tui-model.md`、`docs/tui-model.zh.cn.md`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：公民权限/高风险授权菜单改为 `Confirm 授权执行策略` 标题，普通 ASK 仍保留 `ASK` 标题；文档同步声明 Confirm 不使用 ASK 结晶样式。
+  原因：用户要求 ASK 是一级公民并可能结晶，Confirm 只是确认交互，CLI/TUI 必须分开渲染。
+  验证：待运行 `cargo fmt --check`、`cargo check --all-targets`、`cargo test`、`git diff --check`。
+  风险：本轮仅调整 TUI 显示与测试断言，不改现有视觉布局、不让 CLI 写 kernel DB，也不把 Confirm 语义下沉到内核。
+
+- 状态：完成
+  执行者：main-codex
+  范围：confirm-ask-display-split-verification
+  变动文件：同上
+  摘要：完成 Confirm/ASK 显示拆分的格式、类型、全量测试和 whitespace 验证。
+  原因：确认公民权限授权不再以 ASK 标题展示，同时普通 ASK 菜单保持原路径。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（218 passed）；`git diff --check`。
+  风险：后续若内核新增独立 Confirm snapshot/event，还需要把当前 ASK-compatible permission metadata 迁到专门 Confirm 组件。
