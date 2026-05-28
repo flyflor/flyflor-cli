@@ -148,4 +148,5 @@
 - [x] `event.subscribe` 固定列表订阅 `confirm.answered`。
 - [x] Run timeline 将 `confirm.answered` 渲染为 `Confirm answered`，不混入 ASK crystallization 样式。
 - [x] Subagent tree 将 `confirm.answered` 用作 pending needs-user marker 的闭合信号。
-- [ ] 后续接入完整独立 Confirm component/read-model 后，移除 ASK-compatible permission fallback。
+- [x] 启动 bootstrap 请求 `confirm.list`，并把 `confirm.snapshot` 恢复为 Run timeline Confirm row。
+- [ ] 后续接入完整独立 Confirm component UI 后，移除 ASK-compatible permission fallback。

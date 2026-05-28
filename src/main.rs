@@ -77,6 +77,8 @@ use tui::plan::{
     menu::default_plan_menu,
     state::{PlanAction, PlanMenu, PlanPendingAction},
 };
+#[cfg(test)]
+use tui::run_timeline::state::RunTimelineItemKind;
 use tui::run_timeline::{state::RunTimeline, view::run_panel_lines};
 use tui::shared::{
     WORKING_SHIMMER_PHASES, draw_separator, in_rect, metric_line, top_bar_title,
@@ -1595,6 +1597,21 @@ impl App {
                     self.right_source.blackboard_status = status;
                 } else if let Some(item) = item {
                     self.right_source.blackboard_status = format!("runtime event · {}", item.title);
+                }
+            }
+            SocketEvent::RuntimeEvents(events) => {
+                let mut latest_title = None;
+                for event in events {
+                    let item = self.run_timeline.apply_event_publish(&event);
+                    self.attach_execution_row_to_active_turn();
+                    let status = self.apply_runtime_event_side_effects(&event);
+                    if let Some(job_id) = job_id_from_event_payload(&event) {
+                        self.request_execution_job_detail(job_id);
+                    }
+                    latest_title = status.or_else(|| item.map(|item| item.title));
+                }
+                if let Some(title) = latest_title {
+                    self.right_source.blackboard_status = format!("runtime event · {title}");
                 }
             }
             SocketEvent::ExecutionJobSnapshot(snapshot) => {
@@ -5514,6 +5531,7 @@ enum SocketEvent {
     ForkMemoryLoaded(ForkMemorySnapshot),
     TaskListLoaded(Vec<TodoItem>),
     RuntimeEvent(Value),
+    RuntimeEvents(Vec<Value>),
     ExecutionJobSnapshot(Value),
     StatusLoaded(StatusSnapshot),
     ContextSnapshotLoaded(Value),
@@ -5897,6 +5915,10 @@ fn handle_socket_text(raw: &str, event_tx: &Sender<SocketEvent>) -> Result<(), S
         event_tx.send(event).map_err(|error| error.to_string())?;
         return Ok(());
     }
+    if let Some(event) = parse_confirm_snapshot(raw)? {
+        event_tx.send(event).map_err(|error| error.to_string())?;
+        return Ok(());
+    }
     if let Some(event) = parse_context_snapshot(raw)? {
         event_tx.send(event).map_err(|error| error.to_string())?;
         return Ok(());
@@ -6088,6 +6110,73 @@ fn parse_execution_job_snapshot(raw: &str) -> Result<Option<SocketEvent>, String
         "type": envelope.message_type,
         "payload": payload
     }))))
+}
+
+fn parse_confirm_snapshot(raw: &str) -> Result<Option<SocketEvent>, String> {
+    let envelope: SocketEnvelope = serde_json::from_str(raw).map_err(|error| error.to_string())?;
+    if envelope.message_type != "confirm.snapshot" {
+        return Ok(None);
+    }
+    let Some(payload) = envelope.payload else {
+        return Ok(None);
+    };
+    let data = payload.get("data").unwrap_or(&payload);
+    let confirms = match data {
+        Value::Array(items) => items.clone(),
+        Value::Object(_) => vec![data.clone()],
+        _ => Vec::new(),
+    };
+    let events = confirms
+        .iter()
+        .filter_map(confirm_snapshot_runtime_event)
+        .collect::<Vec<_>>();
+    Ok((!events.is_empty()).then_some(SocketEvent::RuntimeEvents(events)))
+}
+
+fn confirm_snapshot_runtime_event(confirm: &Value) -> Option<Value> {
+    let answer = confirm.get("confirmAnswer").unwrap_or(confirm);
+    let summary = confirm_answer_summary(answer)
+        .or_else(|| value_string(confirm, "sourceSurface"))
+        .or_else(|| value_string(confirm, "sourceKey"))
+        .or_else(|| value_string(confirm, "askEventId"))
+        .unwrap_or_else(|| "confirm read-model restored".to_string());
+    let event_id = confirm
+        .get("event")
+        .and_then(|event| value_string(event, "id"))
+        .or_else(|| value_string(confirm, "snapshotId"))
+        .or_else(|| value_string(confirm, "askEventId"))
+        .unwrap_or_else(|| "confirm-snapshot".to_string());
+    Some(json!({
+        "id": format!("confirm-snapshot-{event_id}"),
+        "type": "confirm.answered",
+        "payload": {
+            "summary": summary,
+            "askEventId": value_string(confirm, "askEventId"),
+            "snapshotId": value_string(confirm, "snapshotId"),
+            "sourceKey": value_string(confirm, "sourceKey"),
+            "sourceSurface": value_string(confirm, "sourceSurface"),
+            "confirmAnswer": answer
+        }
+    }))
+}
+
+fn confirm_answer_summary(answer: &Value) -> Option<String> {
+    if let Some(summary) = value_string(answer, "summary")
+        .or_else(|| value_string(answer, "answerText"))
+        .or_else(|| value_string(answer, "text"))
+        .or_else(|| value_string(answer, "choiceId"))
+    {
+        return Some(summary);
+    }
+    let choices = answer.get("choiceIds")?.as_array()?;
+    let summary = choices
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|choice| !choice.trim().is_empty())
+        .take(3)
+        .collect::<Vec<_>>()
+        .join(", ");
+    (!summary.is_empty()).then_some(summary)
 }
 
 fn parse_subscription_event(raw: &str) -> Result<Option<SocketEvent>, String> {
@@ -8537,6 +8626,48 @@ mod tests {
                 .iter()
                 .flat_map(|turn| turn.context_rows.iter())
                 .any(|row| row.kind == ContextRowKind::Recall && row.summary == "scope recall")
+        );
+    }
+
+    #[test]
+    fn confirm_snapshot_restores_confirm_timeline_row() {
+        let raw = r#"{
+            "type": "confirm.snapshot",
+            "payload": {
+                "data": [{
+                    "askEventId": "ask-1",
+                    "snapshotId": "confirm-snapshot-1",
+                    "sourceSurface": "citizen-permission",
+                    "status": "answered",
+                    "confirmAnswer": {
+                        "choiceIds": ["continue-tools", "keep-budget"]
+                    },
+                    "event": {
+                        "id": "confirm-event-1"
+                    }
+                }]
+            }
+        }"#;
+
+        let event = parse_confirm_snapshot(raw)
+            .expect("confirm snapshot should parse")
+            .expect("confirm snapshot should emit event");
+        let mut app = App::new();
+        app.apply_socket_event(event);
+
+        let item = app
+            .run_timeline
+            .items
+            .iter()
+            .find(|item| item.kind == RunTimelineItemKind::Confirm)
+            .expect("confirm timeline item");
+        assert_eq!(item.title, "Confirm answered");
+        assert_eq!(item.detail.as_deref(), Some("continue-tools, keep-budget"));
+        assert!(
+            !app.turns
+                .iter()
+                .flat_map(|turn| turn.context_rows.iter())
+                .any(|row| row.kind == ContextRowKind::AskResume)
         );
     }
 

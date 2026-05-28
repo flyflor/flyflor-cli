@@ -30,6 +30,7 @@ After the socket connects, the current CLI sends:
 - `capability.catalog.get`: requests the visible kernel capability/tool surface.
 - `gateway.status.get`: requests model/provider/context-window status.
 - `fork.memory.get`: requests recent fork memory and `brain.db` display fields.
+- `confirm.list`: restores recent Confirm read-model answers for display/audit continuity.
 - `event.subscribe`: subscribes only to known-safe runtime events used by the CLI.
 
 The current CLI marks the socket as connected after the transport connection and `client.hello` send path succeed. A future `server.hello` parser may be added, but `server.hello` should remain handshake metadata, not authoritative business state.
@@ -53,6 +54,7 @@ The UI can send these socket commands:
 - `task.list`: todo/task refresh.
 - `gateway.status.get`: status refresh.
 - `fork.memory.get`: recent fork memory refresh.
+- `confirm.list`: recent confirmation-only answer read-model refresh.
 - `task.plan.decide`: plan confirm, revise, or abandon.
 - `fork.create`: create a context fork from a structured turn anchor.
 - `execution.job.detail.get`: fetch execution job detail snapshots for display.
@@ -91,6 +93,7 @@ The CLI maps kernel snapshots into local state:
 - `task.snapshot`, `task.list.result`, `task.list.snapshot`, `task.list`, or compatible task data become right-panel TODO rows.
 - `gateway.status.snapshot`, `gateway.status`, or `status.snapshot` become `StatusSnapshot` model/provider/context data.
 - `fork.memory.snapshot`, `memory.fork.snapshot`, `fork.memory`, `fork.memory.result`, or `fork.list.snapshot` become `ForkMemorySnapshot`.
+- `confirm.snapshot` becomes a Confirm run-timeline row from read-model state; it is never converted into an ASK continuation row.
 - `thought.snapshot`, `recall.snapshot`, `memory.snapshot`, `blackboard.snapshot`, and `ask.snapshot` become synthetic context turns for display.
 - `fork.snapshot` creates or enters an active fork view when a fork id is present.
 

@@ -76,6 +76,8 @@ Normal per-turn approval for kernel `toolApprovals.mcpToolCalls` and `toolApprov
 
 Citizen permission options such as `continue-tools`, `keep-budget`, and `keep-subagents` are rendered as Confirm authorization policy choices and sent as structured `confirmAnswer` metadata, with `askAnswer` retained only for kernel compatibility. Subscribed `confirm.answered` events appear in Run as Confirm rows and can close pending user-needed markers, but they must not be converted into ordinary user-message text or displayed with the ASK crystallization style. Normal ASK continuations still use the ASK menu and continuation metadata.
 
+Startup `confirm.snapshot` data is also displayed as Confirm rows in Run so recent authorization decisions survive CLI reconnects. It remains read-model/display state only and never creates ASK continuation rows or Crystal candidate UI.
+
 While a turn is active, the footer shows an animated Working line. Pressing Esc once arms interruption; pressing Esc again within the interrupt window sends `gateway.message.interrupt` for the pending public message id.
 
 The Exo tool/subprocess section uses parsed tool names and lifecycle summaries rather than `unknown` placeholders. Waiting for permission, running, completed, and failed states must all have explicit labels. The latest Exo row auto-expands; older Exo rows stay collapsed by default. Expanded rows show recent output snippets without making the CLI execute tools locally.

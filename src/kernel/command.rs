@@ -51,6 +51,11 @@ impl GatewayCommandBuilder {
         self.factory.build("task.list", sequence, json!({}))
     }
 
+    pub fn confirm_list(&self, sequence: u64, limit: u64) -> GatewayEnvelope {
+        self.factory
+            .build("confirm.list", sequence, json!({ "limit": limit }))
+    }
+
     pub fn gateway_status_get(&self, sequence: u64) -> GatewayEnvelope {
         self.factory
             .build("gateway.status.get", sequence, json!({}))

@@ -46,6 +46,7 @@ impl GatewayClientBootstrap {
             self.commands.gateway_status_get(sequence),
             self.commands
                 .fork_memory_get(sequence, self.fork_memory_limit),
+            self.commands.confirm_list(sequence, 10),
             self.commands.event_subscribe(sequence),
         ]
     }
@@ -113,6 +114,15 @@ mod tests {
                 .and_then(|payload| payload.get("limit"))
                 .and_then(Value::as_u64),
             Some(8)
+        );
+        assert_eq!(
+            envelopes[6]
+                .clone()
+                .into_value()
+                .get("payload")
+                .and_then(|payload| payload.get("limit"))
+                .and_then(Value::as_u64),
+            Some(10)
         );
     }
 }

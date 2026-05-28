@@ -30,6 +30,7 @@ Socket 连接后，当前 CLI 发送：
 - `capability.catalog.get`：请求 kernel 当前可见 capability/tool surface。
 - `gateway.status.get`：请求 model/provider/context-window status。
 - `fork.memory.get`：请求最近 fork memory 和 `brain.db` display fields。
+- `confirm.list`：恢复最近 Confirm read-model answer，用于展示和 audit 连续性。
 - `event.subscribe`：只订阅 CLI 使用的已知安全 runtime events。
 
 当前 CLI 在 transport connection 和 `client.hello` 发送路径成功后，就把 socket 标记为 connected。未来可以加入 `server.hello` parser，但 `server.hello` 应继续作为 handshake metadata，而不是权威业务状态。
@@ -53,6 +54,7 @@ UI 可以发送这些 socket commands：
 - `task.list`：todo/task refresh。
 - `gateway.status.get`：status refresh。
 - `fork.memory.get`：recent fork memory refresh。
+- `confirm.list`：recent confirmation-only answer read-model refresh。
 - `task.plan.decide`：确认、补充或放弃计划。
 - `fork.create`：基于结构化 turn anchor 创建 context fork。
 - `execution.job.detail.get`：请求 execution job detail snapshots 用于展示。
@@ -91,6 +93,7 @@ CLI 将 kernel snapshots 映射到本地状态：
 - `task.snapshot`、`task.list.result`、`task.list.snapshot`、`task.list` 或兼容 task data 变成右侧面板 TODO rows。
 - `gateway.status.snapshot`、`gateway.status` 或 `status.snapshot` 变成 `StatusSnapshot` model/provider/context data。
 - `fork.memory.snapshot`、`memory.fork.snapshot`、`fork.memory`、`fork.memory.result` 或 `fork.list.snapshot` 变成 `ForkMemorySnapshot`。
+- `confirm.snapshot` 从 read-model state 变成 Confirm run-timeline row；永远不转换成 ASK continuation row。
 - `thought.snapshot`、`recall.snapshot`、`memory.snapshot`、`blackboard.snapshot` 和 `ask.snapshot` 变成用于展示的 synthetic context turns。
 - `fork.snapshot` 在存在 fork id 时创建或进入 active fork view。
 

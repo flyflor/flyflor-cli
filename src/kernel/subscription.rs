@@ -70,6 +70,7 @@ pub const BOOTSTRAP_COMMAND_TYPES: &[&str] = &[
     "capability.catalog.get",
     "gateway.status.get",
     "fork.memory.get",
+    "confirm.list",
     "event.subscribe",
 ];
 
@@ -134,6 +135,7 @@ mod tests {
                 "capability.catalog.get",
                 "gateway.status.get",
                 "fork.memory.get",
+                "confirm.list",
                 "event.subscribe",
             ]
         );

@@ -76,6 +76,8 @@ kernel `toolApprovals.mcpToolCalls` 和 `toolApprovals.userToolCalls` 的普通 
 
 `continue-tools`、`keep-budget`、`keep-subagents` 等公民权限 options 会展示为 Confirm 授权策略 choices，并作为结构化 `confirmAnswer` metadata 发送，`askAnswer` 只作为 kernel 兼容保留。订阅到的 `confirm.answered` event 会在 Run 中显示为 Confirm row，并可关闭 pending user-needed marker；它们不得被转换成普通用户消息文本，也不得使用 ASK 结晶样式展示。普通 ASK continuation 仍然使用 ASK menu 和 continuation metadata。
 
+启动时的 `confirm.snapshot` data 也会在 Run 中显示为 Confirm row，让最近授权决策在 CLI 重连后仍可见。它只属于 read-model/display state，不会创建 ASK continuation row 或 Crystal candidate UI。
+
 当 turn 处于 active 状态时，footer 会显示动画 Working 行。按一次 Esc 会进入终断预备状态；在窗口期内再按一次 Esc，会按 pending public message id 发送 `gateway.message.interrupt`。
 
 Exo tool/subprocess 区域使用解析后的 tool name 和 lifecycle summary，不展示 `unknown` placeholder。等待权限、运行、完成、失败状态都必须有明确 label。最后一个 Exo row 自动展开；历史 Exo rows 默认折叠。展开行显示最新输出片段，但 CLI 仍不本地执行工具。

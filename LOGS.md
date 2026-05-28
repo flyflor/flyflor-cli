@@ -277,3 +277,21 @@
   原因：确认 `confirm.answered` 已进入固定 subscription、Run timeline 和 subagent pending-user 闭合路径。
   验证：`cargo fmt --check`；`cargo test subscription_list_is_fixed_to_known_runtime_events`（1 passed）；`cargo test parses_required_event_families`（1 passed）；`cargo test ask_pause_and_answer_preserve_crystal_closure`（1 passed）；`cargo check --all-targets`；`cargo test`（218 passed）；`git diff --check`。
   风险：完整独立 Confirm component/read-model 仍待后续实现，ASK-compatible fallback 暂时保留。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：confirm-read-model-client
+  变动文件：`src/kernel/command.rs`、`src/kernel/client.rs`、`src/kernel/subscription.rs`、`src/main.rs`、`docs/protocol.md`、`docs/protocol.zh.cn.md`、`docs/tui-model.md`、`docs/tui-model.zh.cn.md`、`TODO.md`、`LOGS.md`
+  摘要：CLI bootstrap 新增 `confirm.list`，解析 `confirm.snapshot` 并恢复为 Run timeline 的 Confirm row，不生成 ASK continuation row。
+  原因：内核已提供 Confirm read-model queries，CLI 需要在重连/启动时恢复最近 confirmation-only audit visibility，同时保持 ASK 与 Confirm 分层。
+  验证：已运行 `cargo fmt --check`、`cargo test bootstrap_preserves_command_order`、`cargo test bootstrap_order_is_wire_contract`、`cargo test confirm_snapshot_restores_confirm_timeline_row`、`cargo test gateway_message_builder_can_confirm_tools_without_yolo`；待运行 `cargo check --all-targets`、`cargo test`、`git diff --check`。
+  风险：本轮只做 read-model 恢复显示；完整独立 Confirm component UI 与移除 ASK-compatible fallback 仍留后续。
+
+- 状态：完成
+  执行者：main-codex
+  范围：confirm-read-model-client-verification
+  变动文件：同上
+  摘要：完成 CLI Confirm read-model bootstrap/query 消费切片的 focused、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 `confirm.list` 启动查询和 `confirm.snapshot` Run timeline 恢复不破坏 ASK/Confirm 分层，也不改 TUI 视觉结构。
+  验证：`cargo fmt --check`；`cargo test bootstrap_preserves_command_order`；`cargo test bootstrap_order_is_wire_contract`；`cargo test confirm_snapshot_restores_confirm_timeline_row`；`cargo test gateway_message_builder_can_confirm_tools_without_yolo`；`cargo check --all-targets`；`cargo test`（219 passed）；`git diff --check`。
+  风险：完整独立 Confirm component UI 与移除 ASK-compatible fallback 仍留后续。
