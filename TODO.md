@@ -302,3 +302,12 @@
 - [x] Gateway registry/doctor 将 Feishu 标记为 native，并收紧 capability 只声明当前真实可用的 webhook/text/card update。
 - [x] 新增 Feishu 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `event.publish` card PATCH -> `turn.final` card PATCH。
 - [ ] 后续补真实 HTTP webhook listener、事件签名/加密、approval buttons、slash commands、file/doc/drive、富文本、群入场/ACL 和更完整卡片交互；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 DingTalk Native Channel Adapter
+
+- [x] 新增 DingTalk OpenAPI native adapter，支持 session webhook payload 入站和 session webhook 文本回复。
+- [x] DingTalk 入站 normalization 覆盖 conversation route、sender allowlist、source message id、sessionWebhook anchor 和 channel metadata。
+- [x] DingTalk outbound 覆盖 session webhook text reply、OpenAPI access token、robot group text send fallback、text chunking、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 DingTalk 标记为 native，并收紧 capability 只声明当前真实可用的 webhook/text/group send。
+- [x] 新增 DingTalk 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `turn.final` -> sessionWebhook POST。
+- [ ] 后续补真实 HTTP webhook listener、签名/加密校验、Stream Mode、AI cards、approval buttons、media/file、QR/device flow、机器人安装/ACL 和更完整 group/direct routing；这些能力当前仍保持 explicit unavailable 或未声明。

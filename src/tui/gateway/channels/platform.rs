@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use crate::tui::gateway::platforms::all_platforms;
 
 use super::bluebubbles::BlueBubblesAdapter;
+use super::dingtalk::DingTalkAdapter;
 use super::discord::DiscordAdapter;
 use super::email::EmailAdapter;
 use super::feishu::FeishuAdapter;
@@ -345,6 +346,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "dingtalk" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        DingTalkAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "irc" {
                 registry.register(PlatformEntry {
                     name,
@@ -585,6 +597,11 @@ mod tests {
         assert!(
             registry
                 .get("feishu")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("dingtalk")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(

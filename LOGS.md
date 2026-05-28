@@ -673,3 +673,12 @@
   原因：确认 Feishu 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 webhook payload 到 `/ws`、runtime event card update、turn final card update 的进程级闭环。
   验证：`cargo test feishu -- --nocapture`（5 passed）；`npm run smoke:gateway:feishu`（ok: true）；`cargo test gateway -- --nocapture`（118 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（310 passed）；`git diff --check`。
   风险：本轮只实现 env webhook payload、tenant token、text reply/send 和 interactive card PATCH；真实 HTTP webhook listener、签名/加密、approval buttons、slash commands、文件/文档/云盘、富文本、群入场/ACL 和完整卡片交互后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：dingtalk-native-channel-adapter-verification
+  变动文件：`src/tui/gateway/channels/dingtalk.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/dingtalk-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：完成 DingTalk OpenAPI native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 DingTalk 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 session webhook payload 到 `/ws` 再到 sessionWebhook reply 的进程级闭环。
+  验证：`cargo test dingtalk -- --nocapture`（5 passed）；`npm run smoke:gateway:dingtalk`（ok: true）；`cargo test gateway -- --nocapture`（123 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（315 passed）；`git diff --check`。
+  风险：本轮只实现 env/session webhook payload、session webhook text reply、OpenAPI token 和 robot group text send fallback；真实 HTTP webhook listener、签名/加密、Stream Mode、AI cards、approval buttons、media/file、QR/device flow 和完整 group/direct routing 后续继续补。

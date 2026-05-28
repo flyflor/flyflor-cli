@@ -33,6 +33,7 @@
     "dev": "FLYFLOR_DEV=1 FLYFLOR_LOG=.flyflor-cli/logs/dev.log cargo watch --clear --why -w src -w Cargo.toml -w Cargo.lock -x 'run -- --dev'",
     "dev:node": "tsx scripts/dev.ts",
     "smoke:live:tui": "tsx scripts/live-tui-scenario.ts",
+    "smoke:gateway:dingtalk": "tsx scripts/dingtalk-gateway-smoke.ts",
     "smoke:gateway:feishu": "tsx scripts/feishu-gateway-smoke.ts",
     "smoke:gateway:whatsapp": "tsx scripts/whatsapp-gateway-smoke.ts",
     "smoke:gateway:slack": "tsx scripts/slack-gateway-smoke.ts",

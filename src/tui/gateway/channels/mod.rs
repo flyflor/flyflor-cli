@@ -1,4 +1,5 @@
 pub mod bluebubbles;
+pub mod dingtalk;
 pub mod discord;
 pub mod email;
 pub mod feishu;
