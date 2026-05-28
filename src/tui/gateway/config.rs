@@ -922,17 +922,14 @@ mod tests {
     }
 
     #[test]
-    fn planned_channel_stays_unavailable_even_with_env_present() {
+    fn channel_list_has_no_planned_channels_after_native_gateway_closure() {
         let config = GatewayConfig::default();
-        let yuanbao = channel_list(&config)
-            .into_iter()
-            .find(|item| item.name == "yuanbao")
-            .unwrap();
-        let item = doctor_item_from_list_item_with_env(yuanbao, |_| true);
-
-        assert_eq!(item.availability, ChannelAvailability::Unavailable);
-        assert!(!item.native_runtime);
-        assert!(item.missing_required_env.is_empty());
+        assert!(
+            channel_list(&config)
+                .into_iter()
+                .all(|item| item.native_runtime),
+            "all catalog channels should now have explicit native adapters"
+        );
     }
 
     #[test]
@@ -1024,6 +1021,26 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["TEAMS_CLIENT_ID", "TEAMS_CLIENT_SECRET", "TEAMS_TENANT_ID"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn yuanbao_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let yuanbao = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "yuanbao")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(yuanbao, |env| {
+            matches!(env, "YUANBAO_APP_ID" | "YUANBAO_APP_SECRET")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["YUANBAO_APP_ID", "YUANBAO_APP_SECRET"]
         );
         assert!(item.missing_required_env.is_empty());
     }

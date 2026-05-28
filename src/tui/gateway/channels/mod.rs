@@ -26,5 +26,6 @@ pub mod wecom;
 pub mod wecom_callback;
 pub mod weixin;
 pub mod whatsapp;
+pub mod yuanbao;
 
 pub use runtime::spawn_gateway_channel_runtime;

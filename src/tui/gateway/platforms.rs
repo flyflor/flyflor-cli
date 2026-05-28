@@ -1,6 +1,7 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlatformRuntimeStatus {
     Native,
+    #[allow(dead_code)]
     Planned,
 }
 
@@ -1025,25 +1026,13 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "YUANBAO_COOKIE",
             "FLYFLOR_YUANBAO_TOKEN",
         ],
-        status: PlatformRuntimeStatus::Planned,
-        capability: cap!(
-            inbound_media,
-            outbound_media,
-            typing,
-            reactions,
-            group_chat,
-            quote_reply,
-            file_download,
-            file_upload,
-            voice,
-            websocket
-        ),
+        status: PlatformRuntimeStatus::Native,
+        capability: cap!(group_chat, webhook_required),
         details: &[
-            "HMAC WebSocket",
-            "C2C/group",
-            "COS media",
-            "heartbeat",
-            "stickers/emoji",
+            "JSON push bridge",
+            "C2C/group routing",
+            "reply webhook delivery",
+            "policy allowlists",
         ],
     },
 ];
@@ -1177,7 +1166,8 @@ mod tests {
                 "sms",
                 "bluebubbles",
                 "homeassistant",
-                "open-webui"
+                "open-webui",
+                "yuanbao"
             ]
         );
     }

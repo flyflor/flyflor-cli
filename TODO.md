@@ -383,3 +383,12 @@
 - [x] Gateway registry/doctor 将 Teams 标记为 native，并收紧 capability 只声明当前真实可用的 activity payload / text reply path。
 - [x] 新增 Teams 本地 mock HTTP smoke：Bot Framework activity payload -> `gateway.message.send` -> `turn.final` -> incoming webhook POST。
 - [ ] 后续补真实 SDK/aiohttp webhook listener、Bot Framework OAuth proactive send、Adaptive Card approval/buttons、typing、message edit/stream update、attachments/media、Teams setup wizard、Graph token mint/cache、serviceUrl host allowlist 和 meeting pipeline richer delivery；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Yuanbao Native Channel Adapter
+
+- [x] 新增 Yuanbao native bridge adapter，支持 JSON push payload env 入站、app credential doctor、DM/group policy 和显式 reply webhook 出站闭环。
+- [x] Yuanbao 入站 normalization 覆盖 Tencent IM snake_case/PascalCase JSON push、direct/group route、sender nickname、msg seq/source id、trace id、dedup、recall/withdraw filter 和 text/custom/image/file marker extraction。
+- [x] Yuanbao outbound 覆盖 `YUANBAO_REPLY_WEBHOOK_URL` POST、route/metadata audit payload、4000 字 chunking、Yuanbao close/auth/retry code 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 Yuanbao 标记为 native，并收紧 capability 只声明当前真实可用的 JSON push bridge / webhook reply path。
+- [x] 新增 Yuanbao 本地 mock HTTP smoke：JSON push payload -> `gateway.message.send` -> `turn.final` -> reply webhook POST。
+- [ ] 后续补完整 HMAC sign-token、protobuf WebSocket AUTH_BIND/T05/T06、ping/heartbeat、reply heartbeat、COS media、stickers、group member query、message recall transcript patch、slow response notifier、standalone send 和 setup wizard；这些能力当前仍保持 explicit unavailable 或未声明。

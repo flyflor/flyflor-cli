@@ -30,6 +30,7 @@ use super::wecom::WeComAdapter;
 use super::wecom_callback::WeComCallbackAdapter;
 use super::weixin::WeixinIlinkAdapter;
 use super::whatsapp::WhatsAppAdapter;
+use super::yuanbao::YuanbaoAdapter;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChannelErrorKind {
@@ -563,6 +564,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "yuanbao" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        YuanbaoAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             registry.register(PlatformEntry {
                 name,
                 label,
@@ -647,7 +659,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn registry_advertises_weixin_and_future_platforms_without_fake_success() {
+    fn registry_advertises_native_platforms_without_fake_success() {
         let registry = PlatformRegistry::with_builtin_platforms();
 
         assert!(
@@ -760,6 +772,11 @@ mod tests {
                 .get("teams")
                 .is_some_and(|entry| entry.native_runtime)
         );
+        assert!(
+            registry
+                .get("yuanbao")
+                .is_some_and(|entry| entry.native_runtime)
+        );
 
         let teams_result = (registry.get("teams").unwrap().factory)();
         assert!(matches!(
@@ -770,23 +787,19 @@ mod tests {
             })
         ));
 
-        let yuanbao = (registry.get("yuanbao").unwrap().factory)().unwrap();
-        let route = MessageRoute {
-            platform: "yuanbao".to_string(),
-            chat_id: "chat".to_string(),
-            chat_type: ChatType::Direct,
-            user_id: "user".to_string(),
-            display_name: "User".to_string(),
-            thread_id: "chat".to_string(),
-        };
+        let yuanbao_result = (registry.get("yuanbao").unwrap().factory)();
+        assert!(matches!(
+            yuanbao_result,
+            Err(ChannelError {
+                kind: ChannelErrorKind::MissingConfig,
+                ..
+            })
+        ));
 
-        let result = yuanbao.send_message(OutboundMessage {
-            route,
-            text: "hello".to_string(),
-            reply_to_message_id: None,
-            metadata: None,
-        });
-
-        assert_eq!(result.unwrap_err().kind, ChannelErrorKind::Unavailable);
+        assert!(registry.names().into_iter().all(|name| {
+            registry
+                .get(name)
+                .is_some_and(|entry| entry.native_runtime)
+        }));
     }
 }
