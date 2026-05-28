@@ -211,3 +211,12 @@
 - [x] Gateway registry/doctor 将 Mattermost 标记为 native，并收紧 capability 只声明当前真实可用的 REST polling/group text。
 - [x] 新增 Mattermost 本地 mock HTTP smoke：posts poll -> `gateway.message.send` -> `turn.final` -> create post。
 - [ ] 后续补 Mattermost websocket monitor、edit/stream preview、file attachments、mention gating 和 richer thread behavior；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Home Assistant Native Channel Adapter
+
+- [x] 新增 Home Assistant native adapter，支持本地 webhook 入站和 `/api/conversation/process` 出站。
+- [x] Home Assistant 入站 normalization 覆盖 conversation route、user allowlist、nested event payload、source message id 和 channel metadata。
+- [x] Home Assistant outbound 覆盖 conversation_id 续接、Bearer token、explicit media unavailable 和 REST error 分类。
+- [x] Gateway registry/doctor 将 Home Assistant 标记为 native，并收紧 capability 只声明当前真实可用的 webhook ingest / conversation text。
+- [x] 新增 Home Assistant 本地 mock HTTP smoke：webhook event -> `gateway.message.send` -> `turn.final` -> conversation/process。
+- [ ] 后续补 Home Assistant notify/service/entity routing、event subscription、area/device context 和更完整 conversation response 映射；这些能力当前仍保持 explicit unavailable 或未声明。

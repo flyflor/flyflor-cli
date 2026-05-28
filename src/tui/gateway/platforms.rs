@@ -1123,11 +1123,16 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "HOME_ASSISTANT_TOKEN",
             "HASS_URL",
             "HASS_TOKEN",
+            "FLYFLOR_HOME_ASSISTANT_URL",
             "FLYFLOR_HOME_ASSISTANT_TOKEN",
         ],
-        status: PlatformRuntimeStatus::Planned,
-        capability: cap!(webhook_required),
-        details: &["HA webhook/API", "notifications", "entity/service routing"],
+        status: PlatformRuntimeStatus::Native,
+        capability: cap!(webhook_required, direct_message, polling),
+        details: &[
+            "local webhook ingest",
+            "conversation/process reply",
+            "notifications/entity routing unavailable",
+        ],
     },
     PlatformMetadata {
         name: "open-webui",
@@ -1304,7 +1309,8 @@ mod tests {
                 "webhook",
                 "irc",
                 "ntfy",
-                "mattermost"
+                "mattermost",
+                "homeassistant"
             ]
         );
     }

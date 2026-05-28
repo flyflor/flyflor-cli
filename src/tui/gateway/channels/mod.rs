@@ -1,3 +1,4 @@
+pub mod homeassistant;
 pub mod irc;
 pub mod matrix;
 pub mod mattermost;

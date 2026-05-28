@@ -837,6 +837,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "homeassistant" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "discord" && !item.native_runtime)
         );
     }
@@ -962,6 +967,26 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["MATTERMOST_URL", "MATTERMOST_TOKEN", "MATTERMOST_CHANNEL"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn homeassistant_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let homeassistant = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "homeassistant")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(homeassistant, |env| {
+            matches!(env, "HOME_ASSISTANT_URL" | "HOME_ASSISTANT_TOKEN")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["HOME_ASSISTANT_URL", "HOME_ASSISTANT_TOKEN"]
         );
         assert!(item.missing_required_env.is_empty());
     }

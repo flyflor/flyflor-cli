@@ -493,3 +493,21 @@
   原因：确认 Mattermost 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 posts poll 到 `/ws` 再到 create post reply 的进程级闭环。
   验证：`cargo test mattermost -- --nocapture`（5 passed）；`npm run smoke:gateway:mattermost`（ok: true）；`cargo test gateway -- --nocapture`（61 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（253 passed）；`git diff --check`。
   风险：本轮只实现 Mattermost REST polling/send text path；websocket monitor、edit/stream preview、file attachments、mention gating 和 richer thread behavior 后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：homeassistant-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/homeassistant.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/homeassistant-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Home Assistant native adapter 与 `smoke:gateway:homeassistant`，完成本地 webhook 入站、`gateway.message.send`、`turn.final`、conversation/process 出站的本地 HTTP mock 闭环。
+  原因：继续推进 longtail channel 真实 adapter；Home Assistant webhook + REST conversation path 可本地验证 `/ws` 血管层连通，同时避免把 notify/service/entity routing 等家庭自动化能力提前宣称 native。
+  验证：待运行 `cargo test homeassistant -- --nocapture`、`npm run smoke:gateway:homeassistant`、格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 webhook ingest 与 conversation/process text path；notify/service/entity routing、event subscription、area/device context 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：homeassistant-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Home Assistant native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Home Assistant 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 webhook event 到 `/ws` 再到 conversation/process reply 的进程级闭环。
+  验证：`cargo test homeassistant -- --nocapture`（5 passed）；`npm run smoke:gateway:homeassistant`（ok: true）；`cargo test gateway -- --nocapture`（66 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（258 passed）；`git diff --check`。
+  风险：本轮只实现 webhook ingest 与 conversation/process text path；notify/service/entity routing、event subscription、area/device context 后续继续补。

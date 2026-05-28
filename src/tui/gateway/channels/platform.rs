@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::tui::gateway::platforms::all_platforms;
 
+use super::homeassistant::HomeAssistantAdapter;
 use super::irc::IrcAdapter;
 use super::matrix::MatrixAdapter;
 use super::mattermost::MattermostAdapter;
@@ -308,6 +309,17 @@ impl PlatformRegistry {
                     label,
                     factory: Box::new(|| {
                         MattermostAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
+            if name == "homeassistant" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        HomeAssistantAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
                     }),
                     native_runtime: true,
                 });
