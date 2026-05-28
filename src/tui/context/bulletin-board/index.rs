@@ -84,8 +84,8 @@ fn render_compact(frame: &mut Frame, area: Rect, theme: &Theme) {
             text_key("bulletin.compact.modelHeader"),
             Style::default().fg(theme.blue),
         ),
-        metric_line("model", "flyflor-pro", theme),
-        metric_line("provider", "OpenTUI", theme),
+        metric_line(&text_key("model"), "flyflor-pro", theme),
+        metric_line(&text_key("model.provider"), "OpenTUI", theme),
         ratatui::text::Line::raw(""),
         ratatui::text::Line::styled(
             text_key("bulletin.compact.healthy"),

@@ -755,8 +755,12 @@ fn draw_compact_sidebar(frame: &mut Frame, area: Rect, theme: &Theme) {
             ui_text_key("compact.contextWindowHeader"),
             Style::default().fg(theme.blue),
         ),
-        metric_line("model", &ui_text_key("model.unknown"), theme),
-        metric_line("usage", &ui_text_key("contextWindow.missing"), theme),
+        metric_line(&ui_text_key("model"), &ui_text_key("model.unknown"), theme),
+        metric_line(
+            &ui_text_key("contextWindow.usage"),
+            &ui_text_key("contextWindow.missing"),
+            theme,
+        ),
     ]);
     frame.render_widget(compact, area);
 }
@@ -8497,10 +8501,23 @@ mod tests {
                     &Theme::default(),
                 ));
                 assert!(header.contains("▼ 🤔 黑板讨论 确认右侧布局修复方案"));
-                assert!(blackboard.detail.contains("Blackboard discussion"));
-                assert!(blackboard.detail.contains("Status: closed"));
-                assert!(blackboard.detail.contains("reason: 确认右侧布局修复方案"));
-                assert!(blackboard.detail.contains("plan: plan"));
+                assert!(
+                    blackboard
+                        .detail
+                        .contains(&ui_text_key("blackboard.discussionTitle"))
+                );
+                assert!(blackboard.detail.contains(&format!(
+                    "{}: closed",
+                    ui_text_key("blackboard.discussionStatusLabel")
+                )));
+                assert!(blackboard.detail.contains(&format!(
+                    "{}: 确认右侧布局修复方案",
+                    ui_text_key("blackboard.discussionReasonLabel")
+                )));
+                assert!(blackboard.detail.contains(&format!(
+                    "{}: plan",
+                    ui_text_key("blackboard.discussionPlanLabel")
+                )));
                 assert!(blackboard.detail.contains(&format!(
                     "{} 1 · planner: 先固定 TODO 标题。",
                     ui_text_key("blackboard.discussionRoundLabel")
@@ -8524,10 +8541,13 @@ mod tests {
             "mode": "review",
             "content": "单条黑板记录"
         }));
-        assert!(
-            string_discussion
-                .contains("Blackboard discussion: Status: open; reason: 同步状态; plan: review")
-        );
+        assert!(string_discussion.contains(&format!(
+            "{}: {}: open; {}: 同步状态; {}: review",
+            ui_text_key("blackboard.discussionTitle"),
+            ui_text_key("blackboard.discussionStatusLabel"),
+            ui_text_key("blackboard.discussionReasonLabel"),
+            ui_text_key("blackboard.discussionPlanLabel")
+        )));
         assert!(string_discussion.contains(&format!(
             "{} 1: 单条黑板记录",
             ui_text_key("blackboard.discussionRoundLabel")
@@ -8986,7 +9006,9 @@ mod tests {
         let start = app
             .chat_lines
             .iter()
-            .position(|line| line_plain_text(line).contains("Blackboard discussion"))
+            .position(|line| {
+                line_plain_text(line).contains(&ui_text_key("blackboard.discussionTitle"))
+            })
             .expect("discussion start");
         let end = app
             .chat_lines
@@ -9016,7 +9038,7 @@ mod tests {
         });
 
         let copied = app.selection_to_text().expect("selection text");
-        assert!(copied.contains("Blackboard discussion"));
+        assert!(copied.contains(&ui_text_key("blackboard.discussionTitle")));
         assert!(copied.contains(&format!(
             "{} 1 · worker",
             ui_text_key("blackboard.discussionRoundLabel")
@@ -9083,7 +9105,10 @@ mod tests {
 
         assert!(row.detail.contains("ASK 续答上下文"));
         assert!(row.detail.contains("问题: 请选择下一步"));
-        assert!(row.detail.contains("- Other 自由输入"));
+        assert!(
+            row.detail
+                .contains(&format!("- {}", ui_text_key("ask.otherLabel")))
+        );
         assert!(!row.detail.trim_start().starts_with('{'));
     }
 
@@ -9856,7 +9881,7 @@ mod tests {
                     },
                     AskChoice {
                         id: "other".to_string(),
-                        label: "Other 自由输入".to_string(),
+                        label: ui_text_key("ask.otherLabel"),
                         value: None,
                         description: Some("自由输入".to_string()),
                         question_id: None,
@@ -9876,7 +9901,7 @@ mod tests {
 
         assert_eq!(area, Rect::new(4, 16, 80, 4));
         assert!(text.contains("继续实现"));
-        assert!(text.contains("Other 自由输入"));
+        assert!(text.contains(&ui_text_key("ask.otherLabel")));
         assert!(!text.contains('{'));
     }
 
@@ -9936,7 +9961,9 @@ mod tests {
             .expect("answer should render");
         let exo_index = rendered
             .iter()
-            .position(|line| line.contains("Exo") && line.contains("子代理"))
+            .position(|line| {
+                line.contains(&ui_text_key("contextRow.execution")) && line.contains("子代理")
+            })
             .expect("execution row should render");
 
         assert!(exo_index > answer_index);
@@ -10901,9 +10928,10 @@ mod tests {
 
         assert!(app.right.max_scroll > 0);
         assert_eq!(app.right.scrollbar.x, 39);
+        let expected_run_title = format!("  {}", ui_text_key("run.title"));
         assert_eq!(
             app.right_lines.first().map(line_plain_text).as_deref(),
-            Some("  Run")
+            Some(expected_run_title.as_str())
         );
         assert!(
             app.right_lines
@@ -11154,7 +11182,7 @@ mod tests {
         assert!(
             data.model_stats
                 .iter()
-                .any(|stat| stat.label == "mode" && stat.value == "PLAN")
+                .any(|stat| stat.label == ui_text_key("model.stat.mode") && stat.value == "PLAN")
         );
     }
 
@@ -11546,7 +11574,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(right.contains("Run"));
+        assert!(right.contains(&ui_text_key("run.title")));
         assert!(!right.contains("Subagents"));
         assert!(right.contains("child-1"));
     }
@@ -11906,7 +11934,7 @@ mod tests {
         let text = line_text(&composer_footer_line(&app, &theme));
 
         assert!(EXO_ACTIVITY_FRAMES.iter().any(|frame| text.contains(frame)));
-        assert!(text.contains("Working (1m 01s"));
+        assert!(text.contains(&format!("{} (1m 01s", ui_text_key("working"))));
         assert!(text.contains("esc esc"));
     }
 

@@ -6,7 +6,10 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::tui::{layout::state::HeaderState, theme::Theme};
+use crate::{
+    i18n::text_key,
+    tui::{layout::state::HeaderState, theme::Theme},
+};
 
 pub fn render(frame: &mut Frame, area: Rect, state: &HeaderState, theme: &Theme) {
     let cols = Layout::default()
@@ -17,10 +20,13 @@ pub fn render(frame: &mut Frame, area: Rect, state: &HeaderState, theme: &Theme)
     let left = Line::from(vec![
         Span::styled("◎", Style::default().fg(theme.purple)),
         Span::styled(
-            " flyflor-chat",
+            format!(" {}", text_key("layout.header.title")),
             Style::default().fg(theme.text).add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" · powered by OpenTUI", Style::default().fg(theme.muted)),
+        Span::styled(
+            format!(" · {}", text_key("layout.header.poweredBy")),
+            Style::default().fg(theme.muted),
+        ),
     ]);
     let right = Line::from(vec![
         Span::styled("●", Style::default().fg(theme.green)),
@@ -29,14 +35,23 @@ pub fn render(frame: &mut Frame, area: Rect, state: &HeaderState, theme: &Theme)
             Style::default().fg(theme.text),
         ),
         if state.copied {
-            Span::styled(" · COPIED", Style::default().fg(theme.green))
+            Span::styled(
+                format!(" · {}", text_key("layout.header.copied")),
+                Style::default().fg(theme.green),
+            )
         } else {
             Span::raw("")
         },
         if state.dev_mode {
-            Span::styled(" · DEV", Style::default().fg(theme.pink))
+            Span::styled(
+                format!(" · {}", text_key("layout.header.dev")),
+                Style::default().fg(theme.pink),
+            )
         } else if state.native_selection_mode {
-            Span::styled(" · SELECT", Style::default().fg(theme.blue))
+            Span::styled(
+                format!(" · {}", text_key("layout.header.select")),
+                Style::default().fg(theme.blue),
+            )
         } else {
             Span::raw("")
         },

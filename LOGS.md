@@ -898,3 +898,12 @@
   原因：继续收敛 `src/main.rs` 中生产 UI 兜底文案，保持 socket snapshot 展示 copy 由 catalog 管理。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：本轮只改 fallback 文案来源；socket envelope、metadata shape、context row 装配、TUI 布局和 gateway 行为不变。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-catalog-polish-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`src/tui/layout/header.rs`、`src/tui/context/bulletin-board/index.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 compact sidebar metric 标签和旧 layout header 的 title/powered/copied/dev/select 文案接入 i18n，并把 zh-CN catalog 中仍显示英文的 socket/history/runtime/blackboard/right-panel/model/run 等生产 UI 文案翻译为中文。
+  原因：继续执行 flyflor-cli 多语言红线；生产 UI 文案必须从 catalog 取值，不能在 Rust 或 zh-CN catalog 中继续表现为英文兜底。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮只改变显示文案来源与 zh-CN catalog 值，不改变 TUI 布局、美化、ASK/Confirm/Fork 组件结构、gateway channel 行为或 `/ws` 协议。
