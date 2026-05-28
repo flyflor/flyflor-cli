@@ -829,22 +829,13 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "SIMPLEX_CLI",
             "FLYFLOR_SIMPLEX_PASSWORD",
         ],
-        status: PlatformRuntimeStatus::Planned,
-        capability: cap!(
-            inbound_media,
-            outbound_media,
-            typing,
-            group_chat,
-            file_download,
-            file_upload,
-            voice,
-            websocket
-        ),
+        status: PlatformRuntimeStatus::Native,
+        capability: cap!(group_chat, websocket),
         details: &[
             "simplex-chat daemon WS",
             "opaque contact ids",
             "own echo suppression",
-            "media magic detection",
+            "text command delivery",
         ],
     },
     PlatformMetadata {
@@ -1192,6 +1183,7 @@ mod tests {
                 "google-chat",
                 "irc",
                 "ntfy",
+                "simplex",
                 "line",
                 "mattermost",
                 "signal",

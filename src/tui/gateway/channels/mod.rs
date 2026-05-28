@@ -16,6 +16,7 @@ pub mod platform;
 pub mod qqbot;
 pub mod runtime;
 pub mod signal;
+pub mod simplex;
 pub mod slack;
 pub mod sms;
 pub mod telegram;

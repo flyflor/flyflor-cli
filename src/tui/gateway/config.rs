@@ -1216,6 +1216,21 @@ mod tests {
     }
 
     #[test]
+    fn simplex_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let simplex = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "simplex")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(simplex, |env| env == "SIMPLEX_WS_URL");
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(item.present_required_env, vec!["SIMPLEX_WS_URL"]);
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
     fn wecom_callback_native_channel_is_available_when_required_env_is_present() {
         let config = GatewayConfig::default();
         let wecom = channel_list(&config)

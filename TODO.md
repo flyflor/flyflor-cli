@@ -365,3 +365,12 @@
 - [x] Gateway registry/doctor 将 MSGraph Webhook 标记为 native，并收紧 capability 只声明当前真实可用的 notification payload / reply webhook delivery。
 - [x] 新增 MSGraph 本地 mock HTTP smoke：notification payload -> `gateway.message.send` -> `turn.final` -> reply webhook POST。
 - [ ] 后续补真实 HTTP listener、Graph validationToken handshake、source CIDR allowlist、subscription lifecycle、Graph resource fetch/detail hydration、Teams meeting pipeline runtime、outbound Graph API delivery 和 richer audit；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 SimpleX Native Channel Adapter
+
+- [x] 新增 SimpleX Chat native adapter，支持 simplex-chat daemon WebSocket URL 配置、env `newChatItem` payload 入站和 WebSocket command 出站闭环。
+- [x] SimpleX 入站 normalization 覆盖 direct/group route、group member sender、allowlist、own echo suppression、source message id、home channel 和 channel metadata。
+- [x] SimpleX outbound 覆盖 `@[contact] text` / `#[group] text` command 生成、WebSocket send/response、text chunking、response error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 SimpleX 标记为 native，并收紧 capability 只声明当前真实可用的 daemon WebSocket text/group path。
+- [x] 新增 SimpleX 本地 mock WebSocket smoke：`newChatItem` payload -> `gateway.message.send` -> `turn.final` -> daemon command frame。
+- [ ] 后续补真实持久 WebSocket listener/reconnect、file receive/cache、media magic detection、typing fallback policy、daemon health check、standalone send、home channel cron delivery、contact/group discovery 和 SimpleX setup wizard；这些能力当前仍保持 explicit unavailable 或未声明。
