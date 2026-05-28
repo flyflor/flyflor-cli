@@ -817,3 +817,12 @@
   原因：用户指出 flyflor-cli 已配置多语言但生产 UI 仍有硬编码；本轮继续按明确 owner 小批量清理，不改 TUI 布局和视觉结构。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：本轮只清理用户可见 UI copy；协议 token、日志、测试 fixture、状态归一化匹配词和 `/ws` 行为不变；`src/main.rs` 中仍有上下文窗口估算等历史文案待后续 owner 拆分时继续迁移。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-render-copy-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 `src/main.rs` 中 context row 标签、Thought fallback、code/flowchart 标题、TODO 状态前缀和 ASK Other 阻塞提示继续接入 i18n。
+  原因：继续清理生产 UI 硬编码，同时保持 TUI 视觉结构、协议 token、日志和测试 fixture 不变。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：仍有 context window 估算、demo fixture 和 shell/config 命令输出中的字符串保留，后续继续按 owner 分批清理。

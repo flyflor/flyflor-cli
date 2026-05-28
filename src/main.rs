@@ -2320,8 +2320,7 @@ impl App {
             .is_some_and(|menu| menu.is_editing_other())
         {
             self.command_palette = None;
-            self.right_source.blackboard_status =
-                "请先完成当前 ASK Other 回答，Esc 返回选项".to_string();
+            self.right_source.blackboard_status = ui_text_key("ask.otherMustFinishBeforeCommand");
             return;
         }
         let Some(command) = self
@@ -3841,8 +3840,8 @@ fn thought_summary(thought: &ThoughtData) -> String {
         return thought.summary.clone();
     }
     match thought.duration_ms {
-        Some(duration) => format!("Thought for {duration}ms"),
-        None => "Thought".to_string(),
+        Some(duration) => format!("{} {duration}ms", ui_text_key("thought.durationPrefix")),
+        None => ui_text_key("thought.fallback"),
     }
 }
 
@@ -3877,15 +3876,15 @@ fn expanded_marker(row: &ContextRow) -> &'static str {
     if row.expanded { "▼" } else { "▶" }
 }
 
-fn context_row_label(kind: ContextRowKind) -> &'static str {
+fn context_row_label(kind: ContextRowKind) -> String {
     match kind {
-        ContextRowKind::Recall => "☁️ 回忆中",
-        ContextRowKind::Thought => "😌 思考中",
-        ContextRowKind::Fork => "🍀 fork",
-        ContextRowKind::Blackboard => "🤔 黑板讨论",
-        ContextRowKind::Execution => "Exo",
-        ContextRowKind::AskResume => "重新回答",
-        ContextRowKind::CreateFork => "新建 fork",
+        ContextRowKind::Recall => ui_text_key("contextRow.recall"),
+        ContextRowKind::Thought => ui_text_key("contextRow.thought"),
+        ContextRowKind::Fork => ui_text_key("contextRow.fork"),
+        ContextRowKind::Blackboard => ui_text_key("contextRow.blackboard"),
+        ContextRowKind::Execution => ui_text_key("contextRow.execution"),
+        ContextRowKind::AskResume => ui_text_key("contextRow.askResume"),
+        ContextRowKind::CreateFork => ui_text_key("contextRow.createFork"),
     }
 }
 
@@ -4242,9 +4241,9 @@ fn render_code_block(
 
     let mut lines = Vec::new();
     let label = if language.is_empty() {
-        "Code".to_string()
+        ui_text_key("code.defaultTitle")
     } else {
-        format!("Code · {language}")
+        format!("{} · {language}", ui_text_key("code.defaultTitle"))
     };
     let header_style = Style::default()
         .fg(theme.code_label)
@@ -4267,7 +4266,7 @@ fn render_mermaid_block(
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     lines.push(Line::styled(
-        truncate_to_width("Flowchart", width),
+        truncate_to_width(&ui_text_key("flowchart.title"), width),
         Style::default()
             .fg(theme.mermaid_label)
             .add_modifier(Modifier::BOLD),
@@ -4688,7 +4687,7 @@ fn render_mermaid_ascii(graph: &MermaidGraph, width: usize) -> Vec<String> {
         }
     }
     if lines.is_empty() {
-        lines.push("└─ empty flowchart".to_string());
+        lines.push(format!("└─ {}", ui_text_key("flowchart.empty")));
     }
     lines
 }
@@ -5022,7 +5021,8 @@ fn format_bytes(bytes: u64) -> String {
 
 fn todo_section_rows(todos: &[TodoItem]) -> Vec<String> {
     let state = plan_state_from_todos(todos);
-    let status = (state != PlanState::Empty).then(|| format!("状态：{}", state.label()));
+    let status = (state != PlanState::Empty)
+        .then(|| format!("{}：{}", ui_text_key("status"), state.label()));
     status
         .into_iter()
         .chain(todos.iter().map(|item| {
@@ -5143,7 +5143,7 @@ fn render_right_section_lines(
     width: usize,
     selected: bool,
 ) -> Vec<Line<'static>> {
-    if section.title == "Context Window" {
+    if section.title == ui_text_key("rightPanel.contextWindow") {
         return section
             .lines
             .iter()
