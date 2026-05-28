@@ -43,10 +43,13 @@ CLI 不实现 Flyflor 哲学层，但应该一致地渲染它们：
 Feature ownership 按 convention directories 拆分：
 
 - `src/tui/terminal`：raw mode、alternate screen、mouse capture、clipboard fallback 和 panic/log setup。
-- `src/tui/gateway`：`flyflor.ws.v1` envelope factory、fixed subscription list、startup bootstrap 和 command builders。
-- `src/tui/ask`：ASK menu state、parser、view helpers 和 continuation answer metadata。
+- `src/kernel`：`flyflor.ws.v1` envelope factory、fixed subscription list、startup bootstrap 和 command builders。
+- `src/gateway`：root-level channel bridge runtime、channel configuration、platform registry 和 native channel adapters。
+- `src/tui/components/ask`：ASK menu state、parser、view helpers 和 continuation answer metadata。
+- `src/tui/components/confirm`：Confirm read-model state、snapshot parser 和 timeline projection helpers。
+- `src/tui/components/fork`：active fork state、fork command payload 和 labels。
+- `src/tui/components/process_bar`：顶部呼吸带 title、websocket label 和 working shimmer rendering helpers。
 - `src/tui/plan`：plan menu state 与 `task.plan.decide` payload。
-- `src/tui/fork`：active fork state、fork command payload 和 labels。
 - `src/tui/run_timeline`：event timeline parsing/state/view。
 - `src/tui/subagent`：subagent batch/child parsing/state/view。
 

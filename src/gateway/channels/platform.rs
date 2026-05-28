@@ -2,7 +2,7 @@ use std::{collections::HashMap, env, sync::Arc};
 
 use serde_json::{Value, json};
 
-use crate::tui::gateway::platforms::all_platforms;
+use crate::gateway::platforms::all_platforms;
 
 use super::bluebubbles::BlueBubblesAdapter;
 use super::dingtalk::DingTalkAdapter;
@@ -613,9 +613,7 @@ pub fn enabled_platform_names_from_env() -> Vec<String> {
                 .map(|name| name.to_ascii_lowercase())
                 .collect()
         })
-        .unwrap_or_else(|_| {
-            crate::tui::gateway::config::enabled_channel_names_from_default_config()
-        })
+        .unwrap_or_else(|_| crate::gateway::config::enabled_channel_names_from_default_config())
 }
 
 struct UnsupportedPlatformAdapter {

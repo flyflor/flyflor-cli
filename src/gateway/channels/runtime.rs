@@ -21,11 +21,11 @@ use super::platform::{
     PlatformRegistry, PlatformSendOutcome, StreamDeliveryMode, enabled_platform_names_from_env,
 };
 use crate::{
+    DEFAULT_WS_URL,
     kernel::{
         command::{GatewayCommandBuilder, GatewayMessagePayload},
         envelope::EnvelopeFactory,
     },
-    tui::shared::ws_url,
 };
 
 pub fn spawn_gateway_channel_runtime() {
@@ -131,7 +131,7 @@ fn websocket_bridge_loop(
     let mut inbound_metadata: HashMap<String, Value> = HashMap::new();
     let mut streams: HashMap<String, OutboundTurnStream> = HashMap::new();
     loop {
-        let url = ws_url();
+        let url = kernel_ws_url();
         channel_log(format!("channel {} ws connect {url}", adapter.name()));
         match connect(url.as_str()) {
             Ok((mut socket, _)) => {
@@ -170,6 +170,10 @@ fn websocket_bridge_loop(
             }
         }
     }
+}
+
+fn kernel_ws_url() -> String {
+    env::var("FLYFLOR_WS_URL").unwrap_or_else(|_| DEFAULT_WS_URL.to_string())
 }
 
 fn run_socket_bridge_session(
@@ -586,7 +590,7 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
-    use crate::tui::gateway::channels::platform::{
+    use crate::gateway::channels::platform::{
         ChannelCapabilityState, ChannelResult, ChatType, PlatformSendOutcome,
     };
 

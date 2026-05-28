@@ -6,13 +6,19 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::tui::{shared::center_text, theme::Theme};
+use crate::{
+    i18n::text_key,
+    tui::{shared::center_text, theme::Theme},
+};
 
 use super::state::TodoState;
 
 pub fn render(frame: &mut Frame, area: Rect, state: &TodoState, theme: &Theme) {
     frame.render_widget(
-        Paragraph::new(Line::styled("TODO List", Style::default().fg(theme.text))),
+        Paragraph::new(Line::styled(
+            text_key("todo.title"),
+            Style::default().fg(theme.text),
+        )),
         Rect::new(area.x, area.y, area.width, 1),
     );
     let todo_start_y = area.y + 2;

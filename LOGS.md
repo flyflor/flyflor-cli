@@ -781,3 +781,12 @@
   原因：把 channel catalog、package script、smoke script 三者从数量对齐推进到实际运行对齐。
   验证：顺序执行 `dingtalk feishu wecom weixin google-chat msgraph-webhook qqbot whatsapp slack telegram discord webhook ntfy matrix irc mattermost email homeassistant open-webui sms line bluebubbles signal wecom-callback simplex teams yuanbao`，最终输出 `ALL_GATEWAY_SMOKES_OK`。
   风险：仍为本地 mock smoke sweep，不替代真实平台账号/沙箱凭据验收。
+
+- 状态：完成
+  执行者：main-codex
+  范围：gateway-components-layering-correction
+  变动文件：`src/gateway/**`、`src/tui/components/**`、`src/tui/mod.rs`、`src/main.rs`、`src/tui/shared.rs`、`src/tui/plan/menu.rs`、`src/tui/context/bulletin-board/**`、`i18n/*.json`、`docs/architecture*.md`、`docs/protocol*.md`、`docs/gateway-channel-closure-audit.md`、`TODO.md`
+  摘要：将 gateway 提升到与 kernel 平级的 root owner；将 ASK、Confirm、Fork 和顶部 process bar 迁入 `src/tui/components`；本次触达的组件可见文案接入 i18n。
+  原因：用户要求 gateway 不归 TUI 所有，TUI 交互单元进入 components，并指出 CLI 已配置多语言、用户可见文案不能继续散落硬编码。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮是目录 owner 与 i18n 边界迁移，不改 TUI 美化、不改 channel 行为、不新增提示词；历史 `old-docs` 与旧 LOGS 路径保持原文。

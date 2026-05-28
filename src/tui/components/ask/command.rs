@@ -1,5 +1,7 @@
 use serde_json::{Value, json};
 
+use crate::i18n::text_key;
+
 use super::state::AskSelection;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,7 +64,7 @@ pub fn ask_message_text(answers: &[AskAnswer]) -> String {
             .collect::<Vec<_>>()
             .join("\n");
     }
-    "已提交执行授权策略".to_string()
+    text_key("ask.confirmSubmitted")
 }
 
 pub fn ask_answer_metadata(answer: &AskAnswer) -> Value {

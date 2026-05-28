@@ -7,7 +7,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::tui::gateway::platforms::{PlatformMetadata, all_platforms, canonical_platform_name};
+use crate::gateway::platforms::{PlatformMetadata, all_platforms, canonical_platform_name};
 
 const CLI_HOME_ENV: &str = "FLYFLOR_CLI_HOME";
 const CONFIG_PATH_ENV: &str = "FLYFLOR_GATEWAY_CONFIG";

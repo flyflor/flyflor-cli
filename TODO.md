@@ -120,7 +120,14 @@
 - [x] 新增源码红线：新增源码、协议 key、运行时输出和 env 前缀不使用参考项目关键字；历史日志中的旧词仅作为历史记录保留。
 - [x] 新增 `scripts/codex-lanes.sh`，固定 `gateway-core-runtime`、`channels-western`、`channels-cn`、`channels-longtail`、`tui-ask-layout` 五个 worktree/tmux lane，并自动软链 `node_modules` 与 `target`。
 - [ ] 逐 lane 落地真实 channel adapter：先补 generic core runtime tests，再分 western、CN、longtail adapters；每个 adapter 至少覆盖 config doctor、missing credential unavailable、inbound normalization、outbound send、ASK/approval metadata。
-- [ ] 把 TUI 目录继续按 `progress/components/layout/context/bulletin_board` 拆分，但不改 ASK 菜单视觉样式。
+- [x] 把 TUI 目录继续按 `progress/components/layout/context/bulletin_board` 拆分，但不改 ASK 菜单视觉样式。
+
+## 2026-05-28 Gateway / Components Layering Correction
+
+- [x] `gateway` 从 `src/tui/gateway` 提升到 root-level `src/gateway`，与 `src/kernel` 平级；TUI 不再拥有 channel bridge runtime。
+- [x] `ask` / `confirm` / `fork` 迁入 `src/tui/components/`，对应状态、parser、command、view 继续由组件 owner 隔离。
+- [x] 顶部呼吸带 / working shimmer 迁入 `src/tui/components/process_bar/`，`shared` 只保留无 owner 的几何、分隔线、文本 wrap 等通用渲染工具。
+- [x] 活动架构文档更新为 `kernel` / `gateway` / `tui/components` 三层口径；历史 `old-docs` 与旧 LOGS 保持原文。
 
 ## 2026-05-28 gateway channel doctor core
 

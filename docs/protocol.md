@@ -39,7 +39,7 @@ The kernel exposes `capability.catalog.get` and `capability.catalog.snapshot`; C
 
 ## Subscriptions
 
-The current `event.subscribe` payload requests a fixed, source-controlled list of stable runtime events. The list lives in `src/tui/gateway/subscription.rs` and covers plan, ASK, Confirm, route/recall, blackboard, tool, Executive loop, subagent, process, and worker lifecycle events.
+The current `event.subscribe` payload requests a fixed, source-controlled list of stable runtime events. The list lives in `src/kernel/subscription.rs` and covers plan, ASK, Confirm, route/recall, blackboard, tool, Executive loop, subagent, process, and worker lifecycle events.
 
 It deliberately does not subscribe to nonexistent or provisional event names, such as `fork.memory.*`; fork memory refreshes continue through `fork.memory.get` after final turns and explicit commands.
 

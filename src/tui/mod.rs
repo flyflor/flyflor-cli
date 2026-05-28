@@ -1,12 +1,9 @@
 use std::env;
 
-pub mod ask;
 pub mod clipboard;
-pub mod confirm;
+pub mod components;
 pub mod context;
 pub mod execution;
-pub mod fork;
-pub mod gateway;
 pub mod input;
 pub mod layout;
 pub mod plan;

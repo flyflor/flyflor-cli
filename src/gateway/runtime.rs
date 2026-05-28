@@ -15,8 +15,8 @@ use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 
 use crate::{
     DEFAULT_WS_URL,
+    gateway::channels::spawn_gateway_channel_runtime,
     kernel::{client::GatewayClientBootstrap, envelope::EnvelopeFactory},
-    tui::gateway::channels::spawn_gateway_channel_runtime,
 };
 
 const CLI_HOME_ENV: &str = "FLYFLOR_CLI_HOME";

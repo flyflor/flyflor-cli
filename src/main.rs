@@ -36,6 +36,7 @@ use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 use unicode_width::UnicodeWidthStr;
 
 mod cli;
+mod gateway;
 mod i18n;
 mod kernel;
 mod tui;
@@ -44,34 +45,40 @@ use cli::{
     CliCommand, GatewayChannelCommand, GatewayConfigCommand, GatewayRuntimeCommand,
     GatewayShellCommand,
 };
+use gateway::runtime as gateway_runtime;
 use i18n::{CopyKey, text as ui_text, text_key as ui_text_key};
 use kernel::{
     client::GatewayClientBootstrap,
     command::{GatewayCommandBuilder, GatewayMessagePayload},
     envelope::EnvelopeFactory,
 };
-use tui::ask::{
+#[cfg(test)]
+use tui::clipboard::{OSC52_MAX_BYTES, osc52_sequence};
+use tui::clipboard::{read_clipboard_text, write_text_to_clipboard};
+use tui::components::ask::{
     command::AskAnswer,
     parser::{ask_menu_from_turn_metadata, continuation_from_metadata, continuation_from_value},
     state::AskMenu,
     view::visible_item_count,
 };
-#[cfg(test)]
-use tui::clipboard::{OSC52_MAX_BYTES, osc52_sequence};
-use tui::clipboard::{read_clipboard_text, write_text_to_clipboard};
-use tui::confirm::{
+use tui::components::confirm::{
     parser::{records_from_snapshot_payload, runtime_event_from_record},
     state::ConfirmState,
 };
-use tui::execution::{
-    state::ExecutionRowStatus, view::execution_context_rows as build_execution_context_rows,
-};
-use tui::fork::{
+use tui::components::fork::{
     command::{ForkCreateSource, fork_create_payload},
     state::ActiveForkSession,
     view::session_summary,
 };
-use tui::gateway::runtime as gateway_runtime;
+#[cfg(test)]
+use tui::components::process_bar::top_bar_title_for_url;
+use tui::components::process_bar::{
+    WORKING_SHIMMER_PHASES, top_bar_title, working_light_line, working_light_phase,
+    working_shimmer_style, ws_url,
+};
+use tui::execution::{
+    state::ExecutionRowStatus, view::execution_context_rows as build_execution_context_rows,
+};
 use tui::input::{
     input_cursor_position, input_index_for_column, input_line_start_and_column,
     normalize_paste_text, render_input_lines,
@@ -84,10 +91,7 @@ use tui::plan::{
 #[cfg(test)]
 use tui::run_timeline::state::RunTimelineItemKind;
 use tui::run_timeline::{state::RunTimeline, view::run_panel_lines};
-use tui::shared::{
-    WORKING_SHIMMER_PHASES, draw_separator, in_rect, metric_line, top_bar_title,
-    working_light_line, working_light_phase, working_shimmer_style, ws_url,
-};
+use tui::shared::{draw_separator, in_rect, metric_line};
 use tui::terminal::{
     TerminalMode, enter_terminal, leave_terminal, mouse_capture_enabled_from_env_args,
 };
@@ -100,8 +104,8 @@ const EXO_ACTIVITY_FRAMES: [&str; 8] = ["⣏⣹", "⣇⣸", "⣧⣤", "⣿⣴", 
 const CITIZEN_PERMISSION_CHOICES: [&str; 3] = ["continue-tools", "keep-budget", "keep-subagents"];
 
 fn main() -> io::Result<()> {
-    if tui::gateway::runtime::should_run_foreground_from_env() {
-        return tui::gateway::runtime::run_foreground();
+    if gateway::runtime::should_run_foreground_from_env() {
+        return gateway::runtime::run_foreground();
     }
 
     match cli::parse_env_args() {
@@ -138,7 +142,7 @@ fn print_shell_text(text: &str) -> io::Result<()> {
 fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
     match command {
         GatewayConfigCommand::Init => {
-            let report = tui::gateway::config::init_default().map_err(io::Error::other)?;
+            let report = gateway::config::init_default().map_err(io::Error::other)?;
             println!(
                 "flyflor gateway config path={} created={}",
                 report.path.display(),
@@ -148,11 +152,11 @@ fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
         GatewayConfigCommand::Show => {
             print!(
                 "{}",
-                tui::gateway::config::show_default().map_err(io::Error::other)?
+                gateway::config::show_default().map_err(io::Error::other)?
             );
         }
         GatewayConfigCommand::Validate => {
-            let report = tui::gateway::config::validate_default().map_err(io::Error::other)?;
+            let report = gateway::config::validate_default().map_err(io::Error::other)?;
             println!(
                 "flyflor gateway config valid path={} enabled={}",
                 report.path.display(),
@@ -160,7 +164,7 @@ fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
             );
         }
         GatewayConfigCommand::List => {
-            for item in tui::gateway::config::list_channels_default().map_err(io::Error::other)? {
+            for item in gateway::config::list_channels_default().map_err(io::Error::other)? {
                 println!(
                     "{}\t{}\tnative_runtime={}\tenabled={}\tsource={}",
                     item.name, item.label, item.native_runtime, item.enabled, item.source_channel
@@ -168,7 +172,7 @@ fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
             }
         }
         GatewayConfigCommand::Doctor => {
-            let report = tui::gateway::config::doctor_default().map_err(io::Error::other)?;
+            let report = gateway::config::doctor_default().map_err(io::Error::other)?;
             println!(
                 "flyflor gateway doctor path={} enabled={}",
                 report.path.display(),
@@ -187,8 +191,8 @@ fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
             }
         }
         GatewayConfigCommand::Enable(platform) => {
-            let report = tui::gateway::config::set_channel_default(&platform, true)
-                .map_err(io::Error::other)?;
+            let report =
+                gateway::config::set_channel_default(&platform, true).map_err(io::Error::other)?;
             println!(
                 "flyflor gateway config channel={} enabled={} path={}",
                 report.platform,
@@ -197,8 +201,8 @@ fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
             );
         }
         GatewayConfigCommand::Disable(platform) => {
-            let report = tui::gateway::config::set_channel_default(&platform, false)
-                .map_err(io::Error::other)?;
+            let report =
+                gateway::config::set_channel_default(&platform, false).map_err(io::Error::other)?;
             println!(
                 "flyflor gateway config channel={} enabled={} path={}",
                 report.platform,
@@ -213,8 +217,8 @@ fn run_gateway_config_command(command: GatewayConfigCommand) -> io::Result<()> {
 fn run_gateway_channel_command(command: GatewayChannelCommand) -> io::Result<()> {
     match command {
         GatewayChannelCommand::Doctor(platform) => {
-            let item = tui::gateway::config::doctor_channel_default(&platform)
-                .map_err(io::Error::other)?;
+            let item =
+                gateway::config::doctor_channel_default(&platform).map_err(io::Error::other)?;
             println!(
                 "flyflor gateway channel={} status={} availability={} native_runtime={} enabled={}",
                 item.name,
@@ -2587,13 +2591,15 @@ impl App {
         let message_id = format!("flyflor-cli-message-{}", now_millis());
         let new_turn_index = self.turns.len();
         let socket_connected = self.socket_connected;
-        let metadata = tui::ask::command::ask_message_metadata_many(continuation, &ask_answers);
-        let user_text = tui::ask::command::ask_message_text(&ask_answers);
-        let footer_kind = if tui::ask::command::is_citizen_permission_answers(&ask_answers) {
-            "confirm answer"
-        } else {
-            "ask answer"
-        };
+        let metadata =
+            tui::components::ask::command::ask_message_metadata_many(continuation, &ask_answers);
+        let user_text = tui::components::ask::command::ask_message_text(&ask_answers);
+        let footer_kind =
+            if tui::components::ask::command::is_citizen_permission_answers(&ask_answers) {
+                "confirm answer"
+            } else {
+                "ask answer"
+            };
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
@@ -4926,14 +4932,30 @@ fn todo_section_rows(todos: &[TodoItem]) -> Vec<String> {
                 item.marker,
                 item.label,
                 item.status,
-                if item.active { " 当前" } else { "" }
+                if item.active {
+                    format!(" {}", ui_text_key("todo.current"))
+                } else {
+                    String::new()
+                }
             )
         }))
         .chain(if state == PlanState::AwaitingConfirmation {
             vec![
-                "操作：确认计划".to_string(),
-                "操作：补充计划".to_string(),
-                "操作：放弃计划".to_string(),
+                format!(
+                    "{}：{}",
+                    ui_text_key("plan.actionPrefix"),
+                    ui_text_key("plan.confirm")
+                ),
+                format!(
+                    "{}：{}",
+                    ui_text_key("plan.actionPrefix"),
+                    ui_text_key("plan.revise")
+                ),
+                format!(
+                    "{}：{}",
+                    ui_text_key("plan.actionPrefix"),
+                    ui_text_key("plan.abandon")
+                ),
             ]
         } else {
             Vec::new()
@@ -5538,7 +5560,7 @@ enum SocketEvent {
     ForkMemoryLoaded(ForkMemorySnapshot),
     TaskListLoaded(Vec<TodoItem>),
     RuntimeEvent(Value),
-    ConfirmSnapshot(Vec<tui::confirm::state::ConfirmRecord>),
+    ConfirmSnapshot(Vec<tui::components::confirm::state::ConfirmRecord>),
     ExecutionJobSnapshot(Value),
     StatusLoaded(StatusSnapshot),
     ContextSnapshotLoaded(Value),
@@ -7342,24 +7364,36 @@ fn push_detail_field(lines: &mut Vec<String>, label: &str, value: Option<String>
 }
 
 fn format_ask_detail(value: &Value) -> String {
-    let mut lines = vec!["ASK 续答上下文".to_string()];
-    push_detail_field(&mut lines, "问题", value_string(value, "prompt"));
-    push_detail_field(&mut lines, "摘要", value_string(value, "summary"));
+    let mut lines = vec![ui_text_key("ask.detailTitle")];
+    push_detail_field(
+        &mut lines,
+        &ui_text_key("ask.promptField"),
+        value_string(value, "prompt"),
+    );
+    push_detail_field(
+        &mut lines,
+        &ui_text_key("ask.summaryField"),
+        value_string(value, "summary"),
+    );
     push_detail_field(&mut lines, "snapshotId", value_string(value, "snapshotId"));
     push_detail_field(
         &mut lines,
         "continuationId",
         value_string(value, "continuationId"),
     );
-    let menu = tui::ask::parser::ask_menu_from_metadata(0, &json!({ "ask": value }));
+    let menu = tui::components::ask::parser::ask_menu_from_metadata(0, &json!({ "ask": value }));
     if let Some(menu) = menu {
         for question in menu.questions {
-            lines.push(format!("   Q: {}", question.prompt));
+            lines.push(format!(
+                "   {}: {}",
+                ui_text_key("ask.questionField"),
+                question.prompt
+            ));
             for option in question.choices.iter().filter(|option| !option.is_other) {
                 lines.push(format!("   - {}", option.label));
             }
             if question.choices.iter().any(|option| option.is_other) {
-                lines.push("   - Other 自由输入".to_string());
+                lines.push(format!("   - {}", ui_text_key("ask.otherLabel")));
             }
         }
     }
@@ -7721,9 +7755,8 @@ struct MermaidEdge {
 mod tests {
     use super::*;
     use crate::tui::{
-        ask::state::{AskChoice, AskQuestion},
+        components::ask::state::{AskChoice, AskQuestion},
         layout::shell::{app_layout, content_root},
-        shared,
     };
 
     fn separator_text(width: u16) -> String {
@@ -11535,7 +11568,7 @@ mod tests {
     #[test]
     fn top_bar_title_uses_default_ws_url() {
         assert_eq!(
-            shared::top_bar_title_for_url(DEFAULT_WS_URL),
+            top_bar_title_for_url(DEFAULT_WS_URL),
             "FlyFlor · Powered By ws://127.0.0.1:8787/ws"
         );
     }

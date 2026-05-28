@@ -1,9 +1,10 @@
 use serde_json::{Value, json};
 
+use crate::i18n::text_key;
+
 use super::state::{AskChoice, AskMenu, AskQuestion};
 
 pub const OTHER_CHOICE_ID: &str = "other";
-pub const OTHER_LABEL: &str = "Other 自由输入";
 
 pub fn ask_menu_from_turn_metadata(
     turn_index: usize,
@@ -29,7 +30,7 @@ pub fn ask_menu_from_metadata(turn_index: usize, metadata: &Value) -> Option<Ask
                 id,
                 prompt: value_string(ask, "prompt")
                     .or_else(|| value_string(ask, "question"))
-                    .unwrap_or_else(|| "ASK".to_string()),
+                    .unwrap_or_else(|| text_key("ask.defaultPrompt")),
                 recommended_choice_id: recommended_choice_id(ask),
                 choices,
             });
@@ -102,7 +103,7 @@ fn question_from_value((index, value): (usize, &Value)) -> Option<AskQuestion> {
                 prompt: value_string(value, "prompt")
                     .or_else(|| value_string(value, "question"))
                     .or_else(|| value_string(value, "label"))
-                    .unwrap_or_else(|| format!("Question {}", index + 1)),
+                    .unwrap_or_else(|| format!("{} {}", text_key("ask.questionPrefix"), index + 1)),
                 recommended_choice_id,
                 choices,
             })
@@ -199,9 +200,9 @@ fn choice_from_value(
 fn other_choice(question_id: Option<&str>) -> AskChoice {
     AskChoice {
         id: OTHER_CHOICE_ID.to_string(),
-        label: OTHER_LABEL.to_string(),
+        label: text_key("ask.otherLabel"),
         value: None,
-        description: Some("自由输入".to_string()),
+        description: Some(text_key("ask.otherDescription")),
         question_id: question_id.map(str::to_string),
         recommended: false,
         is_other: true,

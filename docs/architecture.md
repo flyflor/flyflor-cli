@@ -43,10 +43,13 @@ The current binary entrypoint is `src/main.rs`, configured by `Cargo.toml` as th
 Feature ownership is split into convention directories:
 
 - `src/tui/terminal`: raw mode, alternate screen, mouse capture, clipboard fallback, and panic/log setup.
-- `src/tui/gateway`: `flyflor.ws.v1` envelope factory, fixed subscription list, startup bootstrap, and command builders.
-- `src/tui/ask`: ASK menu state, parser, view helpers, and continuation answer metadata.
+- `src/kernel`: `flyflor.ws.v1` envelope factory, fixed subscription list, startup bootstrap, and command builders.
+- `src/gateway`: root-level channel bridge runtime, channel configuration, platform registry, and native channel adapters.
+- `src/tui/components/ask`: ASK menu state, parser, view helpers, and continuation answer metadata.
+- `src/tui/components/confirm`: Confirm read-model state, snapshot parser, and timeline projection helpers.
+- `src/tui/components/fork`: active fork state, fork command payloads, and labels.
+- `src/tui/components/process_bar`: top breathing bar title, websocket label, and working shimmer rendering helpers.
 - `src/tui/plan`: plan menu state and `task.plan.decide` payloads.
-- `src/tui/fork`: active fork state, fork command payloads, and labels.
 - `src/tui/run_timeline`: event timeline parsing/state/view.
 - `src/tui/subagent`: subagent batch/child parsing/state/view.
 

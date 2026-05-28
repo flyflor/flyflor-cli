@@ -479,3 +479,15 @@ tmux capture-pane -t ff-cli-preview-tui-ask-layout:0.0 -p -S -5000
 cargo test yuanbao -- --nocapture
 npm run smoke:gateway:yuanbao
 ```
+
+## 2026-05-28 Gateway / Components 分层校正主控切片
+
+本轮未新增实现型子 Codex；由主控在主 worktree 完成 `src/gateway` root owner、`src/tui/components/{ask,confirm,fork,process_bar}` 组件 owner 和本次触达组件 i18n 接入。沿用固定 lane 表，当前可用下列命令查看历史 session 或验证细节：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core|wm-)'
+cargo fmt --check
+cargo check --all-targets
+cargo test
+git diff --check
+```

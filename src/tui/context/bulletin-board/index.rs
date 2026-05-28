@@ -8,6 +8,7 @@ use ratatui::{
 
 use crate::{
     draw_scrollbar,
+    i18n::text_key,
     tui::{
         context::conversion::state::slice_by_char,
         shared::{draw_separator, metric_line},
@@ -69,7 +70,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut BulletinBoardState, the
 
 fn render_compact(frame: &mut Frame, area: Rect, theme: &Theme) {
     let compact = Paragraph::new(vec![
-        ratatui::text::Line::styled("TODO List", Style::default().fg(theme.text)),
+        ratatui::text::Line::styled(text_key("todo.title"), Style::default().fg(theme.text)),
         ratatui::text::Line::styled("○ 明确需求边界与冲突", Style::default().fg(theme.text)),
         ratatui::text::Line::styled("› 设计协议核心架构", Style::default().fg(theme.pink)),
         ratatui::text::Line::raw(""),
