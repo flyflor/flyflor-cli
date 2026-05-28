@@ -799,3 +799,12 @@
   原因：用户指出 flyflor-cli 已有多语言配置，但仍有多处生产 UI 文案写死；本轮沿触达面做最小收口，同时保留右侧分区原产品术语以避免 TUI 布局视觉变化。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：`src/main.rs` 中仍有较多历史生产 UI 文案需要后续按 owner 分批清理；本轮不新增提示词，不改变 `/ws` gateway 行为，不直接写 `brain.db`/`scope.db`。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-menu-state-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：继续将 compact sidebar、命令菜单、ASK/Confirm 菜单、计划菜单和 PlanState 用户可见标签接入 i18n。
+  原因：延续多语言红线，清理 `src/main.rs` 中 owner 明确、风险较小的生产 UI 文案，保留协议 token、测试 fixture 和状态归一化匹配词不动。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：仍有 blackboard/status/fork/context detail 等历史文案散落在 `src/main.rs`，需要后续按 owner 拆模块时继续迁移。

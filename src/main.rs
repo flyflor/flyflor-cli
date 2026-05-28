@@ -702,12 +702,21 @@ fn draw_right_panel(frame: &mut Frame, area: Rect, app: &mut App, theme: &Theme)
 
 fn draw_compact_sidebar(frame: &mut Frame, area: Rect, theme: &Theme) {
     let compact = Paragraph::new(vec![
-        Line::styled("ACT 计划", Style::default().fg(theme.text)),
-        Line::styled("○ 暂无计划", Style::default().fg(theme.muted)),
+        Line::styled(
+            ui_text_key("rightPanel.plan"),
+            Style::default().fg(theme.text),
+        ),
+        Line::styled(
+            ui_text_key("todo.emptyPlan"),
+            Style::default().fg(theme.muted),
+        ),
         Line::raw(""),
-        Line::styled("CONTEXT WINDOW", Style::default().fg(theme.blue)),
-        metric_line("model", "未知模型", theme),
-        metric_line("usage", "未收到上下文窗口", theme),
+        Line::styled(
+            ui_text_key("compact.contextWindowHeader"),
+            Style::default().fg(theme.blue),
+        ),
+        metric_line("model", &ui_text_key("model.unknown"), theme),
+        metric_line("usage", &ui_text_key("contextWindow.missing"), theme),
     ]);
     frame.render_widget(compact, area);
 }
@@ -830,12 +839,12 @@ fn slash_commands_for_fork(in_fork: bool) -> Vec<SlashCommand> {
 
 fn render_command_palette_lines(menu: &CommandPalette, theme: &Theme) -> Vec<Line<'static>> {
     let mut lines = vec![Line::styled(
-        format!("命令菜单 /{}", menu.query),
+        format!("{} /{}", ui_text_key("command.menuTitle"), menu.query),
         Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
     )];
     if menu.items.is_empty() {
         lines.push(Line::styled(
-            "  未知命令，Enter 显示提示",
+            ui_text_key("command.unknownHint"),
             Style::default().fg(theme.muted),
         ));
         return lines;
@@ -883,18 +892,21 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(vec![
         Span::styled(
             if ask_menu_is_citizen_permission(menu) {
-                "Confirm 授权执行策略"
+                ui_text_key("ask.menuConfirmTitle")
             } else {
-                "ASK"
+                ui_text_key("ask.defaultPrompt")
             },
             Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
         ),
         Span::styled(
             format!(
-                "  问题 {}/{} · 完成 {completed}/{} · ↑↓ 选择 · 1-9 快选 · Enter 下一题/发送 · Esc 关闭",
+                "  {} {}/{} · {} {completed}/{} · {}",
+                ui_text_key("ask.menuQuestion"),
                 menu.active_question + 1,
                 menu.questions.len().max(1),
-                menu.questions.len()
+                ui_text_key("ask.menuCompleted"),
+                menu.questions.len(),
+                ui_text_key("ask.menuControls")
             ),
             Style::default().fg(theme.muted),
         ),
@@ -965,7 +977,11 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                         }),
                     ),
                     Span::styled(
-                        if item.recommended { " [Recommend]" } else { "" },
+                        if item.recommended {
+                            ui_text_key("ask.menuRecommended")
+                        } else {
+                            String::new()
+                        },
                         Style::default()
                             .fg(theme.green)
                             .add_modifier(Modifier::BOLD),
@@ -987,7 +1003,10 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                 .unwrap_or(choice.label.as_str());
             lines.push(Line::from(vec![
                 Span::raw("    "),
-                Span::styled("已选 ", Style::default().fg(theme.muted)),
+                Span::styled(
+                    ui_text_key("ask.menuSelected"),
+                    Style::default().fg(theme.muted),
+                ),
                 Span::styled(
                     truncate_to_width(answer, 54),
                     Style::default().fg(if choice.is_other {
@@ -998,9 +1017,9 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
                 ),
                 Span::styled(
                     if choice.recommended {
-                        " [Recommend]"
+                        ui_text_key("ask.menuRecommended")
                     } else {
-                        ""
+                        String::new()
                     },
                     Style::default().fg(theme.green),
                 ),
@@ -1009,7 +1028,7 @@ fn render_ask_menu_lines(menu: &AskMenu, theme: &Theme) -> Vec<Line<'static>> {
     }
     if menu.questions.is_empty() {
         lines.push(Line::styled(
-            "ASK payload is empty",
+            ui_text_key("ask.menuEmptyPayload"),
             Style::default().fg(theme.muted),
         ));
     }
@@ -1038,7 +1057,7 @@ fn ask_menu_is_citizen_permission(menu: &AskMenu) -> bool {
 
 fn render_plan_menu_lines(menu: &PlanMenu, theme: &Theme) -> Vec<Line<'static>> {
     let mut lines = vec![Line::styled(
-        "计划操作 · Enter 确认 · Esc 关闭",
+        ui_text_key("plan.menuTitle"),
         Style::default().fg(theme.blue).add_modifier(Modifier::BOLD),
     )];
     for (index, item) in menu.items.iter().enumerate() {
@@ -1411,13 +1430,13 @@ enum PlanState {
 }
 
 impl PlanState {
-    fn label(self) -> &'static str {
+    fn label(self) -> String {
         match self {
-            Self::Empty => "暂无计划",
-            Self::Generating => "计划生成中",
-            Self::AwaitingConfirmation => "等待确认",
-            Self::Running => "执行中",
-            Self::Abandoned => "已放弃",
+            Self::Empty => ui_text_key("plan.state.empty"),
+            Self::Generating => ui_text_key("plan.state.generating"),
+            Self::AwaitingConfirmation => ui_text_key("plan.state.awaitingConfirmation"),
+            Self::Running => ui_text_key("plan.state.running"),
+            Self::Abandoned => ui_text_key("plan.state.abandoned"),
         }
     }
 }
