@@ -857,6 +857,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "bluebubbles" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "discord" && !item.native_runtime)
         );
     }
@@ -1064,6 +1069,26 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn bluebubbles_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let bluebubbles = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "bluebubbles")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(bluebubbles, |env| {
+            matches!(env, "BLUEBUBBLES_SERVER_URL" | "BLUEBUBBLES_PASSWORD")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD"]
         );
         assert!(item.missing_required_env.is_empty());
     }

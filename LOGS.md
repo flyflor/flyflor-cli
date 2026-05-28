@@ -565,3 +565,21 @@
   原因：确认 LINE 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 LINE webhook text event 到 `/ws` 再到 reply token POST 的进程级闭环；同时守住平台锚点不会在 turn.final 时丢失。
   验证：`cargo test line -- --nocapture`（39 matched passed）；`cargo test outbound_final_merges_inbound_channel_anchor_metadata -- --nocapture`（1 passed）；`npm run smoke:gateway:line`（ok: true）；`cargo test gateway -- --nocapture`（86 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（278 passed）；`git diff --check`。
   风险：本轮只实现 env payload poll 与 LINE text reply/push fallback path；真实 HTTP webhook listener、signature validation、rich cards、media download/upload 和 slow response push policy 后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：bluebubbles-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/bluebubbles.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/bluebubbles-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 BlueBubbles/iMessage native adapter 与 `smoke:gateway:bluebubbles`，完成 webhook payload 入站、`gateway.message.send`、`turn.final`、官方 message/text REST 出站的本地 HTTP mock 闭环。
+  原因：继续推进 longtail channel 真实 adapter；BlueBubbles REST text path 可本地验证 `/ws` 血管层连通，同时避免把 tapbacks、read receipts、attachments/media 等未完成能力提前宣称 native。
+  验证：待运行 `cargo test bluebubbles -- --nocapture`、`npm run smoke:gateway:bluebubbles`、格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 env payload poll 与 BlueBubbles REST text path；真实 HTTP webhook listener、webhook signature、tapbacks、read receipts、attachments/media 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：bluebubbles-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 BlueBubbles/iMessage native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 BlueBubbles 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 webhook payload 到 `/ws` 再到官方 message/text REST reply 的进程级闭环。
+  验证：`cargo test bluebubbles -- --nocapture`（6 passed）；`npm run smoke:gateway:bluebubbles`（ok: true）；`cargo test gateway -- --nocapture`（92 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（284 passed）；`git diff --check`。
+  风险：本轮只实现 env payload poll 与 BlueBubbles REST text path；真实 HTTP webhook listener、webhook signature、tapbacks、read receipts、attachments/media、private-api reply threading 和 iMessage availability 后续继续补。

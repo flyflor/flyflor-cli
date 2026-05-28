@@ -1,3 +1,4 @@
+pub mod bluebubbles;
 pub mod homeassistant;
 pub mod irc;
 pub mod line;

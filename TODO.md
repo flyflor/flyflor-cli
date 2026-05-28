@@ -247,3 +247,12 @@
 - [x] LINE outbound 覆盖 reply API、push fallback、text chunking、REST error 分类和 explicit media unavailable。
 - [x] 新增 LINE 本地 mock HTTP smoke：webhook event -> `gateway.message.send` -> `turn.final` -> reply token POST。
 - [ ] 后续补真实 HTTP webhook listener、LINE signature validation、rich menu/cards、media download/upload 和 slow response push policy；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 BlueBubbles Native Channel Adapter
+
+- [x] 新增 BlueBubbles/iMessage native adapter，支持 webhook payload 入站和官方 `/api/v1/message/text` REST 出站。
+- [x] BlueBubbles 入站 normalization 覆盖 chat guid route、handle allowlist、direct/group route、source message id 和 channel metadata。
+- [x] BlueBubbles outbound 覆盖 password query auth、chatGuid/message/tempGuid/method payload、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 BlueBubbles 标记为 native，并收紧 capability 只声明当前真实可用的 webhook payload / REST text。
+- [x] 新增 BlueBubbles 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `turn.final` -> message/text REST POST。
+- [ ] 后续补真实 HTTP webhook listener、BlueBubbles webhook secret/signature、tapbacks、read receipts、attachments/media、private-api reply threading 和 iMessage availability；这些能力当前仍保持 explicit unavailable 或未声明。
