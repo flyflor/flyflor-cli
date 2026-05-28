@@ -700,3 +700,12 @@
   原因：确认 Signal 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 env envelope 到 `/ws` 再到 signal-cli JSON-RPC `send` 的进程级闭环。
   验证：`cargo test signal -- --nocapture`（5 passed）；`npm run smoke:gateway:signal`（ok: true）；`cargo test gateway -- --nocapture`（133 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（325 passed）；`git diff --check`。
   风险：本轮只实现 env envelope payload、JSON-RPC direct/group text send；真实 SSE event stream、health check、typing、reactions、native quote、attachments/media、voice、format bodyRanges、UUID cache 和 rate-limit scheduler 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：wecom-callback-native-channel-adapter-verification
+  变动文件：`src/tui/gateway/channels/wecom_callback.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/wecom-callback-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：完成 WeCom Callback Corp API native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 WeCom Callback 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 env callback payload 到 `/ws` 再到 Corp API `message/send` reply 的进程级闭环。
+  验证：`cargo test wecom_callback -- --nocapture`（5 passed）；`npm run smoke:gateway:wecom-callback`（ok: true）；`cargo test gateway -- --nocapture`（138 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（330 passed）；`git diff --check`。
+  风险：本轮只实现 env callback JSON payload、Corp API access token 和 direct text send；真实 HTTP callback listener、URL verification、AES/XML 解密、多 app routing、token cache、typing、message edit/stream update、media/file、群聊 route 和 callback audit 后续继续补。

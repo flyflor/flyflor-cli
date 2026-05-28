@@ -329,3 +329,12 @@
 - [x] Gateway registry/doctor 将 Signal 标记为 native，并收紧 capability 只声明当前真实可用的 env envelope / JSON-RPC text。
 - [x] 新增 Signal 本地 mock HTTP smoke：envelope -> `gateway.message.send` -> `turn.final` -> `/api/v1/rpc` send。
 - [ ] 后续补真实 SSE event stream、signal-cli health check、typing、reactions、native quote、attachments/media、voice、format bodyRanges、recipient UUID cache 和 rate-limit scheduler；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 WeCom Callback Native Channel Adapter
+
+- [x] 新增 WeCom Callback Corp API native adapter，支持 env callback JSON 入站和 Corp API text 出站。
+- [x] WeCom Callback 入站 normalization 覆盖 `FromUserName`、Content、MsgId、corp scoped direct route、allowlist、source message id 和 channel metadata。
+- [x] WeCom Callback outbound 覆盖 `gettoken`、`message/send`、agentid、touser anchor、text chunking、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 WeCom Callback 标记为 native，并收紧 capability 只声明当前真实可用的 env callback payload / Corp API direct text。
+- [x] 新增 WeCom Callback 本地 mock HTTP smoke：callback payload -> `gateway.message.send` -> `turn.final` -> Corp API `message/send`。
+- [ ] 后续补真实 HTTP callback listener、URL verification、AES/XML 解密、多 app routing、token cache、typing、message edit/stream update、media/file、群聊 route 和 callback audit；这些能力当前仍保持 explicit unavailable 或未声明。

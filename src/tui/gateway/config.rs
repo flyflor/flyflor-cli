@@ -857,6 +857,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "wecom-callback" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "irc" && item.native_runtime)
         );
         assert!(
@@ -1116,6 +1121,39 @@ mod tests {
         assert_eq!(item.availability, ChannelAvailability::Available);
         assert!(item.native_runtime);
         assert_eq!(item.present_required_env, vec!["SIGNAL_PHONE_NUMBER"]);
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn wecom_callback_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let wecom = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "wecom-callback")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(wecom, |env| {
+            matches!(
+                env,
+                "WECOM_CALLBACK_TOKEN"
+                    | "WECOM_CALLBACK_AES_KEY"
+                    | "WECOM_CORP_ID"
+                    | "WECOM_CORP_SECRET"
+                    | "WECOM_AGENT_ID"
+            )
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec![
+                "WECOM_CALLBACK_TOKEN",
+                "WECOM_CALLBACK_AES_KEY",
+                "WECOM_CORP_ID",
+                "WECOM_CORP_SECRET",
+                "WECOM_AGENT_ID",
+            ]
+        );
         assert!(item.missing_required_env.is_empty());
     }
 

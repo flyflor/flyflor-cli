@@ -22,6 +22,7 @@ use super::slack::SlackAdapter;
 use super::sms::SmsAdapter;
 use super::telegram::TelegramBotAdapter;
 use super::webhook::WebhookAdapter;
+use super::wecom_callback::WeComCallbackAdapter;
 use super::weixin::WeixinIlinkAdapter;
 use super::whatsapp::WhatsAppAdapter;
 
@@ -381,6 +382,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "wecom-callback" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        WeComCallbackAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "irc" {
                 registry.register(PlatformEntry {
                     name,
@@ -636,6 +648,11 @@ mod tests {
         assert!(
             registry
                 .get("signal")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("wecom-callback")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(
