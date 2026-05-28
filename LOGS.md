@@ -394,3 +394,12 @@
   原因：确认 Webhook secret/source 校验、context/metadata 入站归一化、outbound callback unavailable/degraded 语义、doctor availability 和 native runtime 状态红线无回归。
   验证：`cargo fmt --check`；`cargo test webhook -- --nocapture`（5 passed）；`cargo test native_runtime_status_only_marks_implemented_adapters -- --nocapture`（1 passed）；`cargo test gateway -- --nocapture`（40 passed）；`cargo check --all-targets`；`cargo test`（232 passed）；`git diff --check`。
   风险：真实 listener 到 kernel `/ws` 再到 callback 的 live smoke 仍待后续补齐。
+
+- 状态：完成
+  执行者：main-codex
+  范围：webhook-live-smoke-closure
+  变动文件：`src/tui/gateway/runtime.rs`、`scripts/webhook-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：`flyflor gateway run` 现在会启动 channel runtime；新增 `smoke:gateway:webhook`，用 mock `/ws` kernel 和 callback server 验证 Webhook 真实进程闭环。
+  原因：Webhook adapter 单测不足以证明 channel runtime 被 daemon 启动，也不足以证明 HTTP 入站、`gateway.message.send`、`turn.final` 和 callback delivery 连通。
+  验证：`npm run smoke:gateway:webhook`（ok: true）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（232 passed）；`git diff --check`。
+  风险：本 smoke 使用 mock kernel，不依赖真实 Flyflor 内核推理；后续完整跨仓库 live 可复用同一 webhook path。

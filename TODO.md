@@ -175,4 +175,4 @@
 - [x] Webhook 入站验证 `WEBHOOK_SECRET` / Bearer secret，支持 `WEBHOOK_ALLOWED_SOURCES`、context 透传、metadata 透传和 direct/group route normalization。
 - [x] Webhook outbound 使用 `WEBHOOK_PUBLIC_URL` callback 发送结构化 reply payload；未配置 callback 时 send capability 为 degraded，调用返回 explicit unavailable。
 - [x] Gateway registry/doctor 将 Webhook 标记为 native，并新增测试守住 native runtime 仅包含 Telegram、Weixin、Webhook，避免 planned channel 假成功。
-- [ ] 后续补 Webhook 本地 listener 到 kernel `/ws` 的真实 smoke：HTTP POST -> gateway.message.send -> turn.final -> callback。
+- [x] 接通 `flyflor gateway run` 启动 channel runtime，并新增 `smoke:gateway:webhook` 验证 HTTP POST -> `gateway.message.send` -> `turn.final` -> callback。

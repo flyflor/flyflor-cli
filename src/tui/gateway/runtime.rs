@@ -16,6 +16,7 @@ use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 use crate::{
     DEFAULT_WS_URL,
     kernel::{client::GatewayClientBootstrap, envelope::EnvelopeFactory},
+    tui::gateway::channels::spawn_gateway_channel_runtime,
 };
 
 const CLI_HOME_ENV: &str = "FLYFLOR_CLI_HOME";
@@ -250,6 +251,8 @@ fn run_foreground_with_paths(paths: GatewayRuntimePaths) -> io::Result<()> {
         &paths,
         format!("gateway runtime starting pid={}", guard.pid),
     )?;
+    spawn_gateway_channel_runtime();
+    gateway_log(&paths, "gateway channel runtime requested")?;
     println!(
         "flyflor gateway runtime running pid={} ws={} log={}",
         guard.pid,
