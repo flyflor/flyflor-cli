@@ -274,3 +274,12 @@
 - [x] Gateway registry/doctor 将 Discord 标记为 native，并收紧 capability 只声明当前真实可用的 REST polling / group text。
 - [x] 新增 Discord 本地 mock HTTP smoke：messages poll -> `gateway.message.send` -> `turn.final` -> create message。
 - [ ] 后续补 Gateway websocket events、interactions/slash commands、approval components、typing、message edit/stream update、attachments/media、voice 和 richer thread/DM routing；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Slack Native Channel Adapter
+
+- [x] 新增 Slack Web API native adapter，支持 `conversations.history` polling 和 `chat.postMessage` 出站。
+- [x] Slack 入站 normalization 覆盖 channel route、user allowlist、bot/self/subtype filter、source ts/thread_ts 和 channel metadata。
+- [x] Slack outbound 覆盖 Bearer token auth、thread_ts reply anchor、text chunking、unfurl disable、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 Slack 标记为 native，并收紧 capability 只声明当前真实可用的 REST polling / group thread text。
+- [x] 新增 Slack 本地 mock HTTP smoke：history poll -> `gateway.message.send` -> `turn.final` -> `chat.postMessage`。
+- [ ] 后续补 Slack Socket Mode、Events API signing、blocks/buttons、slash commands、typing、edit/stream update、file upload/download、ephemeral replies 和 DM/channel discovery；这些能力当前仍保持 explicit unavailable 或未声明。

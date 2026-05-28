@@ -872,18 +872,18 @@ mod tests {
         assert!(
             items
                 .iter()
-                .any(|item| item.name == "slack" && !item.native_runtime)
+                .any(|item| item.name == "slack" && item.native_runtime)
         );
     }
 
     #[test]
     fn planned_channel_stays_unavailable_even_with_env_present() {
         let config = GatewayConfig::default();
-        let slack = channel_list(&config)
+        let teams = channel_list(&config)
             .into_iter()
-            .find(|item| item.name == "slack")
+            .find(|item| item.name == "teams")
             .unwrap();
-        let item = doctor_item_from_list_item_with_env(slack, |_| true);
+        let item = doctor_item_from_list_item_with_env(teams, |_| true);
 
         assert_eq!(item.availability, ChannelAvailability::Unavailable);
         assert!(!item.native_runtime);
@@ -921,6 +921,26 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["DISCORD_BOT_TOKEN", "DISCORD_HOME_CHANNEL"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn slack_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let slack = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "slack")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(slack, |env| {
+            matches!(env, "SLACK_BOT_TOKEN" | "SLACK_HOME_CHANNEL")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["SLACK_BOT_TOKEN", "SLACK_HOME_CHANNEL"]
         );
         assert!(item.missing_required_env.is_empty());
     }

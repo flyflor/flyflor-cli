@@ -619,3 +619,21 @@
   原因：确认 Discord 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 channel messages poll 到 `/ws` 再到 create message reply 的进程级闭环。
   验证：`cargo test discord -- --nocapture`（5 passed）；`npm run smoke:gateway:discord`（ok: true）；`cargo test gateway -- --nocapture`（102 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（294 passed）；`git diff --check`。
   风险：本轮只实现 REST channel messages polling 与 create message text path；Gateway websocket events、slash commands、approval components、typing、edit/stream update、attachments/media、voice 和 richer thread/DM routing 后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：slack-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/slack.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/slack-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Slack Web API native adapter 与 `smoke:gateway:slack`，完成 history polling、`gateway.message.send`、`turn.final`、`chat.postMessage` 出站的本地 HTTP mock 闭环。
+  原因：继续推进 western channel 真实 adapter；Slack Web API polling/send path 可本地验证 `/ws` 血管层连通，同时避免把 Socket Mode、Events API signing、blocks/buttons、slash commands、files 等未完成能力提前宣称 native。
+  验证：已运行 `cargo test slack -- --nocapture`（6 passed）、`npm run smoke:gateway:slack`（ok: true）与 `cargo test gateway -- --nocapture`（108 passed）；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 Web API history polling 与 chat.postMessage text path；Socket Mode、Events API signing、blocks/buttons、slash commands、typing、edit/stream update、file upload/download、ephemeral replies 和 DM/channel discovery 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：slack-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Slack Web API native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Slack 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 conversations.history poll 到 `/ws` 再到 chat.postMessage reply 的进程级闭环。
+  验证：`cargo test slack -- --nocapture`（6 passed）；`npm run smoke:gateway:slack`（ok: true）；`cargo test gateway -- --nocapture`（108 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（300 passed）；`git diff --check`。
+  风险：本轮只实现 Web API history polling 与 chat.postMessage text path；Socket Mode、Events API signing、blocks/buttons、slash commands、typing、edit/stream update、file upload/download、ephemeral replies 和 DM/channel discovery 后续继续补。

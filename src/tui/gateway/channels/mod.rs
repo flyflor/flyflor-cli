@@ -10,6 +10,7 @@ pub mod ntfy;
 pub mod openwebui;
 pub mod platform;
 pub mod runtime;
+pub mod slack;
 pub mod sms;
 pub mod telegram;
 pub mod webhook;

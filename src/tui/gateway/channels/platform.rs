@@ -14,6 +14,7 @@ use super::matrix::MatrixAdapter;
 use super::mattermost::MattermostAdapter;
 use super::ntfy::NtfyAdapter;
 use super::openwebui::OpenWebuiAdapter;
+use super::slack::SlackAdapter;
 use super::sms::SmsAdapter;
 use super::telegram::TelegramBotAdapter;
 use super::webhook::WebhookAdapter;
@@ -287,6 +288,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "slack" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        SlackAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "ntfy" {
                 registry.register(PlatformEntry {
                     name,
@@ -519,6 +531,11 @@ mod tests {
         assert!(
             registry
                 .get("discord")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("slack")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(
