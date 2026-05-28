@@ -4,6 +4,7 @@ use serde_json::{Value, json};
 
 use crate::tui::gateway::platforms::all_platforms;
 
+use super::telegram::TelegramBotAdapter;
 use super::weixin::WeixinIlinkAdapter;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -252,6 +253,17 @@ impl PlatformRegistry {
         for platform in all_platforms() {
             let name = platform.name;
             let label = platform.label;
+            if name == "telegram" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        TelegramBotAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "weixin" {
                 registry.register(PlatformEntry {
                     name,
@@ -358,7 +370,7 @@ mod tests {
         assert!(
             registry
                 .get("telegram")
-                .is_some_and(|entry| !entry.native_runtime)
+                .is_some_and(|entry| entry.native_runtime)
         );
         assert!(
             registry
@@ -366,9 +378,9 @@ mod tests {
                 .is_some_and(|entry| !entry.native_runtime)
         );
 
-        let telegram = (registry.get("telegram").unwrap().factory)().unwrap();
+        let teams = (registry.get("teams").unwrap().factory)().unwrap();
         let route = MessageRoute {
-            platform: "telegram".to_string(),
+            platform: "teams".to_string(),
             chat_id: "chat".to_string(),
             chat_type: ChatType::Direct,
             user_id: "user".to_string(),
@@ -376,7 +388,7 @@ mod tests {
             thread_id: "chat".to_string(),
         };
 
-        let result = telegram.send_message(OutboundMessage {
+        let result = teams.send_message(OutboundMessage {
             route,
             text: "hello".to_string(),
             reply_to_message_id: None,

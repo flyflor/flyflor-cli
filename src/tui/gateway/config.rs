@@ -807,21 +807,41 @@ mod tests {
         assert!(
             items
                 .iter()
-                .any(|item| item.name == "telegram" && !item.native_runtime)
+                .any(|item| item.name == "telegram" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
+                .any(|item| item.name == "discord" && !item.native_runtime)
         );
     }
 
     #[test]
     fn planned_channel_stays_unavailable_even_with_env_present() {
         let config = GatewayConfig::default();
+        let discord = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "discord")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(discord, |_| true);
+
+        assert_eq!(item.availability, ChannelAvailability::Unavailable);
+        assert!(!item.native_runtime);
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn telegram_native_channel_is_available_when_token_is_present() {
+        let config = GatewayConfig::default();
         let telegram = channel_list(&config)
             .into_iter()
             .find(|item| item.name == "telegram")
             .unwrap();
-        let item = doctor_item_from_list_item_with_env(telegram, |_| true);
+        let item = doctor_item_from_list_item_with_env(telegram, |env| env == "TELEGRAM_BOT_TOKEN");
 
-        assert_eq!(item.availability, ChannelAvailability::Unavailable);
-        assert!(!item.native_runtime);
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(item.present_required_env, vec!["TELEGRAM_BOT_TOKEN"]);
         assert!(item.missing_required_env.is_empty());
     }
 

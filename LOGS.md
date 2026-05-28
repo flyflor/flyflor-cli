@@ -331,3 +331,30 @@
   原因：确认公民权限授权只携带 `confirmAnswer`，普通 ASK 仍保留 `askAnswer`，TUI 视觉和 gateway 透传不回退。
   验证：`cargo fmt --check`；`cargo test tui::ask::command::tests`（5 passed）；`cargo test ask_citizen_permission_menu_sends_metadata_without_token_message_text`；`cargo test mock_ws_inbound_send_envelope_preserves_route_context_and_ask_metadata`；`cargo check --all-targets`；`cargo test`（220 passed）；`git diff --check`。
   风险：旧客户端兼容仍由内核保留；CLI 新发送路径已不再使用 ASK-compatible permission fallback。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：telegram-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/telegram.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/platforms.rs`、`src/tui/gateway/config.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Telegram Bot API native adapter，接入 gateway channel registry 与 doctor availability；保留 CLI 只通过 `/ws` 接通内核，不写 kernel DB。
+  原因：推进 `gateway-channels-*` lane，从 western channels 的 Telegram 开始落地真实 adapter，而不是只返回 planned/unavailable。
+  验证：已运行 `cargo test telegram -- --nocapture`（4 passed）与 `cargo test gateway -- --nocapture`（33 passed）；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本轮不启用 Telegram streaming edit 的 runtime 占位消息锚；后续需要补 bot message id route anchor 和真实 sandbox smoke。
+
+- 状态：完成
+  执行者：main-codex
+  范围：telegram-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Telegram native adapter 第一阶段的 focused、gateway、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Telegram registry/native doctor、inbound normalization、outbound send/typing、explicit media unavailable 和 planned-channel 不假成功契约无回归。
+  验证：`cargo test telegram -- --nocapture`（4 passed）；`cargo test gateway -- --nocapture`（33 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（225 passed）；`git diff --check`。
+  风险：后续仍需真实 Bot API sandbox smoke，以及 runtime 记录 bot message id 后再打开 stream edit 能力。
+
+- 状态：完成
+  执行者：main-codex
+  范围：telegram-native-channel-adapter-capability-correction
+  变动文件：`src/tui/gateway/channels/telegram.rs`、`TODO.md`、`LOGS.md`
+  摘要：Telegram adapter 保留 `editMessageText` 实现骨架，但 capability report 暂不声明 edit 可用。
+  原因：现有通用 runtime 在 delta 阶段只有 inbound message id，没有先发 bot message id anchor；过早声明 edit 会让 streaming path 假成功或持续失败。
+  验证：`cargo fmt --check && cargo test telegram -- --nocapture && cargo test gateway -- --nocapture && cargo check --all-targets && cargo test && git diff --check`（通过，targeted 5 passed、gateway 33 passed、全量 225 passed）。
+  风险：后续打开 Telegram stream edit 前必须先补 route anchor/placeholder message smoke。

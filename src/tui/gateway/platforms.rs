@@ -215,7 +215,7 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "TELEGRAM_CHAT_ID",
             "FLYFLOR_TELEGRAM_BOT_TOKEN",
         ],
-        status: PlatformRuntimeStatus::Planned,
+        status: PlatformRuntimeStatus::Native,
         capability: cap!(
             inbound_media,
             outbound_media,
