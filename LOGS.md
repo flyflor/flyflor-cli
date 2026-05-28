@@ -871,3 +871,12 @@
   原因：继续清理生产 TUI 可见硬编码文案，保持 execution/subagent/confirm owner 内的显示 copy 与 catalog 对齐。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：本轮只改显示文案来源和测试断言；协议字段、状态 token、ASK/Confirm/Fork 行为、gateway channel 行为和 TUI 美化不变。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-footer-status-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将发送中、流式输出、完成、回合错误、发送失败、终断、ASK/Confirm 回答和 socket snapshot footer 接入 i18n，并让 working 判断依赖本地化 footer key。
+  原因：继续清理 `src/main.rs` 生产 UI footer/status 硬编码，同时避免用英文 `streaming` 作为状态判断。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮只改 footer/status 显示文案来源和断言；协议字段、状态 token、gateway channel 行为、ASK/Confirm/Fork 组件和 TUI 美化不变。

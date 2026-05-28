@@ -492,6 +492,18 @@ cargo test
 git diff --check
 ```
 
+## 2026-05-28 TUI Footer Status i18n Cleanup 主控切片
+
+本轮未新增实现型子 Codex；由主控在主 worktree 清理 `src/main.rs` 中发送、流式、完成、错误、终断和 ASK/Confirm 回答 footer/status 的用户可见文案。沿用固定 lane 表，当前可用下列命令查看历史 session 或验证细节：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core|wm-)'
+cargo fmt --check
+cargo check --all-targets
+cargo test
+git diff --check
+```
+
 ## 2026-05-28 TUI Execution Detail i18n Cleanup 主控切片
 
 本轮未新增实现型子 Codex；由主控在主 worktree 清理 execution/subagent detail 与 Confirm snapshot 兜底摘要的用户可见文案。沿用固定 lane 表，当前可用下列命令查看历史 session 或验证细节：

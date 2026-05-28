@@ -588,6 +588,14 @@ fn ui_colon_status(key: &str, detail: impl AsRef<str>) -> String {
     format!("{}：{}", ui_text_key(key), detail.as_ref())
 }
 
+fn footer_status(key: &str) -> String {
+    format!("flyflor · {}", ui_text_key(key))
+}
+
+fn footer_detail_status(key: &str, detail: impl AsRef<str>) -> String {
+    format!("flyflor · {} · {}", ui_text_key(key), detail.as_ref())
+}
+
 fn request_failed_status(message: impl AsRef<str>) -> String {
     ui_colon_status("status.requestFailed", message)
 }
@@ -1701,7 +1709,7 @@ impl App {
             SocketEvent::TurnDelta { message_id, delta } => {
                 if let Some(turn) = self.pending_turn_mut(&message_id) {
                     turn.answer.push_str(&delta);
-                    turn.footer = "flyflor · streaming".to_string();
+                    turn.footer = footer_status("footer.streaming");
                     self.left.stick_to_bottom = true;
                 }
             }
@@ -1716,7 +1724,7 @@ impl App {
                         turn.metadata = metadata;
                         turn.context_rows = context_rows_from_metadata(&turn.metadata);
                         turn.footer =
-                            format!("flyflor · final · {}", iso8601_from_millis(now_millis()));
+                            footer_detail_status("footer.final", iso8601_from_millis(now_millis()));
                         if let Some(fork_id) = latest_context_fork_id(&turn.metadata) {
                             self.active_context_fork_id = Some(fork_id);
                         }
@@ -1781,12 +1789,13 @@ impl App {
                 if let Some(turn_index) = self.pending_turns.remove(&message_id) {
                     if let Some(turn) = self.turns.get_mut(turn_index) {
                         turn.answer = request_failed_status(message);
-                        turn.footer = "flyflor · turn error".to_string();
+                        turn.footer = footer_status("footer.turnError");
                         self.left.stick_to_bottom = true;
                     }
                     self.clear_working_state_if_idle();
                 } else {
-                    self.right_source.blackboard_status = format!("turn error · {message}");
+                    self.right_source.blackboard_status =
+                        ui_detail_status("status.turnError", message);
                 }
                 self.pending_fork_create = false;
             }
@@ -1904,7 +1913,7 @@ impl App {
                 && turn.answer.trim().is_empty()
             {
                 turn.answer = request_failed_status(message);
-                turn.footer = "flyflor · send error".to_string();
+                turn.footer = footer_status("footer.sendError");
             }
         }
         self.left.stick_to_bottom = true;
@@ -1945,7 +1954,7 @@ impl App {
             || self
                 .turns
                 .last()
-                .is_some_and(|turn| turn.footer.contains("streaming"))
+                .is_some_and(|turn| turn.footer == footer_status("footer.streaming"))
     }
 
     fn mark_working_started(&mut self) {
@@ -1982,7 +1991,7 @@ impl App {
                 if turn.answer.trim().is_empty() {
                     turn.answer = ui_text_key("interrupt.completed");
                 }
-                turn.footer = "flyflor · interrupted".to_string();
+                turn.footer = footer_status("footer.interrupted");
             }
         }
         self.right_source.blackboard_status = ui_text_key("interrupt.completed");
@@ -2675,9 +2684,9 @@ impl App {
         let user_text = tui::components::ask::command::ask_message_text(&ask_answers);
         let footer_kind =
             if tui::components::ask::command::is_citizen_permission_answers(&ask_answers) {
-                "confirm answer"
+                "footer.confirmAnswer"
             } else {
-                "ask answer"
+                "footer.askAnswer"
             };
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
@@ -2689,9 +2698,12 @@ impl App {
             context_rows: context_rows_from_metadata(&None),
             pending_continuation: None,
             footer: if socket_connected {
-                format!("flyflor · {footer_kind} · source turn {turn_index}")
+                footer_detail_status(
+                    footer_kind,
+                    format!("{} {turn_index}", ui_text_key("footer.sourceTurn")),
+                )
             } else {
-                "flyflor · send error".to_string()
+                footer_status("footer.sendError")
             },
         });
         if !socket_connected {
@@ -2721,7 +2733,7 @@ impl App {
         {
             if let Some(turn) = self.turns.get_mut(new_turn_index) {
                 turn.answer = request_failed_status(socket_worker_not_running_status());
-                turn.footer = "flyflor · send error".to_string();
+                turn.footer = footer_status("footer.sendError");
             }
         }
         self.left.stick_to_bottom = true;
@@ -2998,9 +3010,9 @@ impl App {
             context_rows: context_rows_from_metadata(&None),
             pending_continuation: None,
             footer: if socket_connected {
-                "flyflor · resending".to_string()
+                footer_status("footer.resending")
             } else {
-                "flyflor · send error".to_string()
+                footer_status("footer.sendError")
             },
         });
         if !socket_connected {
@@ -3030,7 +3042,7 @@ impl App {
         {
             if let Some(turn) = self.turns.get_mut(new_turn_index) {
                 turn.answer = request_failed_status(socket_worker_not_running_status());
-                turn.footer = "flyflor · send error".to_string();
+                turn.footer = footer_status("footer.sendError");
             }
         }
         self.left.stick_to_bottom = true;
@@ -3310,7 +3322,7 @@ impl App {
             metadata: metadata.clone(),
             context_rows: context_rows_from_metadata(&metadata),
             pending_continuation: None,
-            footer: "flyflor · sending".to_string(),
+            footer: footer_status("footer.sending"),
         });
         self.pending_turns.insert(message_id.clone(), turn_index);
         self.mark_working_started();
@@ -3331,7 +3343,7 @@ impl App {
             log_event("send failed: socket worker channel closed");
             if let Some(turn) = self.turns.get_mut(turn_index) {
                 turn.answer = request_failed_status(socket_worker_not_running_status());
-                turn.footer = "flyflor · send error".to_string();
+                turn.footer = footer_status("footer.sendError");
             }
         }
         self.input.clear();
@@ -6457,7 +6469,7 @@ fn turn_from_context_snapshot(snapshot: &Value) -> Option<Turn> {
         context_rows: context_rows_from_metadata(&Some(metadata.clone())),
         metadata: Some(metadata),
         pending_continuation: None,
-        footer: format!("flyflor · {kind}"),
+        footer: footer_detail_status("footer.socketEvent", kind),
     })
 }
 
@@ -9779,7 +9791,7 @@ mod tests {
             metadata: None,
             context_rows: Vec::new(),
             pending_continuation: None,
-            footer: "flyflor · sending".to_string(),
+            footer: footer_status("footer.sending"),
         });
         app.pending_turns
             .insert("message-1".to_string(), turn_index);
@@ -9789,7 +9801,7 @@ mod tests {
         assert!(app.pending_turns.is_empty());
         let turn = &app.turns[turn_index];
         assert!(turn.answer.contains("connection refused"));
-        assert_eq!(turn.footer, "flyflor · send error");
+        assert_eq!(turn.footer, footer_status("footer.sendError"));
         assert!(matches!(app.history_status, HistoryStatus::Error));
     }
 
@@ -11901,7 +11913,7 @@ mod tests {
         handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
 
         assert!(app.pending_turns.is_empty());
-        assert_eq!(app.turns[0].footer, "flyflor · interrupted");
+        assert_eq!(app.turns[0].footer, footer_status("footer.interrupted"));
         assert!(!app.turns[0].answer.trim().is_empty());
     }
 
