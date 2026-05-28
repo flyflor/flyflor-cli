@@ -140,4 +140,5 @@
 
 - [x] 公民权限/高风险授权菜单标题渲染为 `Confirm 授权执行策略`，普通 ASK 菜单仍渲染为 `ASK`。
 - [x] 保留结构化 metadata 发送，不把 `continue-tools` 等授权 token 写成普通用户文本。
+- [x] 公民权限/高风险授权新增 `metadata.confirmAnswer`，`metadata.askAnswer` 仅作为 kernel 兼容保留；普通 ASK 仍只走 `askAnswer`。
 - [ ] 后续如内核提供独立 Confirm snapshot/event，再把当前 ASK-compatible permission metadata 迁移到真正独立 Confirm 组件。

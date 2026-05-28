@@ -523,8 +523,8 @@ mod tests {
                 }
             })),
             metadata: json!({
-                "askAnswer": {
-                    "askId": "ask-1",
+                "confirmAnswer": {
+                    "questionId": "execution-strategy",
                     "choiceId": "continue-tools"
                 },
                 "citizenPermission": {
@@ -583,7 +583,7 @@ mod tests {
         assert_eq!(
             payload
                 .get("metadata")
-                .and_then(|metadata| metadata.get("askAnswer"))
+                .and_then(|metadata| metadata.get("confirmAnswer"))
                 .and_then(|answer| answer.get("choiceId"))
                 .and_then(Value::as_str),
             Some("continue-tools")

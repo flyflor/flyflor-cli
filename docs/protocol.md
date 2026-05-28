@@ -73,7 +73,7 @@ Pending ASK state must not hijack ordinary composer input. Normal typed text rem
 
 ASK fixed-option confirmation and ASK `Other` confirmation also use `gateway.message.send`; only those explicit paths attach the latest continuation metadata so the kernel resumes the original ASK/task context.
 
-Citizen permission choices, including `continue-tools`, `keep-budget`, and `keep-subagents`, are represented as structured metadata in the outgoing payload. They must not be sent as plain user-message text.
+Citizen permission choices, including `continue-tools`, `keep-budget`, and `keep-subagents`, are represented as structured `metadata.confirmAnswer` plus compatibility `metadata.askAnswer` in the outgoing payload. They must not be sent as plain user-message text.
 
 `/undo` sends `gateway.message.undo` with the selected anchor. The kernel records undo audit and abandons affected hot memory / ASK / continuation state without deleting `brain.db`; the CLI only updates presentation state after sending the command.
 

@@ -241,3 +241,21 @@
   原因：确认公民权限授权不再以 ASK 标题展示，同时普通 ASK 菜单保持原路径。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（218 passed）；`git diff --check`。
   风险：后续若内核新增独立 Confirm snapshot/event，还需要把当前 ASK-compatible permission metadata 迁到专门 Confirm 组件。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：confirm-answer-metadata-client
+  变动文件：`src/tui/ask/command.rs`、`src/main.rs`、`src/tui/gateway/channels/runtime.rs`、`docs/protocol.md`、`docs/protocol.zh.cn.md`、`docs/tui-model.md`、`docs/tui-model.zh.cn.md`、`TODO.md`、`LOGS.md`
+  摘要：公民权限/高风险授权发送 `metadata.confirmAnswer`，同时保留兼容 `metadata.askAnswer`；普通 ASK continuation 仍只走 ASK metadata。TUI 发送行 footer 区分 confirm answer 与 ask answer。
+  原因：内核已将 Confirm 结构化入口提升为 `confirmAnswer`，CLI 需要同步，不再把确认授权作为新协议主入口的 ASK answer。
+  验证：已运行 focused `cargo fmt --check`、`cargo test tui::ask::command::tests`、`cargo test ask_citizen_permission_menu_sends_metadata_without_token_message_text`、`cargo test mock_ws_inbound_send_envelope_preserves_route_context_and_ask_metadata`；待运行 `cargo check --all-targets`、`cargo test`、`git diff --check`。
+  风险：本轮仍保留 `askAnswer` 兼容字段，后续内核提供独立 Confirm snapshot/event 后可移除 ASK-compatible fallback。
+
+- 状态：完成
+  执行者：main-codex
+  范围：confirm-answer-metadata-client-verification
+  变动文件：同上
+  摘要：完成 CLI Confirm metadata 发送切片的 focused、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 TUI 公民权限路径发送 `confirmAnswer`，普通 ASK 路径仍保持 `askAnswer`，gateway channel bridge 透传 confirm metadata。
+  验证：`cargo fmt --check`；`cargo test tui::ask::command::tests`（5 passed）；`cargo test ask_citizen_permission_menu_sends_metadata_without_token_message_text`（1 passed）；`cargo test mock_ws_inbound_send_envelope_preserves_route_context_and_ask_metadata`（1 passed）；`cargo check --all-targets`；`cargo test`（218 passed）；`git diff --check`。
+  风险：仍保留 `askAnswer` 兼容字段，后续可随独立 Confirm read-model/event 删除。

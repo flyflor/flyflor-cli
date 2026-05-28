@@ -46,6 +46,7 @@ pub fn ask_message_metadata_many(continuation: Value, answers: &[AskAnswer]) -> 
     });
     if let Some(permission) = citizen_permission_metadata(answers) {
         metadata["citizenPermission"] = permission;
+        metadata["confirmAnswer"] = confirm_answer_metadata(answers);
     }
     metadata
 }
@@ -80,6 +81,28 @@ fn citizen_permission_metadata(answers: &[AskAnswer]) -> Option<Value> {
         "kind": "execution-policy",
         "choices": choices
     }))
+}
+
+fn confirm_answer_metadata(answers: &[AskAnswer]) -> Value {
+    let mut confirm_answer = json!({
+        "answers": answers.iter().map(ask_answer_metadata).collect::<Vec<_>>()
+    });
+    if answers.len() == 1 {
+        if let Some(object) = confirm_answer.as_object_mut() {
+            if let Some(single) = answers.first().map(ask_answer_metadata) {
+                if let Some(single_object) = single.as_object() {
+                    for (key, value) in single_object {
+                        object.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+        }
+    }
+    confirm_answer
+}
+
+pub fn is_citizen_permission_answers(answers: &[AskAnswer]) -> bool {
+    !citizen_permission_choices(answers).is_empty()
 }
 
 fn citizen_permission_choices(answers: &[AskAnswer]) -> Vec<String> {
@@ -268,5 +291,16 @@ mod tests {
                 .and_then(Value::as_str),
             Some("continue-tools")
         );
+        assert_eq!(
+            metadata
+                .get("confirmAnswer")
+                .and_then(|answer| answer.get("answers"))
+                .and_then(Value::as_array)
+                .and_then(|answers| answers.first())
+                .and_then(|answer| answer.get("choiceId"))
+                .and_then(Value::as_str),
+            Some("continue-tools")
+        );
+        assert!(is_citizen_permission_answers(&answers));
     }
 }

@@ -2565,6 +2565,11 @@ impl App {
         let socket_connected = self.socket_connected;
         let metadata = tui::ask::command::ask_message_metadata_many(continuation, &ask_answers);
         let user_text = tui::ask::command::ask_message_text(&ask_answers);
+        let footer_kind = if tui::ask::command::is_citizen_permission_answers(&ask_answers) {
+            "confirm answer"
+        } else {
+            "ask answer"
+        };
         self.turns.push(Turn {
             message_id: Some(message_id.clone()),
             event_id: None,
@@ -2575,7 +2580,7 @@ impl App {
             context_rows: context_rows_from_metadata(&None),
             pending_continuation: None,
             footer: if socket_connected {
-                format!("flyflor · ask answer · source turn {turn_index}")
+                format!("flyflor · {footer_kind} · source turn {turn_index}")
             } else {
                 "flyflor · send error".to_string()
             },
@@ -9327,6 +9332,16 @@ mod tests {
                         .and_then(|permission| permission.get("choices"))
                         .and_then(Value::as_array)
                         .and_then(|choices| choices.first())
+                        .and_then(Value::as_str),
+                    Some("continue-tools")
+                );
+                assert_eq!(
+                    metadata
+                        .get("confirmAnswer")
+                        .and_then(|answer| answer.get("answers"))
+                        .and_then(Value::as_array)
+                        .and_then(|answers| answers.first())
+                        .and_then(|answer| answer.get("choiceId"))
                         .and_then(Value::as_str),
                     Some("continue-tools")
                 );
