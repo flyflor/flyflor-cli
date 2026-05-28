@@ -1144,17 +1144,16 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
         env_aliases: &[
             "OPEN_WEBUI_SECRET",
             "OPEN_WEBUI_BIND",
+            "OPEN_WEBUI_PUBLIC_URL",
             "FLYFLOR_OPEN_WEBUI_SECRET",
         ],
-        status: PlatformRuntimeStatus::Planned,
-        capability: cap!(
-            inbound_media,
-            outbound_media,
-            file_download,
-            file_upload,
-            webhook_required
-        ),
-        details: &["webhook/API bridge", "chat normalization", "file support"],
+        status: PlatformRuntimeStatus::Native,
+        capability: cap!(webhook_required, direct_message),
+        details: &[
+            "local webhook ingest",
+            "callback reply",
+            "file/media support unavailable",
+        ],
     },
     PlatformMetadata {
         name: "yuanbao",
@@ -1310,7 +1309,8 @@ mod tests {
                 "irc",
                 "ntfy",
                 "mattermost",
-                "homeassistant"
+                "homeassistant",
+                "open-webui"
             ]
         );
     }

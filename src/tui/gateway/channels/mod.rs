@@ -3,6 +3,7 @@ pub mod irc;
 pub mod matrix;
 pub mod mattermost;
 pub mod ntfy;
+pub mod openwebui;
 pub mod platform;
 pub mod runtime;
 pub mod telegram;

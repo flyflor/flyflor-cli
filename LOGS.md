@@ -511,3 +511,21 @@
   原因：确认 Home Assistant 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 webhook event 到 `/ws` 再到 conversation/process reply 的进程级闭环。
   验证：`cargo test homeassistant -- --nocapture`（5 passed）；`npm run smoke:gateway:homeassistant`（ok: true）；`cargo test gateway -- --nocapture`（66 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（258 passed）；`git diff --check`。
   风险：本轮只实现 webhook ingest 与 conversation/process text path；notify/service/entity routing、event subscription、area/device context 后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：openwebui-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/openwebui.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/openwebui-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Open WebUI native adapter 与 `smoke:gateway:open-webui`，完成本地 webhook 入站、`gateway.message.send`、`turn.final`、callback 出站的本地 HTTP mock 闭环。
+  原因：继续推进可本地验证的 gateway channel；Open WebUI webhook/callback path 可证明 `/ws` 血管层连通，同时避免把 file/media/plugin schema 等未完成能力提前宣称 native。
+  验证：待运行 `cargo test openwebui -- --nocapture`、`npm run smoke:gateway:open-webui`、格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 webhook ingest 与 callback text path；native plugin schema、file upload/download、rich chat metadata 和用户会话映射后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：openwebui-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Open WebUI native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Open WebUI 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 webhook payload 到 `/ws` 再到 callback reply 的进程级闭环。
+  验证：`cargo test openwebui -- --nocapture`（6 passed）；`npm run smoke:gateway:open-webui`（ok: true）；`cargo test gateway -- --nocapture`（72 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（264 passed）；`git diff --check`。
+  风险：本轮只实现 webhook ingest 与 callback text path；native plugin schema、file upload/download、rich chat metadata 和用户会话映射后续继续补。

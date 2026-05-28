@@ -220,3 +220,12 @@
 - [x] Gateway registry/doctor 将 Home Assistant 标记为 native，并收紧 capability 只声明当前真实可用的 webhook ingest / conversation text。
 - [x] 新增 Home Assistant 本地 mock HTTP smoke：webhook event -> `gateway.message.send` -> `turn.final` -> conversation/process。
 - [ ] 后续补 Home Assistant notify/service/entity routing、event subscription、area/device context 和更完整 conversation response 映射；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Open WebUI Native Channel Adapter
+
+- [x] 新增 Open WebUI native adapter，支持本地 webhook 入站和 `OPEN_WEBUI_PUBLIC_URL` callback 出站。
+- [x] Open WebUI 入站 normalization 覆盖 chat route、nested message payload、user allowlist、context 透传和 metadata 透传。
+- [x] Open WebUI outbound 覆盖 callback reply、secret header、explicit media unavailable 和 missing callback degraded/unavailable。
+- [x] Gateway registry/doctor 将 Open WebUI 标记为 native，并收紧 capability 只声明当前真实可用的 webhook ingest / callback text。
+- [x] 新增 Open WebUI 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `turn.final` -> callback。
+- [ ] 后续补 Open WebUI native plugin schema、file upload/download、rich chat metadata 和用户会话映射；这些能力当前仍保持 explicit unavailable 或未声明。
