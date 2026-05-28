@@ -835,3 +835,12 @@
   原因：继续执行多语言红线，清理生产 UI 文案，同时避免 `todo.emptyPlan` 这种带 marker 的展示 key 污染状态数据。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：仍保留协议 token、状态归一化匹配词、demo fixture 和测试 fixture 字符串；blackboard detail 的 `Status/reason/plan` 使用专用 key 保持历史调试格式稳定。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-live-default-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 composer 退出提示和 `RightPanelData::default_live()` 的 socket/context 默认状态接入 i18n。
+  原因：继续移除生产 UI 默认态硬编码，保持状态数据和展示 copy 分离。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮只改默认显示文案来源；`thinking_label`、footer 产品名、协议状态匹配词和测试 fixture 不变。

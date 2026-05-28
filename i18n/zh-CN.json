@@ -40,6 +40,8 @@
   "common.notReceived": "未收到",
   "common.unavailable": "不可用",
   "common.unknown": "未知",
+  "socket.waiting": "waiting for flyflor socket",
+  "composer.exitHint": "输入 /exit 退出",
   "time.unknown": "时间未知",
   "processBar.poweredByPrefix": "FlyFlor · Powered By",
   "history.loading": "加载历史中",

@@ -551,3 +551,15 @@ cargo check --all-targets
 cargo test
 git diff --check
 ```
+
+## 2026-05-28 TUI Live Default i18n Cleanup 主控切片
+
+本轮未新增实现型子 Codex；由主控在主 worktree 清理 composer 退出提示和 live socket 默认右侧状态文案。沿用固定 lane 表，当前可用下列命令查看历史 session 或验证细节：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core|wm-)'
+cargo fmt --check
+cargo check --all-targets
+cargo test
+git diff --check
+```

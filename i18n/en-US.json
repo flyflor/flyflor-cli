@@ -40,6 +40,8 @@
   "common.notReceived": "not received",
   "common.unavailable": "unavailable",
   "common.unknown": "unknown",
+  "socket.waiting": "waiting for flyflor socket",
+  "composer.exitHint": "type /exit to quit",
   "time.unknown": "unknown time",
   "processBar.poweredByPrefix": "FlyFlor · Powered By",
   "history.loading": "loading history",

@@ -5374,7 +5374,7 @@ fn composer_footer_line(app: &App, theme: &Theme) -> Line<'static> {
 
     if matches!(app.composer_notice, Some(ComposerNotice::ExitHint)) {
         return Line::from(vec![Span::styled(
-            "输入 /exit 退出",
+            ui_text_key("composer.exitHint"),
             Style::default().fg(theme.pink).add_modifier(Modifier::BOLD),
         )]);
     }
@@ -7792,19 +7792,19 @@ impl RightPanelData {
     fn default_live() -> Self {
         Self {
             thinking_label: "Socket".to_string(),
-            blackboard_status: "waiting for flyflor socket".to_string(),
+            blackboard_status: ui_text_key("socket.waiting"),
             blackboard_stream: Vec::new(),
             model_stats: Vec::new(),
             token_stats: Vec::new(),
-            context_total: "未收到上下文窗口".to_string(),
-            context_percent: "未知".to_string(),
+            context_total: ui_text_key("contextWindow.missing"),
+            context_percent: ui_text_key("common.unknown"),
             context_bar: String::new(),
-            context_usage: "暂无数据".to_string(),
+            context_usage: ui_text_key("common.noData"),
             context_ratio: 0.0,
             context_used_tokens: 0,
             context_max_tokens: None,
             context_used: "0".to_string(),
-            context_max: "未知".to_string(),
+            context_max: ui_text_key("common.unknown"),
             fork_memory: ForkMemorySnapshot::default(),
             run_timeline: RunTimeline::new(),
             footer: "flyflor-cli".to_string(),
