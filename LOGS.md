@@ -682,3 +682,12 @@
   原因：确认 DingTalk 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 session webhook payload 到 `/ws` 再到 sessionWebhook reply 的进程级闭环。
   验证：`cargo test dingtalk -- --nocapture`（5 passed）；`npm run smoke:gateway:dingtalk`（ok: true）；`cargo test gateway -- --nocapture`（123 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（315 passed）；`git diff --check`。
   风险：本轮只实现 env/session webhook payload、session webhook text reply、OpenAPI token 和 robot group text send fallback；真实 HTTP webhook listener、签名/加密、Stream Mode、AI cards、approval buttons、media/file、QR/device flow 和完整 group/direct routing 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：qqbot-native-channel-adapter-verification
+  变动文件：`src/tui/gateway/channels/qqbot.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/qqbot-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：完成 QQBot Official API v2 native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 QQBot 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 env gateway event 到 `/ws` 再到 Official API v2 group message reply 的进程级闭环。
+  验证：`cargo test qqbot -- --nocapture`（5 passed）；`npm run smoke:gateway:qqbot`（ok: true）；`cargo test gateway -- --nocapture`（128 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（320 passed）；`git diff --check`。
+  风险：本轮只实现 env gateway event payload、app access token、Official API v2 group/direct/guild text send；真实 WebSocket Gateway、QR setup、签名/事件鉴权、typing/input_notify、markdown/keyboard/approval、媒体、语音 STT 和 sandbox/publish 检测后续继续补。

@@ -311,3 +311,12 @@
 - [x] Gateway registry/doctor 将 DingTalk 标记为 native，并收紧 capability 只声明当前真实可用的 webhook/text/group send。
 - [x] 新增 DingTalk 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `turn.final` -> sessionWebhook POST。
 - [ ] 后续补真实 HTTP webhook listener、签名/加密校验、Stream Mode、AI cards、approval buttons、media/file、QR/device flow、机器人安装/ACL 和更完整 group/direct routing；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 QQBot Native Channel Adapter
+
+- [x] 新增 QQBot Official API v2 native adapter，支持 env gateway event 入站和 REST text 出站。
+- [x] QQBot 入站 normalization 覆盖 group/direct/guild route、sender allowlist、source message id、mention strip 和 channel metadata。
+- [x] QQBot outbound 覆盖 app access token、group/direct/guild text endpoint、reply msg_id anchor、text chunking、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 QQBot 标记为 native，并收紧 capability 只声明当前真实可用的 env event / REST text。
+- [x] 新增 QQBot 本地 mock HTTP smoke：gateway event -> `gateway.message.send` -> `turn.final` -> `/v2/groups/{id}/messages` POST。
+- [ ] 后续补真实 WebSocket Gateway、QR scan setup、签名/事件鉴权、typing/input_notify、markdown/keyboard/approval、媒体文件、语音 STT、guild/direct 策略和 sandbox/publish 状态检测；这些能力当前仍保持 explicit unavailable 或未声明。

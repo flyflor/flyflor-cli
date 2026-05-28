@@ -11,6 +11,7 @@ pub mod mattermost;
 pub mod ntfy;
 pub mod openwebui;
 pub mod platform;
+pub mod qqbot;
 pub mod runtime;
 pub mod slack;
 pub mod sms;
