@@ -5100,7 +5100,7 @@ fn context_usage_for_width(data: &RightPanelData, width: usize) -> String {
         &data
             .context_max_tokens
             .map(compact_token_count)
-            .unwrap_or_else(|| "未知".to_string()),
+            .unwrap_or_else(|| ui_text_key("common.unknown")),
         &data.context_percent,
     );
     if let Some(line) = context_usage_line_that_fits(
@@ -5244,13 +5244,13 @@ fn estimate_context_window(
         )
     } else {
         (
-            "未知".to_string(),
+            ui_text_key("common.unknown"),
             context_bar(0.0, DEFAULT_CONTEXT_BAR_WIDTH),
             context_usage_line(
                 &context_bar(0.0, DEFAULT_CONTEXT_BAR_WIDTH),
                 &compact_token_count(hot_tokens),
-                "未知",
-                "未知",
+                &ui_text_key("common.unknown"),
+                &ui_text_key("common.unknown"),
             ),
             0.0,
         )
@@ -5258,8 +5258,14 @@ fn estimate_context_window(
 
     ContextWindowEstimate {
         total: max_tokens
-            .map(|tokens| format!("最大 {} tokens", compact_token_count(tokens)))
-            .unwrap_or_else(|| "未收到上下文窗口".to_string()),
+            .map(|tokens| {
+                format!(
+                    "{} {} tokens",
+                    ui_text_key("contextWindow.maxTokensPrefix"),
+                    compact_token_count(tokens)
+                )
+            })
+            .unwrap_or_else(|| ui_text_key("contextWindow.missing")),
         percent,
         bar,
         usage,
@@ -6422,7 +6428,7 @@ fn turn_from_context_snapshot(snapshot: &Value) -> Option<Turn> {
                         "kind": "blackboard",
                         "title": value_string(blackboard, "title")
                             .or_else(|| value_string(blackboard, "summary"))
-                            .unwrap_or_else(|| "blackboard 摘要".to_string()),
+                            .unwrap_or_else(|| ui_text_key("blackboard.summaryFallback")),
                         "summary": value_string(blackboard, "summary")
                             .or_else(|| value_string(blackboard, "content"))
                             .unwrap_or_else(|| "blackboard snapshot".to_string())
@@ -6442,10 +6448,10 @@ fn turn_from_context_snapshot(snapshot: &Value) -> Option<Turn> {
         user: format!("socket {kind}"),
         thought: None,
         answer: match kind {
-            "thought.snapshot" => "收到思考摘要。".to_string(),
-            "recall.snapshot" | "memory.snapshot" => "收到回忆摘要。".to_string(),
-            "blackboard.snapshot" => "收到 blackboard 摘要。".to_string(),
-            "ask.snapshot" => "需要用户选择 ASK 回答。".to_string(),
+            "thought.snapshot" => ui_text_key("snapshot.thoughtReceived"),
+            "recall.snapshot" | "memory.snapshot" => ui_text_key("snapshot.recallReceived"),
+            "blackboard.snapshot" => ui_text_key("snapshot.blackboardReceived"),
+            "ask.snapshot" => ui_text_key("snapshot.askNeedsAnswer"),
             _ => kind.to_string(),
         },
         context_rows: context_rows_from_metadata(&Some(metadata.clone())),
@@ -6636,7 +6642,7 @@ fn todo_items_from_task_plan(plan: &Value) -> Vec<TodoItem> {
                 label: value_string(step, "title")
                     .or_else(|| value_string(step, "label"))
                     .or_else(|| value_string(step, "text"))
-                    .unwrap_or_else(|| format!("步骤 {}", index + 1)),
+                    .unwrap_or_else(|| format!("{} {}", ui_text_key("todo.stepPrefix"), index + 1)),
                 status: todo_status_label(&status, active),
                 active,
                 plan_id: plan_id_from_task_plan(plan),
@@ -6728,20 +6734,24 @@ fn todo_marker(status: &str, active: bool) -> &'static str {
 
 fn todo_status_label(status: &str, active: bool) -> String {
     if status_matches_awaiting_confirmation(status) {
-        "等待确认".to_string()
+        ui_text_key("plan.state.awaitingConfirmation")
     } else if active {
-        "进行中".to_string()
+        ui_text_key("plan.state.running")
     } else if status_matches_done(status) {
-        "完成".to_string()
+        ui_text_key("todo.status.done")
     } else if status.trim().is_empty() {
-        "待办".to_string()
+        ui_text_key("todo.status.todo")
     } else {
         truncate_to_width(status, 6)
     }
 }
 
 fn plan_state_from_todos(todos: &[TodoItem]) -> PlanState {
-    if todos.is_empty() || todos.iter().all(|todo| todo.label == "暂无计划") {
+    if todos.is_empty()
+        || todos
+            .iter()
+            .all(|todo| todo.label == ui_text_key("todo.emptyPlanLabel"))
+    {
         return PlanState::Empty;
     }
     let joined = todos
@@ -6751,9 +6761,13 @@ fn plan_state_from_todos(todos: &[TodoItem]) -> PlanState {
         .join(" ");
     if status_matches_awaiting_confirmation(&joined) {
         PlanState::AwaitingConfirmation
-    } else if joined.contains("生成中") {
+    } else if joined.contains(&ui_text_key("plan.state.generating")) || joined.contains("生成中")
+    {
         PlanState::Generating
-    } else if joined.contains("已放弃") || joined.contains("放弃") {
+    } else if joined.contains(&ui_text_key("plan.state.abandoned"))
+        || joined.contains("已放弃")
+        || joined.contains("放弃")
+    {
         PlanState::Abandoned
     } else if todos.iter().any(|todo| todo.active) {
         PlanState::Running
@@ -6786,7 +6800,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
     let Some(metadata) = metadata else {
         rows.push(ContextRow {
             kind: ContextRowKind::CreateFork,
-            summary: "从本轮创建 context fork".to_string(),
+            summary: ui_text_key("context.createForkSummary"),
             detail: String::new(),
             expanded: false,
             status: ContextRowStatus::Completed,
@@ -6795,7 +6809,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
     };
 
     if let Some(ask) = metadata.get("ask") {
-        let summary = value_string(ask, "prompt").unwrap_or_else(|| "等待用户确认".to_string());
+        let summary = value_string(ask, "prompt").unwrap_or_else(|| ui_text_key("ask.waitingUser"));
         if continuation_from_value(ask).is_some() {
             rows.push(ContextRow {
                 kind: ContextRowKind::AskResume,
@@ -6815,7 +6829,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
             kind: ContextRowKind::AskResume,
             summary: value_string(continuation, "summary")
                 .or_else(|| value_string(continuation, "title"))
-                .unwrap_or_else(|| "继续未完成回答".to_string()),
+                .unwrap_or_else(|| ui_text_key("ask.continueIncomplete")),
             detail: format_ask_detail(continuation),
             expanded: false,
             status: ContextRowStatus::NeedsUser,
@@ -6844,7 +6858,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
     {
         rows.push(ContextRow {
             kind: ContextRowKind::Thought,
-            summary: context_value_summary(thought, "思考详情"),
+            summary: context_value_summary(thought, &ui_text_key("context.thoughtDetail")),
             detail: format_thought_detail(thought),
             expanded: false,
             status: metadata_row_status(thought),
@@ -6859,7 +6873,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
     {
         rows.push(ContextRow {
             kind: ContextRowKind::Recall,
-            summary: context_value_summary(recall, "召回记忆"),
+            summary: context_value_summary(recall, &ui_text_key("context.recallMemory")),
             detail: format_recall_detail(recall),
             expanded: false,
             status: metadata_row_status(recall),
@@ -6903,7 +6917,7 @@ fn context_rows_from_metadata(metadata: &Option<Value>) -> Vec<ContextRow> {
 
     rows.push(ContextRow {
         kind: ContextRowKind::CreateFork,
-        summary: "从本轮创建 context fork".to_string(),
+        summary: ui_text_key("context.createForkSummary"),
         detail: String::new(),
         expanded: false,
         status: ContextRowStatus::Completed,
@@ -7019,7 +7033,7 @@ fn execution_context_row_from_metadata(metadata: &Value) -> Option<ContextRow> {
 
     let mut detail = Vec::new();
     if let Some(loop_snapshot) = ask_loop {
-        detail.push("执行层 ASK / 外骨骼暂停".to_string());
+        detail.push(ui_text_key("execution.askExoskeletonPaused"));
         push_detail_field(
             &mut detail,
             "askId",
@@ -7027,14 +7041,14 @@ fn execution_context_row_from_metadata(metadata: &Value) -> Option<ContextRow> {
         );
         push_detail_field(
             &mut detail,
-            "原因",
+            &ui_text_key("detail.reason"),
             value_string(loop_snapshot, "message")
                 .or_else(|| value_string(loop_snapshot, "reason"))
                 .or_else(|| value_string(loop_snapshot, "stop")),
         );
         push_detail_field(
             &mut detail,
-            "工具步数",
+            &ui_text_key("detail.toolSteps"),
             loop_snapshot
                 .get("stepCount")
                 .and_then(Value::as_u64)
@@ -7042,7 +7056,11 @@ fn execution_context_row_from_metadata(metadata: &Value) -> Option<ContextRow> {
         );
     }
     if let Some(tool_executions) = tool_executions {
-        detail.push(format!("工具调用：{}", tool_executions.len()));
+        detail.push(format!(
+            "{}：{}",
+            ui_text_key("execution.toolCalls"),
+            tool_executions.len()
+        ));
         for execution in tool_executions.iter().take(8) {
             detail.push(format!("- {}", compact_tool_execution_label(execution, 96)));
         }
@@ -7070,9 +7088,12 @@ fn execution_metadata_summary(
         .and_then(|value| value_string(value, "stop"))
         .unwrap_or_else(|| "visible".to_string());
     if tool_count > 0 {
-        format!("工具/子进程 {tool_count} · Plan {stop}")
+        format!(
+            "{} {tool_count} · Plan {stop}",
+            ui_text_key("execution.toolsAndProcesses")
+        )
     } else {
-        format!("工具阻断 · Plan {stop}")
+        format!("{} · Plan {stop}", ui_text_key("execution.toolBlocked"))
     }
 }
 
@@ -7163,7 +7184,13 @@ fn aggregate_context_row(
     let summary = if deduped.len() == 1 {
         latest_summary
     } else {
-        format!("{} 条摘要 · 最近：{}", deduped.len(), latest_summary)
+        format!(
+            "{} {} · {}：{}",
+            deduped.len(),
+            ui_text_key("context.summaryCountSuffix"),
+            ui_text_key("context.latestPrefix"),
+            latest_summary
+        )
     };
     let merged_count = values.len().saturating_sub(deduped.len());
     Some(ContextRow {
@@ -7249,7 +7276,11 @@ fn format_context_detail(
         .map(|(index, value)| format_context_detail_item(kind, index + 1, value, fallback_label))
         .collect::<Vec<_>>();
     if kind == ContextRowKind::Fork && merged_count > 0 {
-        items.push(format!("已合并 {merged_count} 条重复 fork"));
+        items.push(format!(
+            "{} {merged_count} {}",
+            ui_text_key("fork.mergedPrefix"),
+            ui_text_key("fork.mergedSuffix")
+        ));
     }
     items.join("\n\n")
 }
@@ -7275,15 +7306,19 @@ fn format_context_detail_item(
     let title = context_value_summary(value, fallback_label);
     let mut lines = vec![format!("{index}. {title}")];
     push_detail_field(&mut lines, "id", value_string(value, "id"));
-    push_detail_field(&mut lines, "摘要", value_string(value, "summary"));
     push_detail_field(
         &mut lines,
-        "延续摘要",
+        &ui_text_key("detail.summary"),
+        value_string(value, "summary"),
+    );
+    push_detail_field(
+        &mut lines,
+        &ui_text_key("detail.continuitySummary"),
         value_string(value, "continuitySummary"),
     );
     push_detail_field(
         &mut lines,
-        "来源",
+        &ui_text_key("detail.source"),
         value_string(value, "sourceEventId")
             .or_else(|| value_string(value, "eventId"))
             .or_else(|| value_string(value, "sourceAskId"))
@@ -7303,7 +7338,7 @@ fn format_fork_context_detail_item(index: usize, value: &Value, fallback_label: 
     if summary.as_deref().map(str::trim) != Some(title.trim()) {
         push_detail_field(
             &mut lines,
-            "摘要",
+            &ui_text_key("detail.summary"),
             summary
                 .as_ref()
                 .map(|value| truncate_to_width(&value.replace('\n', " "), 96)),
@@ -7312,7 +7347,7 @@ fn format_fork_context_detail_item(index: usize, value: &Value, fallback_label: 
     if continuity.as_deref().map(str::trim) != summary.as_deref().map(str::trim) {
         push_detail_field(
             &mut lines,
-            "延续",
+            &ui_text_key("detail.continuity"),
             continuity.map(|value| truncate_to_width(&value.replace('\n', " "), 96)),
         );
     }
@@ -7321,13 +7356,14 @@ fn format_fork_context_detail_item(index: usize, value: &Value, fallback_label: 
 
 fn format_recall_detail(value: &Value) -> String {
     let mut lines = vec![format!(
-        "### scope 记忆装配：{}",
-        context_value_summary(value, "召回记忆")
+        "### {}：{}",
+        ui_text_key("context.scopeMemoryAssembly"),
+        context_value_summary(value, &ui_text_key("context.recallMemory"))
     )];
     push_detail_field(&mut lines, "scope", value_string(value, "scopeId"));
     push_detail_field(
         &mut lines,
-        "摘要",
+        &ui_text_key("detail.summary"),
         value_string(value, "summary").or_else(|| value_string(value, "content")),
     );
     if let Some(items) = value
@@ -7344,7 +7380,7 @@ fn format_recall_detail(value: &Value) -> String {
             ));
             push_detail_field(
                 &mut lines,
-                "   内容",
+                &format!("   {}", ui_text_key("detail.content")),
                 value_string(item, "content").or_else(|| value_string(item, "summary")),
             );
         }
@@ -7354,18 +7390,23 @@ fn format_recall_detail(value: &Value) -> String {
 
 fn format_thought_detail(value: &Value) -> String {
     let mut lines = vec![format!(
-        "### LLM 思考详情：{}",
-        context_value_summary(value, "思考详情")
+        "### {}：{}",
+        ui_text_key("context.llmThoughtDetail"),
+        context_value_summary(value, &ui_text_key("context.thoughtDetail"))
     )];
-    push_detail_field(&mut lines, "状态", value_string(value, "status"));
     push_detail_field(
         &mut lines,
-        "摘要",
+        &ui_text_key("status"),
+        value_string(value, "status"),
+    );
+    push_detail_field(
+        &mut lines,
+        &ui_text_key("detail.summary"),
         value_string(value, "summary").or_else(|| value_string(value, "title")),
     );
     push_detail_field(
         &mut lines,
-        "内容",
+        &ui_text_key("detail.content"),
         value_string(value, "content")
             .or_else(|| value_string(value, "text"))
             .or_else(|| value_string(value, "detail")),
@@ -7382,7 +7423,7 @@ fn format_thought_detail(value: &Value) -> String {
                 value_string(step, "content")
                     .or_else(|| value_string(step, "text"))
                     .or_else(|| value_string(step, "summary"))
-                    .unwrap_or_else(|| "思考步骤".to_string())
+                    .unwrap_or_else(|| ui_text_key("context.thoughtStep"))
             ));
         }
     }
@@ -7393,7 +7434,7 @@ fn blackboard_summary(value: &Value) -> String {
     value_string(value, "summary")
         .or_else(|| value_string(value, "title"))
         .or_else(|| value_string(value, "reason"))
-        .unwrap_or_else(|| "blackboard 摘要".to_string())
+        .unwrap_or_else(|| ui_text_key("blackboard.summaryFallback"))
 }
 
 fn format_blackboard_discussion(value: &Value) -> String {
@@ -7403,7 +7444,11 @@ fn format_blackboard_discussion(value: &Value) -> String {
         .or_else(|| value_string(value, "plan"))
         .unwrap_or_else(|| "none".to_string());
     let mut lines = vec![format!(
-        "Blackboard discussion: Status: {status}; reason: {summary}; plan: {plan}"
+        "{}: {}: {status}; {}: {summary}; {}: {plan}",
+        ui_text_key("blackboard.discussionTitle"),
+        ui_text_key("blackboard.discussionStatusLabel"),
+        ui_text_key("blackboard.discussionReasonLabel"),
+        ui_text_key("blackboard.discussionPlanLabel")
     )];
     let content = value.get("content").unwrap_or(value);
     append_blackboard_content(&mut lines, content, 1);
@@ -7689,7 +7734,7 @@ impl TodoItem {
     fn empty_plan() -> Self {
         Self {
             marker: "○".to_string(),
-            label: "暂无计划".to_string(),
+            label: ui_text_key("todo.emptyPlanLabel"),
             status: "-".to_string(),
             active: false,
             plan_id: None,

@@ -539,3 +539,15 @@ cargo check --all-targets
 cargo test
 git diff --check
 ```
+
+## 2026-05-28 TUI Context Detail i18n Cleanup 主控切片
+
+本轮未新增实现型子 Codex；由主控在主 worktree 继续清理 `src/main.rs` 中 Context Window 估算、snapshot 回执、TODO 默认状态、context detail 和 execution detail 文案。沿用固定 lane 表，当前可用下列命令查看历史 session 或验证细节：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core|wm-)'
+cargo fmt --check
+cargo check --all-targets
+cargo test
+git diff --check
+```

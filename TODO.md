@@ -417,4 +417,5 @@
 - [x] 将命令菜单、ASK/Confirm 菜单、计划菜单、PlanState 标签和 compact sidebar 状态标签继续接入 i18n。
 - [x] 将 `src/main.rs` 中本轮触达的顶部状态、runtime/status、fork、selection、right-panel 状态文案继续接入 i18n。
 - [x] 将 `src/main.rs` 中 context row、Thought fallback、code/flowchart 标题、TODO 状态前缀和 ASK Other 阻塞提示继续接入 i18n。
+- [x] 将 `src/main.rs` 中 Context Window 估算、snapshot 回执、TODO 默认状态、context detail 和 execution detail 生产文案继续接入 i18n。
 - [ ] 继续分批清理 `src/main.rs` 中仍属于生产 UI 的遗留硬编码文案；不要一次性重写 TUI 视觉结构。

@@ -826,3 +826,12 @@
   原因：继续清理生产 UI 硬编码，同时保持 TUI 视觉结构、协议 token、日志和测试 fixture 不变。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：仍有 context window 估算、demo fixture 和 shell/config 命令输出中的字符串保留，后续继续按 owner 分批清理。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-context-detail-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 Context Window 估算、snapshot 回执、TODO 默认状态、context detail、execution detail 和 blackboard detail 稳定标签继续接入 i18n。
+  原因：继续执行多语言红线，清理生产 UI 文案，同时避免 `todo.emptyPlan` 这种带 marker 的展示 key 污染状态数据。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：仍保留协议 token、状态归一化匹配词、demo fixture 和测试 fixture 字符串；blackboard detail 的 `Status/reason/plan` 使用专用 key 保持历史调试格式稳定。
