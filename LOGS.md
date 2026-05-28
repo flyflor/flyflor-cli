@@ -358,3 +358,21 @@
   原因：现有通用 runtime 在 delta 阶段只有 inbound message id，没有先发 bot message id anchor；过早声明 edit 会让 streaming path 假成功或持续失败。
   验证：`cargo fmt --check && cargo test telegram -- --nocapture && cargo test gateway -- --nocapture && cargo check --all-targets && cargo test && git diff --check`（通过，targeted 5 passed、gateway 33 passed、全量 225 passed）。
   风险：后续打开 Telegram stream edit 前必须先补 route anchor/placeholder message smoke。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：gateway-edit-stream-route-anchor
+  变动文件：`src/tui/gateway/channels/runtime.rs`、`src/tui/gateway/channels/telegram.rs`、`TODO.md`、`LOGS.md`
+  摘要：Gateway runtime 为 edit-capable channel 增加占位消息发送与 bot message id 保存，后续 delta/final 复用该 id 调 `stream_update`。
+  原因：Telegram 这类平台需要先发一条 bot 消息才能编辑，不能把 inbound message id 当作 outbound edit target。
+  验证：已运行 `cargo fmt --check`、`cargo test mock_ws_edit_stream_sends_placeholder_then_edits_channel_message -- --nocapture`、`cargo test telegram -- --nocapture`、`cargo test gateway -- --nocapture`；待运行类型、全量和 whitespace 验证。
+  风险：真实 Telegram sandbox smoke 仍待凭据环境验证。
+
+- 状态：完成
+  执行者：main-codex
+  范围：gateway-edit-stream-route-anchor-verification
+  变动文件：同上
+  摘要：完成 edit-capable channel stream route anchor 的 focused、gateway、类型、全量测试和 whitespace 验证。
+  原因：确认 delta 首次发送占位消息、保存 bot message id、后续 delta/final 编辑同一 channel message，Telegram 可安全声明 edit streaming。
+  验证：`cargo fmt --check`；`cargo test mock_ws_edit_stream_sends_placeholder_then_edits_channel_message -- --nocapture`（1 passed）；`cargo test telegram -- --nocapture`（5 passed）；`cargo test gateway -- --nocapture`（34 passed）；`cargo check --all-targets`；`cargo test`（226 passed）；`git diff --check`。
+  风险：真实 Telegram sandbox smoke 仍待凭据环境验证。

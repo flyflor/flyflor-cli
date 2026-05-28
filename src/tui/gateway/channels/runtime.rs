@@ -18,7 +18,7 @@ use tungstenite::{Error as WsError, Message, connect, stream::MaybeTlsStream};
 use super::platform::{
     ChannelCapabilityReport, ChannelCapabilityState, ChannelErrorKind, MessageRoute,
     NormalizedInboundMessage, OutboundMessage, OutboundStreamUpdate, PlatformAdapter,
-    PlatformRegistry, StreamDeliveryMode, enabled_platform_names_from_env,
+    PlatformRegistry, PlatformSendOutcome, StreamDeliveryMode, enabled_platform_names_from_env,
 };
 use crate::{
     kernel::{
@@ -192,6 +192,7 @@ fn run_socket_bridge_session(
 #[derive(Clone, Debug, Default)]
 struct OutboundTurnStream {
     text: String,
+    channel_message_id: Option<String>,
 }
 
 fn inbound_gateway_payload(
@@ -260,14 +261,8 @@ fn handle_socket_text(
                 let stream = streams.entry(message_id.clone()).or_default();
                 stream.text.push_str(&delta);
                 if !stream.text.trim().is_empty()
-                    && let Err(error) = adapter.stream_update(OutboundStreamUpdate {
-                        route: route.clone(),
-                        message_id: message_id.clone(),
-                        text: stream.text.clone(),
-                        mode,
-                        final_update: false,
-                        metadata: None,
-                    })
+                    && let Err(error) =
+                        deliver_stream_update(adapter, route.clone(), stream, mode, false, None)
                 {
                     channel_log(format!(
                         "channel {} stream delta failed kind={:?} message={}",
@@ -331,22 +326,41 @@ fn deliver_turn_final(
 ) {
     let capabilities = adapter.capabilities();
     if let Some(mode) = capabilities.supports_stream_mode() {
-        let _ = stream;
-        match adapter.stream_update(OutboundStreamUpdate {
-            route: route.clone(),
-            message_id: message_id.to_string(),
-            text: text.clone(),
-            mode,
-            final_update: true,
-            metadata: metadata.clone(),
-        }) {
-            Ok(_) => return,
-            Err(error) => channel_log(format!(
-                "channel {} stream final failed kind={:?} message={}",
-                adapter.name(),
-                error.kind,
-                error.message
-            )),
+        if let Some(mut stream) = stream {
+            stream.text = text.clone();
+            match deliver_stream_update(
+                adapter,
+                route.clone(),
+                &mut stream,
+                mode,
+                true,
+                metadata.clone(),
+            ) {
+                Ok(_) => return,
+                Err(error) => channel_log(format!(
+                    "channel {} stream final failed kind={:?} message={}",
+                    adapter.name(),
+                    error.kind,
+                    error.message
+                )),
+            }
+        } else if mode != StreamDeliveryMode::Edit {
+            match adapter.stream_update(OutboundStreamUpdate {
+                route: route.clone(),
+                message_id: message_id.to_string(),
+                text: text.clone(),
+                mode,
+                final_update: true,
+                metadata: metadata.clone(),
+            }) {
+                Ok(_) => return,
+                Err(error) => channel_log(format!(
+                    "channel {} stream final failed kind={:?} message={}",
+                    adapter.name(),
+                    error.kind,
+                    error.message
+                )),
+            }
         }
     }
 
@@ -371,6 +385,37 @@ fn deliver_turn_final(
             error.message
         ));
     }
+}
+
+fn deliver_stream_update(
+    adapter: &Arc<dyn PlatformAdapter>,
+    route: MessageRoute,
+    stream: &mut OutboundTurnStream,
+    mode: StreamDeliveryMode,
+    final_update: bool,
+    metadata: Option<Value>,
+) -> super::platform::ChannelResult<PlatformSendOutcome> {
+    if mode == StreamDeliveryMode::Edit && stream.channel_message_id.is_none() {
+        let outcome = adapter.send_message(OutboundMessage {
+            route: route.clone(),
+            text: stream.text.clone(),
+            reply_to_message_id: None,
+            metadata: metadata.clone(),
+        })?;
+        stream.channel_message_id = outcome.message_id;
+    }
+    let message_id = stream
+        .channel_message_id
+        .clone()
+        .unwrap_or_else(|| route.thread_id.clone());
+    adapter.stream_update(OutboundStreamUpdate {
+        route,
+        message_id,
+        text: stream.text.clone(),
+        mode,
+        final_update,
+        metadata,
+    })
 }
 
 fn handle_event_publish(
@@ -657,6 +702,7 @@ mod tests {
             "message-2".to_string(),
             OutboundTurnStream {
                 text: "partial".to_string(),
+                channel_message_id: None,
             },
         );
         handle_socket_text(
@@ -730,6 +776,73 @@ mod tests {
         assert!(updates[2].final_update);
         assert_eq!(updates[2].text, "hello");
         assert!(adapter.sent.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn mock_ws_edit_stream_sends_placeholder_then_edits_channel_message() {
+        let adapter = Arc::new(MockAdapter::new(ChannelCapabilityReport {
+            send: ChannelCapabilityState::Available,
+            typing: ChannelCapabilityState::Available,
+            edit: ChannelCapabilityState::Available,
+            draft: ChannelCapabilityState::Unavailable,
+            card: ChannelCapabilityState::Unavailable,
+            media: ChannelCapabilityState::Unavailable,
+        }));
+        let adapter_dyn: Arc<dyn PlatformAdapter> = adapter.clone();
+        let mut routes = HashMap::from([("inbound-1".to_string(), test_route())]);
+        let mut streams = HashMap::new();
+
+        handle_socket_text(
+            &adapter_dyn,
+            &mut routes,
+            &mut streams,
+            r#"{
+                "type": "turn.delta",
+                "payload": { "messageId": "inbound-1", "delta": "hel" }
+            }"#,
+        );
+        handle_socket_text(
+            &adapter_dyn,
+            &mut routes,
+            &mut streams,
+            r#"{
+                "type": "turn.delta",
+                "payload": { "messageId": "inbound-1", "delta": "lo" }
+            }"#,
+        );
+        handle_socket_text(
+            &adapter_dyn,
+            &mut routes,
+            &mut streams,
+            r#"{
+                "type": "turn.final",
+                "payload": { "reply": { "messageId": "inbound-1", "text": "hello!" } }
+            }"#,
+        );
+
+        let sent = adapter.sent.lock().unwrap();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0].text, "hel");
+        drop(sent);
+
+        let updates = adapter.stream_updates.lock().unwrap();
+        assert_eq!(updates.len(), 3);
+        assert!(
+            updates
+                .iter()
+                .all(|update| update.mode == StreamDeliveryMode::Edit)
+        );
+        assert!(
+            updates
+                .iter()
+                .all(|update| update.message_id == "mock-sent")
+        );
+        assert_eq!(updates[0].text, "hel");
+        assert_eq!(updates[1].text, "hello");
+        assert_eq!(updates[2].text, "hello!");
+        assert!(updates[2].final_update);
+        assert!(routes.is_empty());
+        assert!(streams.is_empty());
     }
 
     fn test_route() -> MessageRoute {

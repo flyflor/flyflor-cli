@@ -178,7 +178,7 @@ impl PlatformAdapter for TelegramBotAdapter {
         ChannelCapabilityReport {
             send: ChannelCapabilityState::Available,
             typing: ChannelCapabilityState::Available,
-            edit: ChannelCapabilityState::Unavailable,
+            edit: ChannelCapabilityState::Available,
             draft: ChannelCapabilityState::Unavailable,
             card: ChannelCapabilityState::Unavailable,
             media: ChannelCapabilityState::Unavailable,

@@ -165,5 +165,6 @@
 - [x] Telegram outbound 覆盖 `sendMessage`、`sendChatAction` 与 explicit media unavailable；stream edit 只作为 adapter 能力实现，runtime 仍需后续补 reply anchor 后再启用。
 - [x] Gateway doctor 测试覆盖 Telegram token 存在时可用，planned channel 改由 Discord 继续验证“即使 env 存在也不能假成功”。
 - [x] 收紧 Telegram capability report：当前只声明 send/typing 可用，edit/card/draft/media 均显式 unavailable，避免 runtime 在没有 bot message id anchor 前误走 streaming edit。
-- [ ] 后续补 Telegram 真实 Bot API sandbox smoke，并为 stream edit 增加先发占位消息/保存 bot message id 的 runtime route anchor。
+- [x] Gateway runtime 为 edit-capable channel 增加先发占位消息并保存 bot message id 的 stream route anchor，Telegram 可声明 edit streaming。
+- [ ] 后续补 Telegram 真实 Bot API sandbox smoke，验证 delta -> placeholder send -> editMessageText -> final edit 的真实网络路径。
 - [ ] 继续按 lane 落地 Discord、Slack、Matrix、Email、Webhook 等 western adapters；每个 adapter 仍需覆盖 config doctor、missing credential unavailable、inbound normalization、outbound send、ASK/approval metadata。
