@@ -6700,22 +6700,22 @@ fn status_matches_current(status: &str) -> bool {
     matches!(
         normalized_status(status).as_str(),
         "active" | "current" | "running" | "in_progress" | "in-progress" | "doing"
-    ) || matches!(status, "进行中" | "当前")
+    ) || status == ui_text_key("plan.state.running")
+        || status == ui_text_key("todo.current")
 }
 
 fn status_matches_done(status: &str) -> bool {
     matches!(
         normalized_status(status).as_str(),
         "done" | "completed" | "complete"
-    ) || status == "完成"
+    ) || status == ui_text_key("todo.status.done")
 }
 
 fn status_matches_awaiting_confirmation(status: &str) -> bool {
     matches!(
         normalized_status(status).as_str(),
         "awaiting confirmation" | "needs confirmation" | "waiting confirmation" | "needs_user"
-    ) || status.contains("等待确认")
-        || status.contains("待确认")
+    ) || status.contains(&ui_text_key("plan.state.awaitingConfirmation"))
 }
 
 fn normalized_status(status: &str) -> String {
@@ -6761,12 +6761,10 @@ fn plan_state_from_todos(todos: &[TodoItem]) -> PlanState {
         .join(" ");
     if status_matches_awaiting_confirmation(&joined) {
         PlanState::AwaitingConfirmation
-    } else if joined.contains(&ui_text_key("plan.state.generating")) || joined.contains("生成中")
-    {
+    } else if joined.contains(&ui_text_key("plan.state.generating")) {
         PlanState::Generating
     } else if joined.contains(&ui_text_key("plan.state.abandoned"))
-        || joined.contains("已放弃")
-        || joined.contains("放弃")
+        || joined.contains(&ui_text_key("plan.abandon"))
     {
         PlanState::Abandoned
     } else if todos.iter().any(|todo| todo.active) {
@@ -7163,10 +7161,11 @@ fn expand_latest_execution_row_only(rows: &mut [ContextRow]) {
 }
 
 fn execution_row_identity(row: &ContextRow) -> Option<String> {
+    let child_id_prefix = format!("{}: ", ui_text(CopyKey::ChildId));
     row.detail
         .lines()
         .find_map(|line| {
-            line.strip_prefix("子代理ID: ")
+            line.strip_prefix(&child_id_prefix)
                 .or_else(|| line.strip_prefix("child id: "))
                 .map(str::to_string)
         })

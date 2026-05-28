@@ -844,3 +844,12 @@
   原因：继续移除生产 UI 默认态硬编码，保持状态数据和展示 copy 分离。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：本轮只改默认显示文案来源；`thinking_label`、footer 产品名、协议状态匹配词和测试 fixture 不变。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-status-normalization-copykey-cleanup
+  变动文件：`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 TODO 状态归一化中的本地化显示态改为复用 i18n key，将 execution child id 识别改为复用 `CopyKey::ChildId`。
+  原因：继续落实多语言和禁止语义字符匹配红线，减少生产逻辑中直接写死中文展示字符。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：协议 token、测试 fixture、demo fixture 和低价值 context 过滤旧文本不变；本轮只处理当前生产逻辑中能安全替换为 i18n/CopyKey 的判断。
