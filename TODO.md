@@ -229,3 +229,12 @@
 - [x] Gateway registry/doctor 将 Open WebUI 标记为 native，并收紧 capability 只声明当前真实可用的 webhook ingest / callback text。
 - [x] 新增 Open WebUI 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `turn.final` -> callback。
 - [ ] 后续补 Open WebUI native plugin schema、file upload/download、rich chat metadata 和用户会话映射；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 SMS Native Channel Adapter
+
+- [x] 新增 SMS/Twilio native adapter，支持 Twilio webhook payload 入站和 Messages REST 出站。
+- [x] SMS 入站 normalization 覆盖 JSON/form payload、phone allowlist、direct route、source message id 和 channel metadata。
+- [x] SMS outbound 覆盖 Twilio basic auth、From/To/Body form send、message chunking、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 SMS 标记为 native，并收紧 capability 只声明当前真实可用的 direct text / webhook payload。
+- [x] 新增 SMS 本地 mock HTTP smoke：Twilio webhook payload -> `gateway.message.send` -> `turn.final` -> Messages REST POST。
+- [ ] 后续补真实 HTTP webhook listener、Twilio signature validation、delivery status callback、MMS media 和多短信会话策略；这些能力当前仍保持 explicit unavailable 或未声明。

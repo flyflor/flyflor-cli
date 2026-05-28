@@ -10,6 +10,7 @@ use super::matrix::MatrixAdapter;
 use super::mattermost::MattermostAdapter;
 use super::ntfy::NtfyAdapter;
 use super::openwebui::OpenWebuiAdapter;
+use super::sms::SmsAdapter;
 use super::telegram::TelegramBotAdapter;
 use super::webhook::WebhookAdapter;
 use super::weixin::WeixinIlinkAdapter;
@@ -332,6 +333,17 @@ impl PlatformRegistry {
                     label,
                     factory: Box::new(|| {
                         OpenWebuiAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
+            if name == "sms" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        SmsAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
                     }),
                     native_runtime: true,
                 });

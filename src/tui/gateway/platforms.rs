@@ -1061,15 +1061,16 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "TWILIO_ACCOUNT_SID",
             "TWILIO_AUTH_TOKEN",
             "TWILIO_FROM_NUMBER",
+            "FLYFLOR_TWILIO_ACCOUNT_SID",
             "FLYFLOR_TWILIO_AUTH_TOKEN",
+            "FLYFLOR_TWILIO_FROM_NUMBER",
         ],
-        status: PlatformRuntimeStatus::Planned,
-        capability: cap!(webhook_required),
+        status: PlatformRuntimeStatus::Native,
+        capability: cap!(webhook_required, direct_message),
         details: &[
-            "inbound webhook",
-            "phone allowlist",
-            "message chunking",
-            "delivery errors",
+            "Twilio inbound webhook payload",
+            "Twilio Messages REST send",
+            "media delivery unavailable",
         ],
     },
     PlatformMetadata {
@@ -1309,6 +1310,7 @@ mod tests {
                 "irc",
                 "ntfy",
                 "mattermost",
+                "sms",
                 "homeassistant",
                 "open-webui"
             ]

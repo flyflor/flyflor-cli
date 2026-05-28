@@ -529,3 +529,21 @@
   原因：确认 Open WebUI 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 webhook payload 到 `/ws` 再到 callback reply 的进程级闭环。
   验证：`cargo test openwebui -- --nocapture`（6 passed）；`npm run smoke:gateway:open-webui`（ok: true）；`cargo test gateway -- --nocapture`（72 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（264 passed）；`git diff --check`。
   风险：本轮只实现 webhook ingest 与 callback text path；native plugin schema、file upload/download、rich chat metadata 和用户会话映射后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：sms-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/sms.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/sms-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 SMS/Twilio native adapter 与 `smoke:gateway:sms`，完成 Twilio webhook payload 入站、`gateway.message.send`、`turn.final`、Messages REST 出站的本地 HTTP mock 闭环。
+  原因：继续推进 longtail channel 真实 adapter；SMS/Twilio webhook + REST path 可本地验证 `/ws` 血管层连通，同时避免把 signature validation、MMS、delivery callback 等未完成能力提前宣称 native。
+  验证：已运行 `cargo test sms -- --nocapture`（6 passed）与 `npm run smoke:gateway:sms`（ok: true）；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 env payload poll 与 Twilio Messages REST text path；真实 HTTP webhook listener、Twilio signature validation、delivery status callback、MMS media 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：sms-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 SMS/Twilio native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 SMS 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 Twilio webhook payload 到 `/ws` 再到 Messages REST reply 的进程级闭环。
+  验证：`cargo test sms -- --nocapture`（6 passed）；`npm run smoke:gateway:sms`（ok: true）；`cargo test gateway -- --nocapture`（78 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（270 passed）；`git diff --check`。
+  风险：本轮只实现 env payload poll 与 Twilio Messages REST text path；真实 HTTP webhook listener、Twilio signature validation、delivery status callback、MMS media 后续继续补。

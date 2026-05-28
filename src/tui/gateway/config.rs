@@ -847,6 +847,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "sms" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "discord" && !item.native_runtime)
         );
     }
@@ -1008,6 +1013,33 @@ mod tests {
         assert_eq!(item.availability, ChannelAvailability::Available);
         assert!(item.native_runtime);
         assert_eq!(item.present_required_env, vec!["OPEN_WEBUI_SECRET"]);
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn sms_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let sms = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "sms")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(sms, |env| {
+            matches!(
+                env,
+                "TWILIO_ACCOUNT_SID" | "TWILIO_AUTH_TOKEN" | "TWILIO_FROM_NUMBER"
+            )
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec![
+                "TWILIO_ACCOUNT_SID",
+                "TWILIO_AUTH_TOKEN",
+                "TWILIO_FROM_NUMBER"
+            ]
+        );
         assert!(item.missing_required_env.is_empty());
     }
 

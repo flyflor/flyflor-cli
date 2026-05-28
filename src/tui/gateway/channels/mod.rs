@@ -6,6 +6,7 @@ pub mod ntfy;
 pub mod openwebui;
 pub mod platform;
 pub mod runtime;
+pub mod sms;
 pub mod telegram;
 pub mod webhook;
 pub mod weixin;
