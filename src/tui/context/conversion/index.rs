@@ -10,6 +10,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     draw_scrollbar,
+    i18n::text_key,
     tui::{
         context::conversion::state::{ConversionState, slice_by_char},
         shared::draw_separator,
@@ -36,7 +37,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut ConversionState, theme:
     let tip = Line::from(vec![
         Span::styled("▴", Style::default().fg(theme.pink)),
         Span::styled(
-            " Type /exit to quit Flyflor chat.",
+            text_key("conversion.tip"),
             Style::default().fg(theme.pink).add_modifier(Modifier::BOLD),
         ),
     ]);
@@ -125,8 +126,9 @@ fn render_input(frame: &mut Frame, area: Rect, state: &mut ConversionState, them
         .focused_border(theme.purple)
         .unfocused_border(theme.dim);
 
+    let placeholder = text_key("conversion.placeholder");
     let region = Input::new(&state.input)
-        .placeholder("ask anything...")
+        .placeholder(&placeholder)
         .style(input_style)
         .with_border(false)
         .render_stateful(frame, input_rows[0]);
@@ -145,19 +147,37 @@ fn render_input(frame: &mut Frame, area: Rect, state: &mut ConversionState, them
     let help = if input_rows[1].width >= 72 {
         Line::from(vec![
             Span::styled("Enter", Style::default().fg(theme.text)),
-            Span::styled(" 发送", Style::default().fg(theme.muted)),
+            Span::styled(
+                format!(" {}", text_key("conversion.help.send")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled("  |  Tab", Style::default().fg(theme.text)),
-            Span::styled(" 切换 Panel", Style::default().fg(theme.muted)),
+            Span::styled(
+                format!(" {}", text_key("conversion.help.switchPanel")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled("  |  Click", Style::default().fg(theme.text)),
-            Span::styled(" 展开 Thought", Style::default().fg(theme.muted)),
+            Span::styled(
+                format!(" {}", text_key("conversion.help.expandThought")),
+                Style::default().fg(theme.muted),
+            ),
             Span::styled("  |  Ctrl+D", Style::default().fg(theme.text)),
-            Span::styled(" DEV", Style::default().fg(theme.muted)),
+            Span::styled(
+                format!(" {}", text_key("conversion.help.dev")),
+                Style::default().fg(theme.muted),
+            ),
         ])
     } else {
         Line::from(vec![
             Span::styled("Enter", Style::default().fg(theme.text)),
-            Span::styled(" send", Style::default().fg(theme.muted)),
-            Span::styled("  |  Tab panels", Style::default().fg(theme.muted)),
+            Span::styled(
+                format!(" {}", text_key("conversion.help.send")),
+                Style::default().fg(theme.muted),
+            ),
+            Span::styled(
+                format!("  |  Tab {}", text_key("conversion.help.switchPanel")),
+                Style::default().fg(theme.muted),
+            ),
         ])
     };
     frame.render_widget(Paragraph::new(help), input_rows[1]);

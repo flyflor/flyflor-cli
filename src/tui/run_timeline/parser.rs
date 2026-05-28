@@ -1,7 +1,10 @@
 use serde_json::Value;
 
-use crate::tui::run_timeline::state::{
-    RunTimelineItem, RunTimelineItemKind, RunTimelineItemStatus, RunTimelineSource,
+use crate::{
+    i18n::text_key,
+    tui::run_timeline::state::{
+        RunTimelineItem, RunTimelineItemKind, RunTimelineItemStatus, RunTimelineSource,
+    },
 };
 
 #[cfg(test)]
@@ -126,9 +129,9 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
                 RunTimelineItemStatus::Running
             },
             if event_type.ends_with(".paused") {
-                "executive loop paused"
+                text_key("run.title.executiveLoopPaused")
             } else {
-                "executive loop resumed"
+                text_key("run.title.executiveLoopResumed")
             },
         )
         .with_detail(
@@ -139,14 +142,14 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
             id,
             RunTimelineItemKind::Ask,
             RunTimelineItemStatus::Completed,
-            "ASK answered",
+            text_key("run.title.askAnswered"),
         )
         .with_detail(first_string(payload, &["answerText", "text", "askId"]).unwrap_or_default()),
         "confirm.answered" => RunTimelineItem::new(
             id,
             RunTimelineItemKind::Confirm,
             RunTimelineItemStatus::Completed,
-            "Confirm answered",
+            text_key("run.title.confirmAnswered"),
         )
         .with_detail(
             first_string(

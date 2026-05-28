@@ -408,3 +408,10 @@
 - [x] `scripts/*-gateway-smoke.ts` 补齐到 27 个，与 gateway channel catalog 对齐。
 - [x] 新增 `docs/gateway-channel-closure-audit.md`，记录当前 27 channel native runtime、smoke script、能力边界和漂移审计。
 - [ ] 后续逐个补真实平台 sandbox 凭据验收；当前新增 smoke 均为本地 mock 场景闭环，不冒充真实平台生产验收。
+
+## 2026-05-28 TUI i18n Surface Cleanup
+
+- [x] 将 Run timeline、对话输入区、compact bulletin 和旧右侧面板路径中本轮触达的用户可见文案接入 `i18n/*.json`。
+- [x] 将 `src/tui/input.rs` 的空输入 placeholder 改为复用 `conversion.placeholder`，避免旧输入路径继续硬编码。
+- [x] 将相关测试断言改为通过 i18n key 表达语义，避免测试锁死单一语言文案。
+- [ ] 继续分批清理 `src/main.rs` 中仍属于生产 UI 的遗留硬编码文案；不要一次性重写 TUI 视觉结构。

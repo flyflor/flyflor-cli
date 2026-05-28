@@ -5,14 +5,14 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use crate::{pad_to_width, string_width_char, tui::theme::Theme, wrap_plain_text};
+use crate::{i18n::text_key, pad_to_width, string_width_char, tui::theme::Theme, wrap_plain_text};
 
 pub(crate) fn render_input_lines(input: &str, width: usize, theme: &Theme) -> Vec<Line<'static>> {
     let content_width = width.saturating_sub(2).max(1);
     if input.is_empty() {
         return vec![Line::from(vec![
             Span::styled(
-                pad_to_width("ask anything...", content_width),
+                pad_to_width(&text_key("conversion.placeholder"), content_width),
                 Style::default().fg(theme.muted),
             ),
             Span::styled(

@@ -491,3 +491,15 @@ cargo check --all-targets
 cargo test
 git diff --check
 ```
+
+## 2026-05-28 TUI i18n Surface Cleanup 主控切片
+
+本轮未新增实现型子 Codex；由主控在主 worktree 完成 Run timeline、对话输入区、compact bulletin、旧右侧面板路径和空输入 placeholder 的 i18n 收口。沿用固定 lane 表，当前可用下列命令查看历史 session 或验证细节：
+
+```bash
+tmux list-sessions | rg '^(ff-cli|ff-core|wm-)'
+cargo fmt --check
+cargo check --all-targets
+cargo test
+git diff --check
+```

@@ -4713,25 +4713,31 @@ fn render_right_panel_sections(
     width: usize,
 ) -> Vec<RightPanelSection> {
     let mut sections = vec![
-        right_section("ACT 计划", todo_section_rows(todos)),
-        right_section("Run", right_run_summary_rows(&data.run_timeline)),
+        right_section(&ui_text_key("rightPanel.plan"), todo_section_rows(todos)),
         right_section(
-            "Model / Status",
+            &ui_text_key("run.title"),
+            right_run_summary_rows(&data.run_timeline),
+        ),
+        right_section(
+            &ui_text_key("rightPanel.modelStatus"),
             data.model_stats
                 .iter()
                 .chain(data.token_stats.iter())
                 .map(|stat| format!("{}: {}", stat.label, stat.value))
                 .collect(),
         ),
-        right_section("Context Window", vec![context_usage_for_width(data, width)]),
         right_section(
-            "Fork / Memory",
+            &ui_text_key("rightPanel.contextWindow"),
+            vec![context_usage_for_width(data, width)],
+        ),
+        right_section(
+            &ui_text_key("rightPanel.forkMemory"),
             fork_memory_rows_for_width(&data.fork_memory, width),
         ),
     ];
 
     for section in sections.iter_mut() {
-        if section.title == "ACT 计划" {
+        if section.title == ui_text_key("rightPanel.plan") {
             continue;
         }
         section.lines = render_right_section_lines(section, width, false);
@@ -4741,21 +4747,24 @@ fn render_right_panel_sections(
 
 fn right_run_summary_rows(timeline: &RunTimeline) -> Vec<String> {
     if timeline.items.is_empty() && timeline.subagents.batches.is_empty() {
-        return vec!["waiting for run events".to_string()];
+        return vec![ui_text_key("run.waiting")];
     }
     let mut rows = vec![
         build_execution_context_rows(timeline)
             .into_iter()
             .next()
             .map(|row| row.summary)
-            .unwrap_or_else(|| "waiting for run events".to_string()),
+            .unwrap_or_else(|| ui_text_key("run.waiting")),
     ];
+    let subagents_label = ui_text_key("run.kind.subagents");
     rows.extend(
         run_panel_lines(timeline)
             .into_iter()
             .skip(2)
             .map(|line| line_plain_text(&line))
-            .filter(|line| !line.trim().is_empty() && !line.trim_start().starts_with("Subagents"))
+            .filter(|line| {
+                !line.trim().is_empty() && !line.trim_start().starts_with(&subagents_label)
+            })
             .take(5),
     );
     rows
@@ -7763,6 +7772,13 @@ mod tests {
         "─".repeat(width as usize)
     }
 
+    fn right_section_line_is_title(line: &str, title: &str) -> bool {
+        line.trim_start()
+            .trim_start_matches('›')
+            .trim_start()
+            .eq(title)
+    }
+
     #[test]
     fn parses_mermaid_edges_with_labels() {
         let parsed = parse_mermaid_edge("A[Input] --> B[Render]");
@@ -8651,7 +8667,7 @@ mod tests {
             .iter()
             .find(|item| item.kind == RunTimelineItemKind::Confirm)
             .expect("confirm timeline item");
-        assert_eq!(item.title, "Confirm answered");
+        assert_eq!(item.title, ui_text_key("run.title.confirmAnswered"));
         assert_eq!(item.detail.as_deref(), Some("continue-tools, keep-budget"));
         assert!(
             !app.turns
@@ -10281,14 +10297,14 @@ mod tests {
         app.update_right_viewport(area);
 
         assert!(app.right_sections.len() >= 4);
-        assert_eq!(app.right_sections[0].title, "ACT 计划");
+        assert_eq!(app.right_sections[0].title, ui_text_key("rightPanel.plan"));
         let model = app.right_sections[2]
             .lines
             .iter()
             .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(model.contains("Model / Status"));
+        assert!(model.contains(&ui_text_key("rightPanel.modelStatus")));
         assert!(!model.contains('{'));
     }
 
@@ -10298,21 +10314,24 @@ mod tests {
         let area = Rect::new(0, 0, 48, 20);
         app.update_right_viewport(area);
 
-        assert_eq!(app.right_sections[0].title, "ACT 计划");
+        assert_eq!(app.right_sections[0].title, ui_text_key("rightPanel.plan"));
         assert_eq!(
             line_plain_text(&render_right_section_title(
                 &app.right_sections[0],
                 area.width as usize,
                 true
             )),
-            "› ACT 计划"
+            format!("› {}", ui_text_key("rightPanel.plan"))
         );
         let todo_title = line_plain_text(&render_right_section_title(
             &app.right_sections[0],
             area.width as usize,
             true,
         ));
-        assert_eq!(todo_title.matches("ACT 计划").count(), 1);
+        assert_eq!(
+            todo_title.matches(&ui_text_key("rightPanel.plan")).count(),
+            1
+        );
         let todo_body_lines = app.right_sections[0]
             .lines
             .iter()
@@ -10322,7 +10341,7 @@ mod tests {
         assert!(
             todo_body_lines
                 .iter()
-                .all(|line| !line.contains("ACT 计划"))
+                .all(|line| !line.contains(&ui_text_key("rightPanel.plan")))
         );
         assert!(!todo_body.contains("状态：暂无计划"));
         assert_eq!(todo_body.matches("暂无计划 [-]").count(), 1);
@@ -10332,15 +10351,18 @@ mod tests {
             .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!scroll_text.contains("ACT 计划"));
+        assert!(!scroll_text.contains(&ui_text_key("rightPanel.plan")));
         assert!(!scroll_text.contains("状态：暂无计划"));
         assert!(!scroll_text.contains("暂无计划 [-]"));
         assert!(!scroll_text.contains("ASK / Questions"));
         assert!(!scroll_text.contains("Blackboard"));
-        assert!(scroll_text.contains("Model / Status"));
-        assert!(!scroll_text.contains("Context Window"));
+        assert!(scroll_text.contains(&ui_text_key("rightPanel.modelStatus")));
+        assert!(!scroll_text.lines().any(|line| right_section_line_is_title(
+            line,
+            &ui_text_key("rightPanel.contextWindow")
+        )));
         assert!(scroll_text.contains("□"));
-        assert!(scroll_text.contains("Fork / Memory"));
+        assert!(scroll_text.contains(&ui_text_key("rightPanel.forkMemory")));
     }
 
     #[test]
@@ -10392,7 +10414,7 @@ mod tests {
         assert!(!text.contains("ASK should stay near composer"));
         assert!(!text.contains("blackboard should not render"));
         assert!(!text.contains("blackboard event"));
-        assert!(text.contains("Fork / Memory"));
+        assert!(text.contains(&ui_text_key("rightPanel.forkMemory")));
     }
 
     #[test]
@@ -10402,12 +10424,17 @@ mod tests {
             render_right_panel_sections(&app.current_right_panel_data(), &app.visible_todos(), 60);
         let titles = sections
             .iter()
-            .map(|section| section.title.as_str())
+            .map(|section| section.title.clone())
             .collect::<Vec<_>>();
 
         assert_eq!(
             &titles[..4],
-            ["ACT 计划", "Run", "Model / Status", "Context Window",]
+            [
+                ui_text_key("rightPanel.plan"),
+                ui_text_key("run.title"),
+                ui_text_key("rightPanel.modelStatus"),
+                ui_text_key("rightPanel.contextWindow"),
+            ]
         );
         let rendered = sections
             .iter()
@@ -10415,9 +10442,12 @@ mod tests {
             .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(!rendered.contains("Context Window"));
+        assert!(!rendered.lines().any(|line| right_section_line_is_title(
+            line,
+            &ui_text_key("rightPanel.contextWindow")
+        )));
         assert!(rendered.contains("□"));
-        assert!(titles.iter().all(|title| *title != "操作提示"));
+        assert!(titles.iter().all(|title| title != "操作提示"));
     }
 
     #[test]
@@ -10441,7 +10471,7 @@ mod tests {
         let sections =
             render_right_panel_sections(&App::new().current_right_panel_data(), &todos, 48);
 
-        assert_eq!(sections[0].title, "ACT 计划");
+        assert_eq!(sections[0].title, ui_text_key("rightPanel.plan"));
         let title = line_plain_text(&render_right_section_title(&sections[0], 48, true));
         let body = sections[0]
             .lines
@@ -10449,7 +10479,7 @@ mod tests {
             .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(title, "› ACT 计划");
+        assert_eq!(title, format!("› {}", ui_text_key("rightPanel.plan")));
         assert!(body.contains("实现布局"));
         assert!(body.contains("验证测试"));
     }
@@ -10471,7 +10501,7 @@ mod tests {
         let sections = render_right_panel_sections(&data, &[TodoItem::empty_plan()], width);
         let fork = sections
             .iter()
-            .find(|section| section.title == "Fork / Memory")
+            .find(|section| section.title == ui_text_key("rightPanel.forkMemory"))
             .expect("fork memory section");
         let lines = fork.lines.iter().map(line_plain_text).collect::<Vec<_>>();
         let fork_rows = lines
@@ -10503,7 +10533,7 @@ mod tests {
             render_right_panel_sections(&app.current_right_panel_data(), &app.visible_todos(), 60);
         let model = sections
             .iter()
-            .find(|section| section.title == "Model / Status")
+            .find(|section| section.title == ui_text_key("rightPanel.modelStatus"))
             .expect("model section")
             .lines
             .iter()
@@ -10680,10 +10710,13 @@ mod tests {
             .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(bottom_text.contains("Model / Status"));
-        assert!(!bottom_text.contains("Context Window"));
+        assert!(bottom_text.contains(&ui_text_key("rightPanel.modelStatus")));
+        assert!(!bottom_text.lines().any(|line| right_section_line_is_title(
+            line,
+            &ui_text_key("rightPanel.contextWindow")
+        )));
         assert!(bottom_text.contains("□"));
-        assert!(bottom_text.contains("Fork / Memory"));
+        assert!(bottom_text.contains(&ui_text_key("rightPanel.forkMemory")));
     }
 
     #[test]

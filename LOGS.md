@@ -790,3 +790,12 @@
   原因：用户要求 gateway 不归 TUI 所有，TUI 交互单元进入 components，并指出 CLI 已配置多语言、用户可见文案不能继续散落硬编码。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：本轮是目录 owner 与 i18n 边界迁移，不改 TUI 美化、不改 channel 行为、不新增提示词；历史 `old-docs` 与旧 LOGS 路径保持原文。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-i18n-surface-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`src/tui/context/bulletin-board/index.rs`、`src/tui/context/conversion/index.rs`、`src/tui/input.rs`、`src/tui/run_timeline/parser.rs`、`src/tui/run_timeline/view.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 Run timeline、对话输入区、compact bulletin、旧右侧面板路径和空输入 placeholder 的用户可见文案接入 i18n，并让相关测试通过 i18n key 断言语义。
+  原因：用户指出 flyflor-cli 已有多语言配置，但仍有多处生产 UI 文案写死；本轮沿触达面做最小收口，同时保留右侧分区原产品术语以避免 TUI 布局视觉变化。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：`src/main.rs` 中仍有较多历史生产 UI 文案需要后续按 owner 分批清理；本轮不新增提示词，不改变 `/ws` gateway 行为，不直接写 `brain.db`/`scope.db`。

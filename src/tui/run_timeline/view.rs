@@ -3,18 +3,22 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::tui::{
-    run_timeline::state::{
-        RunTimeline, RunTimelineItem, RunTimelineItemKind, RunTimelineItemStatus,
-    },
-    subagent::view::{
-        child_detail_lines, child_summary_line, current_subagent, subagent_child_count, truncate,
+use crate::{
+    i18n::text_key,
+    tui::{
+        run_timeline::state::{
+            RunTimeline, RunTimelineItem, RunTimelineItemKind, RunTimelineItemStatus,
+        },
+        subagent::view::{
+            child_detail_lines, child_summary_line, current_subagent, subagent_child_count,
+            truncate,
+        },
     },
 };
 
 pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
     let mut lines = vec![Line::styled(
-        "Run",
+        text_key("run.title"),
         Style::default()
             .fg(Color::Rgb(230, 236, 255))
             .add_modifier(Modifier::BOLD),
@@ -22,7 +26,7 @@ pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
 
     if timeline.items.is_empty() && subagent_child_count(&timeline.subagents) == 0 {
         lines.push(Line::styled(
-            "waiting for run events",
+            text_key("run.waiting"),
             Style::default().fg(Color::Rgb(126, 139, 170)),
         ));
         return lines;
@@ -33,7 +37,7 @@ pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
     if let Some((batch_name, child)) = current_subagent(&timeline.subagents) {
         lines.push(Line::raw(""));
         lines.push(Line::styled(
-            "Current",
+            text_key("run.current"),
             Style::default()
                 .fg(Color::Rgb(230, 236, 255))
                 .add_modifier(Modifier::BOLD),
@@ -43,7 +47,7 @@ pub fn run_panel_lines(timeline: &RunTimeline) -> Vec<Line<'static>> {
     } else if let Some(item) = timeline.items.last() {
         lines.push(Line::raw(""));
         lines.push(Line::styled(
-            "Current",
+            text_key("run.current"),
             Style::default()
                 .fg(Color::Rgb(230, 236, 255))
                 .add_modifier(Modifier::BOLD),
@@ -143,23 +147,37 @@ fn summary_line(timeline: &RunTimeline) -> Line<'static> {
     let subagent_count = subagent_child_count(&timeline.subagents);
     let parts = [
         format!(
-            "Model {}",
+            "{} {}",
+            text_key("run.kind.model"),
             timeline
                 .subagents
                 .models
                 .len()
                 .max(count(RunTimelineItemKind::Model))
         ),
-        format!("Route {}", count(RunTimelineItemKind::Route)),
-        format!("Blackboard {}", count(RunTimelineItemKind::Blackboard)),
-        format!("Tools {tool_count}"),
-        format!("Subagents {subagent_count}"),
-        format!("Processes {process_count}"),
         format!(
-            "ASK {}",
+            "{} {}",
+            text_key("run.kind.route"),
+            count(RunTimelineItemKind::Route)
+        ),
+        format!(
+            "{} {}",
+            text_key("run.kind.blackboard"),
+            count(RunTimelineItemKind::Blackboard)
+        ),
+        format!("{} {tool_count}", text_key("run.kind.tools")),
+        format!("{} {subagent_count}", text_key("run.kind.subagents")),
+        format!("{} {process_count}", text_key("run.kind.processes")),
+        format!(
+            "{} {}",
+            text_key("run.kind.ask"),
             count(RunTimelineItemKind::Ask) + timeline.subagents.loose_asks.len()
         ),
-        format!("Crystal {}", count(RunTimelineItemKind::Crystal)),
+        format!(
+            "{} {}",
+            text_key("run.kind.crystal"),
+            count(RunTimelineItemKind::Crystal)
+        ),
     ];
     Line::styled(
         parts.join(" · "),
@@ -190,22 +208,22 @@ fn marker_style(status: &RunTimelineItemStatus) -> Style {
     Style::default().fg(color)
 }
 
-fn kind_label(kind: &RunTimelineItemKind) -> &'static str {
+fn kind_label(kind: &RunTimelineItemKind) -> String {
     match kind {
-        RunTimelineItemKind::Model => "model",
-        RunTimelineItemKind::Route => "route",
-        RunTimelineItemKind::Recall => "recall",
-        RunTimelineItemKind::Tool => "tool",
-        RunTimelineItemKind::Process => "process",
-        RunTimelineItemKind::Blackboard => "blackboard",
-        RunTimelineItemKind::Subagent => "subagent",
-        RunTimelineItemKind::Ask => "ASK",
-        RunTimelineItemKind::Confirm => "Confirm",
-        RunTimelineItemKind::Plan => "plan",
-        RunTimelineItemKind::Fork => "fork",
-        RunTimelineItemKind::Loop => "loop",
-        RunTimelineItemKind::Snapshot => "snapshot",
-        RunTimelineItemKind::Crystal => "crystal",
+        RunTimelineItemKind::Model => text_key("run.kind.model"),
+        RunTimelineItemKind::Route => text_key("run.kind.route"),
+        RunTimelineItemKind::Recall => text_key("run.kind.recall"),
+        RunTimelineItemKind::Tool => text_key("run.kind.tool"),
+        RunTimelineItemKind::Process => text_key("run.kind.process"),
+        RunTimelineItemKind::Blackboard => text_key("run.kind.blackboard"),
+        RunTimelineItemKind::Subagent => text_key("run.kind.subagent"),
+        RunTimelineItemKind::Ask => text_key("run.kind.ask"),
+        RunTimelineItemKind::Confirm => text_key("run.kind.confirm"),
+        RunTimelineItemKind::Plan => text_key("run.kind.plan"),
+        RunTimelineItemKind::Fork => text_key("run.kind.fork"),
+        RunTimelineItemKind::Loop => text_key("run.kind.loop"),
+        RunTimelineItemKind::Snapshot => text_key("run.kind.snapshot"),
+        RunTimelineItemKind::Crystal => text_key("run.kind.crystal"),
     }
 }
 
@@ -266,7 +284,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(rendered.contains("waiting for run events"));
+        assert!(rendered.contains(&text_key("run.waiting")));
     }
 
     #[test]
@@ -326,13 +344,13 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(rendered.contains("Model 1"));
+        assert!(rendered.contains(&format!("{} 1", text_key("run.kind.model"))));
         assert!(rendered.contains("openai/gpt-5"));
-        assert!(rendered.contains("Current"));
+        assert!(rendered.contains(&text_key("run.current")));
         assert!(rendered.contains("Shell rg model"));
         assert!(rendered.contains("子进程 rg model"));
         assert!(rendered.contains("ASK ask-1"));
         assert!(rendered.contains("结晶 save learned route"));
-        assert!(!rendered.contains("Subagents\n"));
+        assert!(!rendered.contains(&format!("{}\n", text_key("run.kind.subagents"))));
     }
 }

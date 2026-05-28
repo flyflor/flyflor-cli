@@ -71,14 +71,26 @@ pub fn render(frame: &mut Frame, area: Rect, state: &mut BulletinBoardState, the
 fn render_compact(frame: &mut Frame, area: Rect, theme: &Theme) {
     let compact = Paragraph::new(vec![
         ratatui::text::Line::styled(text_key("todo.title"), Style::default().fg(theme.text)),
-        ratatui::text::Line::styled("○ 明确需求边界与冲突", Style::default().fg(theme.text)),
-        ratatui::text::Line::styled("› 设计协议核心架构", Style::default().fg(theme.pink)),
+        ratatui::text::Line::styled(
+            text_key("bulletin.compact.boundary"),
+            Style::default().fg(theme.text),
+        ),
+        ratatui::text::Line::styled(
+            text_key("bulletin.compact.protocol"),
+            Style::default().fg(theme.pink),
+        ),
         ratatui::text::Line::raw(""),
-        ratatui::text::Line::styled("MODEL", Style::default().fg(theme.blue)),
+        ratatui::text::Line::styled(
+            text_key("bulletin.compact.modelHeader"),
+            Style::default().fg(theme.blue),
+        ),
         metric_line("model", "flyflor-pro", theme),
         metric_line("provider", "OpenTUI", theme),
         ratatui::text::Line::raw(""),
-        ratatui::text::Line::styled("● healthy", Style::default().fg(theme.green)),
+        ratatui::text::Line::styled(
+            text_key("bulletin.compact.healthy"),
+            Style::default().fg(theme.green),
+        ),
     ]);
     frame.render_widget(compact, area);
 }
