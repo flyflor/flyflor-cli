@@ -283,3 +283,12 @@
 - [x] Gateway registry/doctor 将 Slack 标记为 native，并收紧 capability 只声明当前真实可用的 REST polling / group thread text。
 - [x] 新增 Slack 本地 mock HTTP smoke：history poll -> `gateway.message.send` -> `turn.final` -> `chat.postMessage`。
 - [ ] 后续补 Slack Socket Mode、Events API signing、blocks/buttons、slash commands、typing、edit/stream update、file upload/download、ephemeral replies 和 DM/channel discovery；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 WhatsApp Native Channel Adapter
+
+- [x] 新增 WhatsApp Cloud API native adapter，支持 env webhook payload 入站和 Graph `/messages` 文本出站。
+- [x] WhatsApp 入站 normalization 覆盖 Cloud API `entry/changes/value/messages`、contact profile、phone allowlist、direct route、source wamid 和 channel metadata。
+- [x] WhatsApp outbound 覆盖 Bearer token auth、phone number id path、text chunking、Graph error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 WhatsApp 标记为 native，并收紧 capability 只声明当前真实可用的 Cloud API direct text。
+- [x] 新增 WhatsApp 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `turn.final` -> Graph `/messages` POST。
+- [ ] 后续补真实 HTTP webhook listener、Meta signature validation、status receipts、templates、interactive buttons、media upload/download、group/DM discovery、Baileys child process 和 QR pairing；这些能力当前仍保持 explicit unavailable 或未声明。

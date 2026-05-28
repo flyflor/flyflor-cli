@@ -15,5 +15,6 @@ pub mod sms;
 pub mod telegram;
 pub mod webhook;
 pub mod weixin;
+pub mod whatsapp;
 
 pub use runtime::spawn_gateway_channel_runtime;

@@ -19,6 +19,7 @@ use super::sms::SmsAdapter;
 use super::telegram::TelegramBotAdapter;
 use super::webhook::WebhookAdapter;
 use super::weixin::WeixinIlinkAdapter;
+use super::whatsapp::WhatsAppAdapter;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChannelErrorKind {
@@ -321,6 +322,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "whatsapp" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        WhatsAppAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "irc" {
                 registry.register(PlatformEntry {
                     name,
@@ -551,6 +563,11 @@ mod tests {
         assert!(
             registry
                 .get("matrix")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("whatsapp")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(
