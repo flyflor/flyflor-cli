@@ -718,3 +718,12 @@
   原因：确认 WeCom 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 AI Bot callback payload 到 `/ws` 再到 `aibot_respond_msg` markdown frame 的进程级闭环。
   验证：`cargo test wecom -- --nocapture`（10 passed）；`npm run smoke:gateway:wecom`（ok: true）；`cargo test gateway -- --nocapture`（143 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（335 passed）；`git diff --check`。
   风险：本轮只实现 AI Bot callback JSON payload、WebSocket markdown 被动回复/主动发送 fallback；真实持久 WebSocket subscribe/listen、QR scan create、media upload/download、AES media decrypt、typing、message edit/stream update、per-group policy config、text batching 和 reconnect/backoff 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：google-chat-native-channel-adapter-verification
+  变动文件：`src/tui/gateway/channels/google_chat.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/google-chat-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：完成 Google Chat native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Google Chat 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 Pub/Sub-style message payload 到 `/ws` 再到 Chat REST `spaces.messages.create` thread reply 的进程级闭环。
+  验证：`cargo test google_chat -- --nocapture`（5 passed）；`npm run smoke:gateway:google-chat`（ok: true）；`cargo test gateway -- --nocapture`（148 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（340 passed）；`git diff --check`。
+  风险：本轮只实现 env Pub/Sub message payload、Bearer token REST text send 和 thread reply anchor；真实 Pub/Sub streaming pull、service-account JWT/OAuth token mint、CARD_CLICKED routing、cards/approval buttons、typing/edit/stream update、file upload/download、per-user OAuth 和 attachment SSRF guard 后续继续补。

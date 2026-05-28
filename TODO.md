@@ -347,3 +347,12 @@
 - [x] Gateway registry/doctor 将 WeCom 标记为 native，并收紧 capability 只声明当前真实可用的 callback payload / WebSocket markdown text。
 - [x] 新增 WeCom 本地 mock WebSocket smoke：AI Bot callback payload -> `gateway.message.send` -> `turn.final` -> `aibot_respond_msg` markdown frame。
 - [ ] 后续补真实持久 WebSocket subscribe/listen、QR scan create、media upload/download、AES media decrypt、typing、message edit/stream update、per-group policy config、text batching 和 reconnect/backoff；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Google Chat Native Channel Adapter
+
+- [x] 新增 Google Chat native adapter，支持 Pub/Sub message payload JSON 入站和 Chat REST text 出站。
+- [x] Google Chat 入站 normalization 覆盖 `chat.messagePayload`、space/thread route、sender allowlist、bot filter、source message id 和 channel metadata。
+- [x] Google Chat outbound 覆盖 `spaces.messages.create`、Bearer token auth、thread reply anchor、text chunking、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 Google Chat 标记为 native，并收紧 capability 只声明当前真实可用的 Pub/Sub payload / REST text thread reply。
+- [x] 新增 Google Chat 本地 mock HTTP smoke：message payload -> `gateway.message.send` -> `turn.final` -> `/v1/spaces/{space}/messages` POST。
+- [ ] 后续补真实 Pub/Sub streaming pull、service-account JWT/OAuth token mint、CARD_CLICKED routing、cards/approval buttons、typing/edit/stream update、file upload/download、per-user OAuth 和 attachment SSRF guard；这些能力当前仍保持 explicit unavailable 或未声明。

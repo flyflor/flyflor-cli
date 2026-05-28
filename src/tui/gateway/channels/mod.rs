@@ -3,6 +3,7 @@ pub mod dingtalk;
 pub mod discord;
 pub mod email;
 pub mod feishu;
+pub mod google_chat;
 pub mod homeassistant;
 pub mod irc;
 pub mod line;

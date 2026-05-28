@@ -842,6 +842,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "google-chat" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "dingtalk" && item.native_runtime)
         );
         assert!(
@@ -1089,6 +1094,35 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["DINGTALK_CLIENT_ID", "DINGTALK_CLIENT_SECRET"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn google_chat_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let google_chat = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "google-chat")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(google_chat, |env| {
+            matches!(
+                env,
+                "GOOGLE_CHAT_PROJECT_ID"
+                    | "GOOGLE_CHAT_SUBSCRIPTION_NAME"
+                    | "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON"
+            )
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec![
+                "GOOGLE_CHAT_PROJECT_ID",
+                "GOOGLE_CHAT_SUBSCRIPTION_NAME",
+                "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",
+            ]
         );
         assert!(item.missing_required_env.is_empty());
     }
