@@ -924,11 +924,11 @@ mod tests {
     #[test]
     fn planned_channel_stays_unavailable_even_with_env_present() {
         let config = GatewayConfig::default();
-        let teams = channel_list(&config)
+        let yuanbao = channel_list(&config)
             .into_iter()
-            .find(|item| item.name == "teams")
+            .find(|item| item.name == "yuanbao")
             .unwrap();
-        let item = doctor_item_from_list_item_with_env(teams, |_| true);
+        let item = doctor_item_from_list_item_with_env(yuanbao, |_| true);
 
         assert_eq!(item.availability, ChannelAvailability::Unavailable);
         assert!(!item.native_runtime);
@@ -1002,6 +1002,29 @@ mod tests {
         assert_eq!(item.availability, ChannelAvailability::Available);
         assert!(item.native_runtime);
         assert_eq!(item.present_required_env, vec!["WEBHOOK_SECRET"]);
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn teams_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let teams = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "teams")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(teams, |env| {
+            matches!(
+                env,
+                "TEAMS_CLIENT_ID" | "TEAMS_CLIENT_SECRET" | "TEAMS_TENANT_ID"
+            )
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["TEAMS_CLIENT_ID", "TEAMS_CLIENT_SECRET", "TEAMS_TENANT_ID"]
+        );
         assert!(item.missing_required_env.is_empty());
     }
 

@@ -19,6 +19,7 @@ pub mod signal;
 pub mod simplex;
 pub mod slack;
 pub mod sms;
+pub mod teams;
 pub mod telegram;
 pub mod webhook;
 pub mod wecom;

@@ -745,3 +745,12 @@
   原因：确认 SimpleX 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 `newChatItem` payload 到 `/ws` 再到 simplex-chat daemon command frame 的进程级闭环。
   验证：`cargo test simplex -- --nocapture`（7 passed）；`npm run smoke:gateway:simplex`（ok: true；首次 sandbox 运行因 tsx IPC pipe EPERM 失败后已按授权重跑通过）；`cargo test gateway -- --nocapture`（159 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（351 passed）；`git diff --check`。
   风险：本轮只实现 env `newChatItem` payload、WebSocket text command send、group/direct route、allowlist 和 own echo suppression；真实持久 listener/reconnect、file receive/cache、media magic detection、typing、health check、standalone send、home channel cron delivery 和 setup wizard 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：teams-native-channel-adapter-verification
+  变动文件：`src/tui/gateway/channels/teams.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/teams-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：完成 Microsoft Teams native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Teams 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 Bot Framework activity payload 到 `/ws` 再到 incoming webhook POST 的进程级闭环。
+  验证：`cargo test teams -- --nocapture`（6 passed）；`npm run smoke:gateway:teams`（ok: true；首次 sandbox 运行因 tsx IPC pipe EPERM 失败后已按授权重跑通过）；`cargo test gateway -- --nocapture`（165 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（357 passed）；`git diff --check`。
+  风险：本轮只实现 env Bot Framework activity payload、incoming webhook text delivery、Graph text fallback、allowlist/self filter 和 metadata anchor；真实 SDK/aiohttp listener、Bot Framework OAuth proactive send、Adaptive Card approval、typing、message edit/stream update、attachments/media、Graph token mint/cache 和 setup wizard 后续继续补。

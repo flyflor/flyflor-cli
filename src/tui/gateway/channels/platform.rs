@@ -23,6 +23,7 @@ use super::signal::SignalAdapter;
 use super::simplex::SimplexAdapter;
 use super::slack::SlackAdapter;
 use super::sms::SmsAdapter;
+use super::teams::TeamsAdapter;
 use super::telegram::TelegramBotAdapter;
 use super::webhook::WebhookAdapter;
 use super::wecom::WeComAdapter;
@@ -551,6 +552,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "teams" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        TeamsAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             registry.register(PlatformEntry {
                 name,
                 label,
@@ -746,12 +758,21 @@ mod tests {
         assert!(
             registry
                 .get("teams")
-                .is_some_and(|entry| !entry.native_runtime)
+                .is_some_and(|entry| entry.native_runtime)
         );
 
-        let teams = (registry.get("teams").unwrap().factory)().unwrap();
+        let teams_result = (registry.get("teams").unwrap().factory)();
+        assert!(matches!(
+            teams_result,
+            Err(ChannelError {
+                kind: ChannelErrorKind::MissingConfig,
+                ..
+            })
+        ));
+
+        let yuanbao = (registry.get("yuanbao").unwrap().factory)().unwrap();
         let route = MessageRoute {
-            platform: "teams".to_string(),
+            platform: "yuanbao".to_string(),
             chat_id: "chat".to_string(),
             chat_type: ChatType::Direct,
             user_id: "user".to_string(),
@@ -759,7 +780,7 @@ mod tests {
             thread_id: "chat".to_string(),
         };
 
-        let result = teams.send_message(OutboundMessage {
+        let result = yuanbao.send_message(OutboundMessage {
             route,
             text: "hello".to_string(),
             reply_to_message_id: None,

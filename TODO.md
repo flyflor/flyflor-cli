@@ -374,3 +374,12 @@
 - [x] Gateway registry/doctor 将 SimpleX 标记为 native，并收紧 capability 只声明当前真实可用的 daemon WebSocket text/group path。
 - [x] 新增 SimpleX 本地 mock WebSocket smoke：`newChatItem` payload -> `gateway.message.send` -> `turn.final` -> daemon command frame。
 - [ ] 后续补真实持久 WebSocket listener/reconnect、file receive/cache、media magic detection、typing fallback policy、daemon health check、standalone send、home channel cron delivery、contact/group discovery 和 SimpleX setup wizard；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Microsoft Teams Native Channel Adapter
+
+- [x] 新增 Microsoft Teams native adapter，支持 Bot Framework activity JSON env 入站、client credentials doctor 和 incoming webhook / Graph text 出站闭环。
+- [x] Teams 入站 normalization 覆盖 personal/channel route、AAD user id、allowlist、self filter、mention strip、team/channel metadata、serviceUrl、tenant id 和 source message id。
+- [x] Teams outbound 覆盖 incoming webhook text POST、Graph chat/channel text fallback、HTML escaping、path encoding、text chunking、Graph error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 Teams 标记为 native，并收紧 capability 只声明当前真实可用的 activity payload / text reply path。
+- [x] 新增 Teams 本地 mock HTTP smoke：Bot Framework activity payload -> `gateway.message.send` -> `turn.final` -> incoming webhook POST。
+- [ ] 后续补真实 SDK/aiohttp webhook listener、Bot Framework OAuth proactive send、Adaptive Card approval/buttons、typing、message edit/stream update、attachments/media、Teams setup wizard、Graph token mint/cache、serviceUrl host allowlist 和 meeting pipeline richer delivery；这些能力当前仍保持 explicit unavailable 或未声明。

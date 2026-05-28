@@ -56,6 +56,7 @@
     "smoke:gateway:signal": "tsx scripts/signal-gateway-smoke.ts",
     "smoke:gateway:wecom-callback": "tsx scripts/wecom-callback-gateway-smoke.ts",
     "smoke:gateway:simplex": "tsx scripts/simplex-gateway-smoke.ts",
+    "smoke:gateway:teams": "tsx scripts/teams-gateway-smoke.ts",
     "smoke:npm:local": "node scripts/smoke-npm-local.cjs",
     "logs": "tsx scripts/logs.ts",
     "codex:lanes": "sh scripts/codex-lanes.sh",
