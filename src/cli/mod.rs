@@ -1,5 +1,7 @@
 use std::env;
 
+use crate::i18n::text_key;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CliCommand {
     RunTui,
@@ -52,10 +54,26 @@ pub enum CliParseError {
 impl std::fmt::Display for CliParseError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnknownCommand(command) => write!(formatter, "unknown command: {command}"),
-            Self::UnknownOption(option) => write!(formatter, "unknown option: {option}"),
+            Self::UnknownCommand(command) => {
+                write!(
+                    formatter,
+                    "{}: {command}",
+                    text_key("cli.error.unknownCommand")
+                )
+            }
+            Self::UnknownOption(option) => {
+                write!(
+                    formatter,
+                    "{}: {option}",
+                    text_key("cli.error.unknownOption")
+                )
+            }
             Self::UnexpectedArgument { command, argument } => {
-                write!(formatter, "unexpected argument for {command}: {argument}")
+                write!(
+                    formatter,
+                    "{} {command}: {argument}",
+                    text_key("cli.error.unexpectedArgumentFor")
+                )
             }
         }
     }

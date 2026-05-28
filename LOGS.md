@@ -907,3 +907,12 @@
   原因：继续执行 flyflor-cli 多语言红线；生产 UI 文案必须从 catalog 取值，不能在 Rust 或 zh-CN catalog 中继续表现为英文兜底。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：本轮只改变显示文案来源与 zh-CN catalog 值，不改变 TUI 布局、美化、ASK/Confirm/Fork 组件结构、gateway channel 行为或 `/ws` 协议。
+
+- 状态：完成
+  执行者：main-codex
+  范围：cli-parse-error-i18n-cleanup
+  变动文件：`src/cli/mod.rs`、`i18n/en-US.json`、`i18n/zh-CN.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 CLI parse error 的未知命令、未知选项和非预期参数提示前缀接入 i18n。
+  原因：`flyflor -h` 与配置命令属于用户可见 CLI 面；错误提示前缀不能继续硬编码英文，但命令名/参数应保留用户输入原文。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮只改 Display 文案来源，不改变 parse enum、命令/子命令 token、gateway 配置行为、TUI 或 channel runtime。
