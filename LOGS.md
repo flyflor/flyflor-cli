@@ -763,3 +763,21 @@
   原因：确认 Yuanbao 已作为真实 native bridge adapter 接入 registry/doctor/runtime，并证明 JSON push payload 到 `/ws` 再到显式 reply webhook POST 的进程级闭环。
   验证：`cargo test yuanbao -- --nocapture`（6 passed）；`npm run smoke:gateway:yuanbao`（ok: true；首次 sandbox 运行因 tsx IPC pipe EPERM 失败后已按授权重跑通过）；`cargo test gateway -- --nocapture`（171 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed）；`git diff --check`。
   风险：本轮只实现 JSON push bridge、DM/group policy、text/custom/image/file marker extraction 和 reply webhook delivery；完整 HMAC sign-token、protobuf WebSocket AUTH_BIND/T05/T06、heartbeat、COS media、stickers、group member query、recall transcript patch、slow response notifier 和 setup wizard 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：gateway-channel-smoke-closure-audit
+  变动文件：`scripts/telegram-gateway-smoke.ts`、`scripts/weixin-gateway-smoke.ts`、`package.json`、`src/tui/gateway/channels/platform.rs`、`docs/gateway-channel-closure-audit.md`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：补齐 Telegram/Weixin 两个缺失 gateway smoke，使 27 个 native channel 均有本地 mock 场景脚本，并新增 channel closure audit 文档。
+  原因：关闭 “27 native channel 但只有 25 smoke script” 的审计漂移，确认当前 catalog 无 active planned channel，历史 planned 记录仅作为 append-only 历史保留。
+  验证：`cargo test telegram -- --nocapture`（5 passed）；`cargo test weixin -- --nocapture`（3 passed）；`npm run smoke:gateway:telegram`（ok: true；首次 sandbox 运行因 tsx IPC pipe EPERM 失败后已按授权重跑通过）；`npm run smoke:gateway:weixin`（ok: true；首次 sandbox 运行因 tsx IPC pipe EPERM 失败后已按授权重跑通过）；`cargo run --quiet -- gateway config list`（27 rows，均 `native_runtime=true`）；`rg --files scripts | rg 'gateway-smoke\.ts$' | wc -l`（27）；`rg -n '"smoke:gateway:' package.json | wc -l`（27）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test gateway -- --nocapture`（171 passed）；`cargo test`（363 passed）。
+  风险：本轮新增 Telegram/Weixin smoke 是本地 mock 场景闭环；真实平台账号、真实 Bot API/iLink sandbox、媒体/文件/长连接能力仍按 TODO 保持后续验收。
+
+- 状态：完成
+  执行者：main-codex
+  范围：gateway-channel-all-smoke-sweep
+  变动文件：`docs/gateway-channel-closure-audit.md`、`LOGS.md`
+  摘要：在新增 Telegram/Weixin smoke 后顺序跑完 27 个 `npm run smoke:gateway:*` 本地场景。
+  原因：把 channel catalog、package script、smoke script 三者从数量对齐推进到实际运行对齐。
+  验证：顺序执行 `dingtalk feishu wecom weixin google-chat msgraph-webhook qqbot whatsapp slack telegram discord webhook ntfy matrix irc mattermost email homeassistant open-webui sms line bluebubbles signal wecom-callback simplex teams yuanbao`，最终输出 `ALL_GATEWAY_SMOKES_OK`。
+  风险：仍为本地 mock smoke sweep，不替代真实平台账号/沙箱凭据验收。

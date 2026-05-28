@@ -392,3 +392,12 @@
 - [x] Gateway registry/doctor 将 Yuanbao 标记为 native，并收紧 capability 只声明当前真实可用的 JSON push bridge / webhook reply path。
 - [x] 新增 Yuanbao 本地 mock HTTP smoke：JSON push payload -> `gateway.message.send` -> `turn.final` -> reply webhook POST。
 - [ ] 后续补完整 HMAC sign-token、protobuf WebSocket AUTH_BIND/T05/T06、ping/heartbeat、reply heartbeat、COS media、stickers、group member query、message recall transcript patch、slow response notifier、standalone send 和 setup wizard；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Gateway Channel Smoke Closure Audit
+
+- [x] 新增 Telegram 本地 mock Bot API smoke：`getUpdates` -> `gateway.message.send` -> `turn.final` -> `sendMessage`。
+- [x] 新增 Weixin iLink 本地 mock smoke：`getupdates` -> `gateway.message.send` -> `turn.final` -> `sendmessage`，覆盖 context_token echo。
+- [x] `package.json` 中 `smoke:gateway:*` 脚本补齐到 27 个，与 gateway channel catalog 对齐。
+- [x] `scripts/*-gateway-smoke.ts` 补齐到 27 个，与 gateway channel catalog 对齐。
+- [x] 新增 `docs/gateway-channel-closure-audit.md`，记录当前 27 channel native runtime、smoke script、能力边界和漂移审计。
+- [ ] 后续逐个补真实平台 sandbox 凭据验收；当前新增 smoke 均为本地 mock 场景闭环，不冒充真实平台生产验收。

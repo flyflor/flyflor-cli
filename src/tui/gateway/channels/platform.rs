@@ -796,10 +796,11 @@ mod tests {
             })
         ));
 
-        assert!(registry.names().into_iter().all(|name| {
+        assert!(
             registry
-                .get(name)
-                .is_some_and(|entry| entry.native_runtime)
-        }));
+                .names()
+                .into_iter()
+                .all(|name| { registry.get(name).is_some_and(|entry| entry.native_runtime) })
+        );
     }
 }
