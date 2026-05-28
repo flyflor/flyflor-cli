@@ -853,3 +853,12 @@
   原因：继续落实多语言和禁止语义字符匹配红线，减少生产逻辑中直接写死中文展示字符。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：协议 token、测试 fixture、demo fixture 和低价值 context 过滤旧文本不变；本轮只处理当前生产逻辑中能安全替换为 i18n/CopyKey 的判断。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-run-timeline-parser-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/tui/run_timeline/parser.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 Run timeline parser 生成的执行任务、子代理批次、子代理、工具、模型和子进程标题前缀接入 i18n。
+  原因：运行面板 parser 属于生产 UI 文案来源，不能继续硬编码英文标题；本轮按 owner 小切片清理，不触碰 TUI 视觉结构。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）。
+  风险：本轮只改可见标题前缀来源；协议 event type、状态 token、channel 行为、ASK/Confirm/Fork 组件和 TUI 美化不变。

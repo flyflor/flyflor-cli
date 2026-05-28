@@ -92,11 +92,12 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
             RunTimelineItemKind::Subagent,
             status_from_event_type(event_type),
             format!(
-                "subagent batch {}",
+                "{} {}",
+                text_key("run.timeline.subagentBatch"),
                 if event_type.ends_with(".start") {
-                    "started"
+                    text_key("run.timeline.started")
                 } else {
-                    "ended"
+                    text_key("run.timeline.ended")
                 }
             ),
         )
@@ -108,11 +109,12 @@ pub fn parse_event_publish(value: &Value) -> Option<RunTimelineItem> {
             RunTimelineItemKind::Subagent,
             status_from_event_type(event_type),
             format!(
-                "subagent child {}",
+                "{} {}",
+                text_key("run.timeline.subagentChild"),
                 if event_type.ends_with(".start") {
-                    "started"
+                    text_key("run.timeline.started")
                 } else {
-                    "ended"
+                    text_key("run.timeline.ended")
                 }
             ),
         )
@@ -234,7 +236,7 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
             format!("job:{job_id}"),
             RunTimelineItemKind::Snapshot,
             status_from_value(data),
-            format!("execution job {job_id}"),
+            format!("{} {job_id}", text_key("run.timeline.executionJob")),
         )
         .with_source(RunTimelineSource::ExecutionJobSnapshot)
         .with_raw(Some(data.clone()));
@@ -254,7 +256,7 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
                     format!("batch:{batch_id}"),
                     RunTimelineItemKind::Subagent,
                     status_from_value(entry),
-                    format!("subagent batch {batch_id}"),
+                    format!("{} {batch_id}", text_key("run.timeline.subagentBatch")),
                 )
                 .with_detail(first_string(entry, &["name", "summary", "task"]).unwrap_or_default())
                 .with_source(RunTimelineSource::ExecutionJobSnapshot)
@@ -278,7 +280,7 @@ pub fn parse_execution_job_snapshot(value: &Value) -> Vec<RunTimelineItem> {
                     format!("child:{child_id}"),
                     RunTimelineItemKind::Subagent,
                     status_from_value(entry),
-                    format!("subagent child {child_id}"),
+                    format!("{} {child_id}", text_key("run.timeline.subagentChild")),
                 )
                 .with_detail(first_string(entry, &["name", "task", "summary"]).unwrap_or_default())
                 .with_source(RunTimelineSource::ExecutionJobSnapshot)
@@ -364,7 +366,7 @@ fn tool_item(id: String, event_type: &str, payload: &Value) -> RunTimelineItem {
         id,
         RunTimelineItemKind::Tool,
         status,
-        format!("tool {name}"),
+        format!("{} {name}", text_key("run.timeline.tool")),
     )
     .with_detail(
         tool_detail(payload)
@@ -537,10 +539,12 @@ fn model_item(id: String, payload: &Value) -> RunTimelineItem {
     let provider = first_string(payload, &["providerId", "provider_id", "provider"]);
     let model = first_string(payload, &["modelId", "model_id", "model"]);
     let title = match (provider, model) {
-        (Some(provider), Some(model)) => format!("model {provider}/{model}"),
-        (None, Some(model)) => format!("model {model}"),
-        (Some(provider), None) => format!("model {provider}"),
-        (None, None) => "model selected".to_string(),
+        (Some(provider), Some(model)) => {
+            format!("{} {provider}/{model}", text_key("run.timeline.model"))
+        }
+        (None, Some(model)) => format!("{} {model}", text_key("run.timeline.model")),
+        (Some(provider), None) => format!("{} {provider}", text_key("run.timeline.model")),
+        (None, None) => text_key("run.timeline.modelSelected"),
     };
     RunTimelineItem::new(
         id,
@@ -564,7 +568,7 @@ fn process_item(id: String, event_type: &str, payload: &Value) -> RunTimelineIte
         id,
         RunTimelineItemKind::Process,
         status,
-        format!("process {name}"),
+        format!("{} {name}", text_key("run.timeline.process")),
     )
     .with_detail(
         first_string(
@@ -849,7 +853,7 @@ mod tests {
         }))
         .expect("model event");
         assert_eq!(model.kind, RunTimelineItemKind::Model);
-        assert_eq!(model.title, "model anthropic/claude");
+        assert_eq!(model.title, "模型 anthropic/claude");
         assert_eq!(model.detail.as_deref(), Some("blackboard"));
 
         let process = parse_event_publish(&json!({
@@ -884,7 +888,7 @@ mod tests {
         .expect("tool event");
 
         assert_eq!(item.kind, RunTimelineItemKind::Tool);
-        assert_eq!(item.title, "tool workspace/read");
+        assert_eq!(item.title, "工具 workspace/read");
         assert_eq!(item.detail.as_deref(), Some("src/main.rs"));
         assert_eq!(item.status, RunTimelineItemStatus::Completed);
     }
@@ -935,7 +939,7 @@ mod tests {
             .iter()
             .find(|item| item.id == "child:job-child-1")
             .expect("child item");
-        assert_eq!(child.title, "subagent child job-child-1");
+        assert_eq!(child.title, "子代理 job-child-1");
         assert!(!child.title.contains('{'));
         assert!(child.detail.is_none());
     }
@@ -980,7 +984,7 @@ mod tests {
             .filter(|item| item.kind == RunTimelineItemKind::Tool)
             .map(|item| item.title.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(titles, vec!["tool workspace/tree", "tool workspace/glob"]);
+        assert_eq!(titles, vec!["工具 workspace/tree", "工具 workspace/glob"]);
         assert!(!titles.iter().any(|title| title.contains("unknown")));
     }
 }
