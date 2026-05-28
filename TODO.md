@@ -421,4 +421,5 @@
 - [x] 将 `src/main.rs` 中 composer 退出提示和 live socket 默认右侧状态继续接入 i18n。
 - [x] 将 `src/main.rs` 中 TODO 状态归一化和 execution child-id 识别改为复用 i18n/CopyKey，减少生产逻辑中的硬编码语义字符。
 - [x] 将 Run timeline parser 生成的执行任务、子代理、工具、模型和子进程标题前缀接入 i18n，避免运行面板继续写死英文标题。
+- [x] 将 execution/subagent detail 中的工具、子进程、任务 ID、部分结果和 Confirm read-model 兜底摘要接入 i18n。
 - [ ] 继续分批清理 `src/main.rs` 中仍属于生产 UI 的遗留硬编码文案；不要一次性重写 TUI 视觉结构。

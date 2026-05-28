@@ -9954,7 +9954,7 @@ mod tests {
         assert_eq!(rows.len(), 2);
         assert!(rows[0].summary.contains("(1/2) 文件系统代理"));
         assert!(rows[0].detail.contains("子代理ID: child-a"));
-        assert!(rows[0].detail.contains("tool Glob"));
+        assert!(rows[0].detail.contains("工具 Glob"));
         assert!(rows[1].summary.contains("(2/2) 代码分析代理"));
     }
 

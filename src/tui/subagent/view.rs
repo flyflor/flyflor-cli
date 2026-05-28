@@ -4,7 +4,7 @@ use ratatui::{
 };
 
 use crate::{
-    i18n::{CopyKey, text},
+    i18n::{CopyKey, text, text_key},
     tui::subagent::state::{
         ModelAllocation, SubagentAskPause, SubagentChild, SubagentProcess, SubagentStatus,
         SubagentToolCall, SubagentTree,
@@ -119,13 +119,15 @@ pub fn child_detail_lines(
         lines.extend(model_lines(model, indent));
     }
     if child.limited || child.suppressed_ask_required {
+        let limit_reason = child
+            .limit_reason
+            .as_deref()
+            .map(str::to_string)
+            .unwrap_or_else(|| text_key("execution.partialResult"));
         lines.push(Line::from(vec![
             Span::raw(format!("{indent}{} ", text(CopyKey::Partial))),
             Span::styled(
-                truncate(
-                    child.limit_reason.as_deref().unwrap_or("partial-result"),
-                    120,
-                ),
+                truncate(&limit_reason, 120),
                 Style::default().fg(Color::Rgb(255, 204, 102)),
             ),
             Span::styled(

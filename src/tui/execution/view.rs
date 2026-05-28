@@ -1,5 +1,5 @@
 use crate::{
-    i18n::{CopyKey, text},
+    i18n::{CopyKey, text, text_key},
     tui::{
         execution::state::{ExecutionContextRow, ExecutionRowStatus},
         run_timeline::state::{RunTimeline, RunTimelineItemStatus},
@@ -124,10 +124,15 @@ fn subagent_execution_detail(batch_name: Option<&str>, child: &SubagentChild) ->
         child.status.as_str()
     ));
     if child.limited || child.suppressed_ask_required {
+        let limit_reason = child
+            .limit_reason
+            .as_deref()
+            .map(str::to_string)
+            .unwrap_or_else(|| text_key("execution.partialResult"));
         lines.push(format!(
             "{}: {}{}",
             text(CopyKey::Limit),
-            child.limit_reason.as_deref().unwrap_or("partial-result"),
+            limit_reason,
             if child.suppressed_ask_required {
                 format!(" · {}", text(CopyKey::AskSuppressed))
             } else {
@@ -136,7 +141,7 @@ fn subagent_execution_detail(batch_name: Option<&str>, child: &SubagentChild) ->
         ));
     }
     if let Some(job_id) = &child.job_id {
-        lines.push(format!("jobId: {job_id}"));
+        lines.push(format!("{}: {job_id}", text_key("execution.jobId")));
     }
     if let Some(task) = &child.task {
         lines.push(format!("{}: {task}", text(CopyKey::Task)));
@@ -168,7 +173,12 @@ fn subagent_execution_detail(batch_name: Option<&str>, child: &SubagentChild) ->
         push_process_lines(&mut lines, process, "");
     }
     if let Some(ask) = &child.ask {
-        lines.push(format!("ASK: {} · {}", ask.id, ask.status.as_str()));
+        lines.push(format!(
+            "{}: {} · {}",
+            text_key("execution.ask"),
+            ask.id,
+            ask.status.as_str()
+        ));
         if let Some(reason) = &ask.reason {
             lines.push(format!("{}: {reason}", text(CopyKey::AskReason)));
         }
@@ -184,7 +194,8 @@ fn subagent_execution_detail(batch_name: Option<&str>, child: &SubagentChild) ->
 
 fn push_tool_lines(lines: &mut Vec<String>, tool: &SubagentToolCall, indent: &str) {
     lines.push(format!(
-        "{indent}- tool {} · {}",
+        "{indent}- {} {} · {}",
+        text_key("execution.tool"),
         subagent_tool_label(tool),
         tool.status.as_str()
     ));
@@ -226,7 +237,8 @@ fn push_tool_lines(lines: &mut Vec<String>, tool: &SubagentToolCall, indent: &st
 
 fn push_process_lines(lines: &mut Vec<String>, process: &SubagentProcess, indent: &str) {
     lines.push(format!(
-        "{indent}- process {} · {}",
+        "{indent}- {} {} · {}",
+        text_key("execution.process"),
         subagent_process_label(process),
         process.status.as_str()
     ));
@@ -274,7 +286,7 @@ fn subagent_tool_label(tool: &SubagentToolCall) -> String {
         .clone()
         .or_else(|| tool.command.clone())
         .or_else(|| (!tool.name.trim().is_empty()).then(|| tool.name.clone()))
-        .unwrap_or_else(|| "tool".to_string())
+        .unwrap_or_else(|| text_key("execution.defaultTool"))
 }
 
 fn subagent_process_label(process: &SubagentProcess) -> String {

@@ -1,5 +1,7 @@
 use serde_json::{Value, json};
 
+use crate::i18n::text_key;
+
 use super::state::ConfirmRecord;
 
 pub fn records_from_snapshot_payload(payload: &Value) -> Vec<ConfirmRecord> {
@@ -18,7 +20,7 @@ pub fn record_from_value(confirm: &Value) -> Option<ConfirmRecord> {
         .or_else(|| value_string(confirm, "sourceSurface"))
         .or_else(|| value_string(confirm, "sourceKey"))
         .or_else(|| value_string(confirm, "askEventId"))
-        .unwrap_or_else(|| "confirm read-model restored".to_string());
+        .unwrap_or_else(|| text_key("confirm.restored"));
     let event_id = confirm
         .get("event")
         .and_then(|event| value_string(event, "id"))

@@ -862,3 +862,12 @@
   原因：运行面板 parser 属于生产 UI 文案来源，不能继续硬编码英文标题；本轮按 owner 小切片清理，不触碰 TUI 视觉结构。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）。
   风险：本轮只改可见标题前缀来源；协议 event type、状态 token、channel 行为、ASK/Confirm/Fork 组件和 TUI 美化不变。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-execution-detail-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`src/tui/components/confirm/parser.rs`、`src/tui/execution/view.rs`、`src/tui/subagent/view.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 execution/subagent detail 的工具、子进程、任务 ID、部分结果和 Confirm read-model 兜底摘要接入 i18n，并同步对应 UI 断言。
+  原因：继续清理生产 TUI 可见硬编码文案，保持 execution/subagent/confirm owner 内的显示 copy 与 catalog 对齐。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮只改显示文案来源和测试断言；协议字段、状态 token、ASK/Confirm/Fork 行为、gateway channel 行为和 TUI 美化不变。
