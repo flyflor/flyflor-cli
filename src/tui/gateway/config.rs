@@ -832,6 +832,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "mattermost" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "discord" && !item.native_runtime)
         );
     }
@@ -934,6 +939,29 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["IRC_SERVER", "IRC_NICKNAME", "IRC_CHANNEL"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn mattermost_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let mattermost = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "mattermost")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(mattermost, |env| {
+            matches!(
+                env,
+                "MATTERMOST_URL" | "MATTERMOST_TOKEN" | "MATTERMOST_CHANNEL"
+            )
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["MATTERMOST_URL", "MATTERMOST_TOKEN", "MATTERMOST_CHANNEL"]
         );
         assert!(item.missing_required_env.is_empty());
     }

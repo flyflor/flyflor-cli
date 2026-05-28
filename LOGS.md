@@ -475,3 +475,21 @@
   原因：确认 IRC 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 `PRIVMSG` 入站到 `/ws` 再到出站 `PRIVMSG` 的进程级闭环。
   验证：`cargo test irc -- --nocapture`（5 passed）；`npm run smoke:gateway:irc`（ok: true）；`cargo test gateway -- --nocapture`（56 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（248 passed）；`git diff --check`。
   风险：本轮只实现 plain TCP IRC text path；TLS、NickServ、SASL、多频道、mention policy 和 reconnect/backoff 后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：mattermost-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/mattermost.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/mattermost-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Mattermost REST native adapter 与 `smoke:gateway:mattermost`，完成 posts polling、`gateway.message.send`、`turn.final`、create post 出站的本地 HTTP mock 闭环。
+  原因：继续推进 western/longtail channel 真实 adapter；Mattermost REST path 可本地验证 `/ws` 血管层连通，同时避免把 websocket、edit/stream preview、file attachments 等重型能力提前宣称 native。
+  验证：已运行 `cargo test mattermost -- --nocapture`（5 passed）与 `npm run smoke:gateway:mattermost`（ok: true）；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 Mattermost REST polling/send text path；websocket monitor、edit/stream preview、file attachments、mention gating 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：mattermost-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Mattermost REST native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 Mattermost 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 posts poll 到 `/ws` 再到 create post reply 的进程级闭环。
+  验证：`cargo test mattermost -- --nocapture`（5 passed）；`npm run smoke:gateway:mattermost`（ok: true）；`cargo test gateway -- --nocapture`（61 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（253 passed）；`git diff --check`。
+  风险：本轮只实现 Mattermost REST polling/send text path；websocket monitor、edit/stream preview、file attachments、mention gating 和 richer thread behavior 后续继续补。

@@ -6,6 +6,7 @@ use crate::tui::gateway::platforms::all_platforms;
 
 use super::irc::IrcAdapter;
 use super::matrix::MatrixAdapter;
+use super::mattermost::MattermostAdapter;
 use super::ntfy::NtfyAdapter;
 use super::telegram::TelegramBotAdapter;
 use super::webhook::WebhookAdapter;
@@ -301,6 +302,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "mattermost" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        MattermostAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "weixin" {
                 registry.register(PlatformEntry {
                     name,
@@ -438,6 +450,11 @@ mod tests {
         assert!(
             registry
                 .get("irc")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("mattermost")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(

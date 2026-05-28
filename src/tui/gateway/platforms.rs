@@ -990,7 +990,7 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
         label: "Mattermost",
         source_channel: "mattermost",
         aliases: &[],
-        required_env: &["MATTERMOST_URL", "MATTERMOST_TOKEN"],
+        required_env: &["MATTERMOST_URL", "MATTERMOST_TOKEN", "MATTERMOST_CHANNEL"],
         optional_env: &[
             "MATTERMOST_TEAM",
             "MATTERMOST_CHANNEL",
@@ -1002,25 +1002,13 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "MATTERMOST_TEAM",
             "FLYFLOR_MATTERMOST_TOKEN",
         ],
-        status: PlatformRuntimeStatus::Planned,
-        capability: cap!(
-            inbound_media,
-            outbound_media,
-            typing,
-            message_edit,
-            stream_update,
-            threads,
-            group_chat,
-            quote_reply,
-            file_download,
-            file_upload,
-            websocket
-        ),
+        status: PlatformRuntimeStatus::Native,
+        capability: cap!(group_chat, polling),
         details: &[
-            "thread reply",
-            "mention gating",
-            "file attachments",
-            "markdown",
+            "REST post polling",
+            "REST create post",
+            "channel routing",
+            "media/edit/websocket explicit unavailable",
         ],
     },
     PlatformMetadata {
@@ -1309,7 +1297,15 @@ mod tests {
 
         assert_eq!(
             native,
-            vec!["telegram", "matrix", "weixin", "webhook", "irc", "ntfy"]
+            vec![
+                "telegram",
+                "matrix",
+                "weixin",
+                "webhook",
+                "irc",
+                "ntfy",
+                "mattermost"
+            ]
         );
     }
 

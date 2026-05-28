@@ -202,3 +202,12 @@
 - [x] Gateway registry/doctor 将 IRC 标记为 native，并收紧 capability 只声明当前真实可用的 plain text group chat。
 - [x] 新增 IRC 本地 mock TCP smoke：PRIVMSG -> `gateway.message.send` -> `turn.final` -> outbound PRIVMSG。
 - [ ] 后续补 IRC TLS、NickServ、SASL、多频道、mention policy 和更完整 reconnect/backoff；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Mattermost Native Channel Adapter
+
+- [x] 新增 Mattermost REST native adapter，支持 channel posts polling 和 create post 出站。
+- [x] Mattermost 入站 normalization 覆盖 channel route、user allowlist、root/thread metadata、source post id 和 create_at cursor。
+- [x] Mattermost outbound 覆盖 create post、reply root_id、text chunking、explicit media unavailable 和 REST error 分类。
+- [x] Gateway registry/doctor 将 Mattermost 标记为 native，并收紧 capability 只声明当前真实可用的 REST polling/group text。
+- [x] 新增 Mattermost 本地 mock HTTP smoke：posts poll -> `gateway.message.send` -> `turn.final` -> create post。
+- [ ] 后续补 Mattermost websocket monitor、edit/stream preview、file attachments、mention gating 和 richer thread behavior；这些能力当前仍保持 explicit unavailable 或未声明。

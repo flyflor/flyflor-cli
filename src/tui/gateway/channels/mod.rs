@@ -1,5 +1,6 @@
 pub mod irc;
 pub mod matrix;
+pub mod mattermost;
 pub mod ntfy;
 pub mod platform;
 pub mod runtime;

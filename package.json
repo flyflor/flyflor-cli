@@ -37,6 +37,7 @@
     "smoke:gateway:ntfy": "tsx scripts/ntfy-gateway-smoke.ts",
     "smoke:gateway:matrix": "tsx scripts/matrix-gateway-smoke.ts",
     "smoke:gateway:irc": "tsx scripts/irc-gateway-smoke.ts",
+    "smoke:gateway:mattermost": "tsx scripts/mattermost-gateway-smoke.ts",
     "smoke:npm:local": "node scripts/smoke-npm-local.cjs",
     "logs": "tsx scripts/logs.ts",
     "codex:lanes": "sh scripts/codex-lanes.sh",
