@@ -880,3 +880,12 @@
   原因：继续清理 `src/main.rs` 生产 UI footer/status 硬编码，同时避免用英文 `streaming` 作为状态判断。
   验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
   风险：本轮只改 footer/status 显示文案来源和断言；协议字段、状态 token、gateway channel 行为、ASK/Confirm/Fork 组件和 TUI 美化不变。
+
+- 状态：完成
+  执行者：main-codex
+  范围：tui-blackboard-detail-i18n-cleanup
+  变动文件：`i18n/en-US.json`、`i18n/zh-CN.json`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：将 blackboard detail 中的轮次标签、未知状态和无 plan 兜底文案接入 i18n，并让相关断言通过 i18n key 表达。
+  原因：blackboard detail 是展开与复制可见内容，不能继续把 `Round`、unknown、none 作为生产 UI 硬编码。
+  验证：`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（363 passed, 0 failed）；`git diff --check`。
+  风险：本轮不改 blackboard 数据结构、订阅事件、右侧布局或视觉样式；只改变显示 copy 来源和测试断言。

@@ -423,4 +423,5 @@
 - [x] 将 Run timeline parser 生成的执行任务、子代理、工具、模型和子进程标题前缀接入 i18n，避免运行面板继续写死英文标题。
 - [x] 将 execution/subagent detail 中的工具、子进程、任务 ID、部分结果和 Confirm read-model 兜底摘要接入 i18n。
 - [x] 将 `src/main.rs` 中发送中、流式输出、完成、回合错误、发送失败、终断、ASK/Confirm 回答和 socket snapshot footer 接入 i18n。
+- [x] 将 blackboard detail 中的轮次标签、未知状态和无 plan 兜底文案接入 i18n，测试不再锁死英文 `Round`。
 - [ ] 继续分批清理 `src/main.rs` 中仍属于生产 UI 的遗留硬编码文案；不要一次性重写 TUI 视觉结构。

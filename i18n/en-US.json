@@ -88,6 +88,7 @@
   "blackboard.discussionStatusLabel": "Status",
   "blackboard.discussionReasonLabel": "reason",
   "blackboard.discussionPlanLabel": "plan",
+  "blackboard.discussionRoundLabel": "Round",
   "selection.copied": "selection copied",
   "selection.copyFailed": "copy failed",
   "thought.fallback": "Thought",

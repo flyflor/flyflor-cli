@@ -7450,10 +7450,10 @@ fn blackboard_summary(value: &Value) -> String {
 
 fn format_blackboard_discussion(value: &Value) -> String {
     let summary = blackboard_summary(value);
-    let status = value_string(value, "status").unwrap_or_else(|| "unknown".to_string());
+    let status = value_string(value, "status").unwrap_or_else(|| ui_text_key("common.unknown"));
     let plan = value_string(value, "mode")
         .or_else(|| value_string(value, "plan"))
-        .unwrap_or_else(|| "none".to_string());
+        .unwrap_or_else(|| ui_text_key("common.noData"));
     let mut lines = vec![format!(
         "{}: {}: {status}; {}: {summary}; {}: {plan}",
         ui_text_key("blackboard.discussionTitle"),
@@ -7467,10 +7467,11 @@ fn format_blackboard_discussion(value: &Value) -> String {
 }
 
 fn append_blackboard_content(lines: &mut Vec<String>, value: &Value, round: usize) {
+    let round_label = ui_text_key("blackboard.discussionRoundLabel");
     match value {
         Value::String(text) => {
             if !text.trim().is_empty() {
-                lines.push(format!("Round {round}: {}", text.trim()));
+                lines.push(format!("{round_label} {round}: {}", text.trim()));
             }
         }
         Value::Array(items) => {
@@ -7493,13 +7494,13 @@ fn append_blackboard_content(lines: &mut Vec<String>, value: &Value, round: usiz
             let role = value_string(value, "role")
                 .or_else(|| value_string(value, "speaker"))
                 .or_else(|| value_string(value, "agent"))
-                .unwrap_or_else(|| format!("Round {round}"));
+                .unwrap_or_else(|| format!("{round_label} {round}"));
             if let Some(text) = value_string(value, "content")
                 .or_else(|| value_string(value, "text"))
                 .or_else(|| value_string(value, "message"))
             {
                 if !text.trim().is_empty() {
-                    lines.push(format!("Round {round} · {role}: {}", text.trim()));
+                    lines.push(format!("{round_label} {round} · {role}: {}", text.trim()));
                 }
             }
         }
@@ -8500,16 +8501,14 @@ mod tests {
                 assert!(blackboard.detail.contains("Status: closed"));
                 assert!(blackboard.detail.contains("reason: 确认右侧布局修复方案"));
                 assert!(blackboard.detail.contains("plan: plan"));
-                assert!(
-                    blackboard
-                        .detail
-                        .contains("Round 1 · planner: 先固定 TODO 标题。")
-                );
-                assert!(
-                    blackboard
-                        .detail
-                        .contains("Round 2 · executor: 再处理 fork 单行展示。")
-                );
+                assert!(blackboard.detail.contains(&format!(
+                    "{} 1 · planner: 先固定 TODO 标题。",
+                    ui_text_key("blackboard.discussionRoundLabel")
+                )));
+                assert!(blackboard.detail.contains(&format!(
+                    "{} 2 · executor: 再处理 fork 单行展示。",
+                    ui_text_key("blackboard.discussionRoundLabel")
+                )));
                 assert!(!blackboard.detail.contains("\"summary\""));
                 assert!(!blackboard.detail.contains("\"turnId\""));
             }
@@ -8529,7 +8528,10 @@ mod tests {
             string_discussion
                 .contains("Blackboard discussion: Status: open; reason: 同步状态; plan: review")
         );
-        assert!(string_discussion.contains("Round 1: 单条黑板记录"));
+        assert!(string_discussion.contains(&format!(
+            "{} 1: 单条黑板记录",
+            ui_text_key("blackboard.discussionRoundLabel")
+        )));
 
         let object_discussion = format_blackboard_discussion(&json!({
             "summary": "对象内容",
@@ -8540,8 +8542,14 @@ mod tests {
                 ]
             }
         }));
-        assert!(object_discussion.contains("Round 1 · agent: 对象里的第一轮"));
-        assert!(object_discussion.contains("Round 2 · user: 对象里的第二轮"));
+        assert!(object_discussion.contains(&format!(
+            "{} 1 · agent: 对象里的第一轮",
+            ui_text_key("blackboard.discussionRoundLabel")
+        )));
+        assert!(object_discussion.contains(&format!(
+            "{} 2 · user: 对象里的第二轮",
+            ui_text_key("blackboard.discussionRoundLabel")
+        )));
         assert!(!object_discussion.contains("\"rounds\""));
     }
 
@@ -8991,7 +8999,10 @@ mod tests {
             .map(line_plain_text)
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered_discussion.contains("Round 1 · worker"));
+        assert!(rendered_discussion.contains(&format!(
+            "{} 1 · worker",
+            ui_text_key("blackboard.discussionRoundLabel")
+        )));
         assert!(rendered_discussion.contains("可复制的展开内容"));
         app.selection.anchor = Some(SelectionPoint {
             target: SelectionTarget::Left,
@@ -9006,7 +9017,10 @@ mod tests {
 
         let copied = app.selection_to_text().expect("selection text");
         assert!(copied.contains("Blackboard discussion"));
-        assert!(copied.contains("Round 1 · worker"));
+        assert!(copied.contains(&format!(
+            "{} 1 · worker",
+            ui_text_key("blackboard.discussionRoundLabel")
+        )));
         assert!(copied.contains("可复制的展开内容"));
     }
 
