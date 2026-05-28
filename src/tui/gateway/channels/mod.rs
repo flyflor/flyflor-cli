@@ -1,5 +1,6 @@
 pub mod homeassistant;
 pub mod irc;
+pub mod line;
 pub mod matrix;
 pub mod mattermost;
 pub mod ntfy;

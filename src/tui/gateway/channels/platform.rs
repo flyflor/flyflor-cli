@@ -6,6 +6,7 @@ use crate::tui::gateway::platforms::all_platforms;
 
 use super::homeassistant::HomeAssistantAdapter;
 use super::irc::IrcAdapter;
+use super::line::LineAdapter;
 use super::matrix::MatrixAdapter;
 use super::mattermost::MattermostAdapter;
 use super::ntfy::NtfyAdapter;
@@ -344,6 +345,17 @@ impl PlatformRegistry {
                     label,
                     factory: Box::new(|| {
                         SmsAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
+            if name == "line" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        LineAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
                     }),
                     native_runtime: true,
                 });

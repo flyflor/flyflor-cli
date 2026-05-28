@@ -852,6 +852,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "line" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "discord" && !item.native_runtime)
         );
     }
@@ -1039,6 +1044,26 @@ mod tests {
                 "TWILIO_AUTH_TOKEN",
                 "TWILIO_FROM_NUMBER"
             ]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn line_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let line = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "line")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(line, |env| {
+            matches!(env, "LINE_CHANNEL_ACCESS_TOKEN" | "LINE_CHANNEL_SECRET")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"]
         );
         assert!(item.missing_required_env.is_empty());
     }

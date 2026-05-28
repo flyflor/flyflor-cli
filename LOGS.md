@@ -547,3 +547,21 @@
   原因：确认 SMS 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 Twilio webhook payload 到 `/ws` 再到 Messages REST reply 的进程级闭环。
   验证：`cargo test sms -- --nocapture`（6 passed）；`npm run smoke:gateway:sms`（ok: true）；`cargo test gateway -- --nocapture`（78 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（270 passed）；`git diff --check`。
   风险：本轮只实现 env payload poll 与 Twilio Messages REST text path；真实 HTTP webhook listener、Twilio signature validation、delivery status callback、MMS media 后续继续补。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：line-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/line.rs`、`src/tui/gateway/channels/runtime.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/line-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 LINE native adapter 与 `smoke:gateway:line`，完成 LINE webhook text event 入站、`gateway.message.send`、`turn.final`、reply token POST 出站的本地 HTTP mock 闭环；同时让 runtime 合并 inbound channel anchor metadata。
+  原因：继续推进 western/longtail channel 真实 adapter；LINE reply token 是典型平台锚点，必须由 gateway runtime 保留，不能依赖内核原样回传。
+  验证：已运行 `cargo test line -- --nocapture`（39 matched passed）、`cargo test outbound_final_merges_inbound_channel_anchor_metadata -- --nocapture`（1 passed）与 `npm run smoke:gateway:line`（ok: true）；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本轮只实现 env payload poll 与 LINE text reply/push fallback path；真实 HTTP webhook listener、signature validation、rich cards、media download/upload 和 slow response push policy 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：line-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 LINE native adapter、runtime inbound channel anchor metadata 合并、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 LINE 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 LINE webhook text event 到 `/ws` 再到 reply token POST 的进程级闭环；同时守住平台锚点不会在 turn.final 时丢失。
+  验证：`cargo test line -- --nocapture`（39 matched passed）；`cargo test outbound_final_merges_inbound_channel_anchor_metadata -- --nocapture`（1 passed）；`npm run smoke:gateway:line`（ok: true）；`cargo test gateway -- --nocapture`（86 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（278 passed）；`git diff --check`。
+  风险：本轮只实现 env payload poll 与 LINE text reply/push fallback path；真实 HTTP webhook listener、signature validation、rich cards、media download/upload 和 slow response push policy 后续继续补。

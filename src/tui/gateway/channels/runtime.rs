@@ -128,6 +128,7 @@ fn websocket_bridge_loop(
     inbound_rx: Receiver<NormalizedInboundMessage>,
 ) {
     let mut routes: HashMap<String, MessageRoute> = HashMap::new();
+    let mut inbound_metadata: HashMap<String, Value> = HashMap::new();
     let mut streams: HashMap<String, OutboundTurnStream> = HashMap::new();
     loop {
         let url = ws_url();
@@ -151,6 +152,7 @@ fn websocket_bridge_loop(
                     &mut socket,
                     &inbound_rx,
                     &mut routes,
+                    &mut inbound_metadata,
                     &mut streams,
                 ) {
                     channel_log(format!(
@@ -176,6 +178,7 @@ fn run_socket_bridge_session(
     socket: &mut tungstenite::WebSocket<MaybeTlsStream<TcpStream>>,
     inbound_rx: &Receiver<NormalizedInboundMessage>,
     routes: &mut HashMap<String, MessageRoute>,
+    inbound_metadata: &mut HashMap<String, Value>,
     streams: &mut HashMap<String, OutboundTurnStream>,
 ) -> Result<(), String> {
     loop {
@@ -189,11 +192,14 @@ fn run_socket_bridge_session(
             socket
                 .send(Message::text(envelope))
                 .map_err(|error| error.to_string())?;
+            inbound_metadata.insert(message.id.clone(), message.metadata.clone());
             routes.insert(message.id, route);
         }
 
         match socket.read() {
-            Ok(Message::Text(text)) => handle_socket_text(adapter, routes, streams, text.as_ref()),
+            Ok(Message::Text(text)) => {
+                handle_socket_text(adapter, routes, inbound_metadata, streams, text.as_ref())
+            }
             Ok(Message::Close(_)) => return Err("socket closed".to_string()),
             Ok(_) => {}
             Err(WsError::Io(error))
@@ -254,6 +260,7 @@ fn metadata_with_capabilities(metadata: Value, capabilities: &ChannelCapabilityR
 fn handle_socket_text(
     adapter: &Arc<dyn PlatformAdapter>,
     routes: &mut HashMap<String, MessageRoute>,
+    inbound_metadata: &mut HashMap<String, Value>,
     streams: &mut HashMap<String, OutboundTurnStream>,
     raw: &str,
 ) {
@@ -311,6 +318,7 @@ fn handle_socket_text(
                 return;
             }
             let metadata = reply.get("metadata").cloned();
+            let metadata = merge_outbound_metadata(inbound_metadata.remove(message_id), metadata);
             let stream = streams.remove(message_id);
             deliver_turn_final(adapter, route, message_id, text, metadata, stream);
         }
@@ -321,12 +329,41 @@ fn handle_socket_text(
                 .and_then(Value::as_str)
                 .unwrap_or_default();
             routes.remove(message_id);
+            inbound_metadata.remove(message_id);
             streams.remove(message_id);
         }
         Some("event.publish") => {
             handle_event_publish(adapter, routes, streams, &envelope);
         }
         _ => {}
+    }
+}
+
+fn merge_outbound_metadata(inbound: Option<Value>, reply: Option<Value>) -> Option<Value> {
+    match (inbound, reply) {
+        (None, None) => None,
+        (Some(inbound), None) => Some(inbound),
+        (None, Some(reply)) => Some(reply),
+        (Some(Value::Object(mut inbound)), Some(Value::Object(reply))) => {
+            for (key, value) in reply {
+                if key == "channel"
+                    && let Some(inbound_channel) = inbound.get_mut("channel")
+                    && inbound_channel.is_object()
+                    && value.is_object()
+                {
+                    let Some(inbound_channel) = inbound_channel.as_object_mut() else {
+                        continue;
+                    };
+                    for (channel_key, channel_value) in value.as_object().into_iter().flatten() {
+                        inbound_channel.insert(channel_key.clone(), channel_value.clone());
+                    }
+                    continue;
+                }
+                inbound.insert(key, value);
+            }
+            Some(Value::Object(inbound))
+        }
+        (_, Some(reply)) => Some(reply),
     }
 }
 
@@ -671,11 +708,13 @@ mod tests {
         let adapter = Arc::new(MockAdapter::new(ChannelCapabilityReport::send_only()));
         let adapter_dyn: Arc<dyn PlatformAdapter> = adapter.clone();
         let mut routes = HashMap::from([("message-1".to_string(), test_route())]);
+        let mut inbound_metadata = HashMap::new();
         let mut streams = HashMap::new();
 
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "turn.delta",
@@ -687,6 +726,7 @@ mod tests {
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "turn.final",
@@ -722,6 +762,7 @@ mod tests {
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "turn.error",
@@ -730,6 +771,67 @@ mod tests {
         );
         assert!(!routes.contains_key("message-2"));
         assert!(!streams.contains_key("message-2"));
+    }
+
+    #[test]
+    fn outbound_final_merges_inbound_channel_anchor_metadata() {
+        let adapter = Arc::new(MockAdapter::new(ChannelCapabilityReport::send_only()));
+        let adapter_dyn: Arc<dyn PlatformAdapter> = adapter.clone();
+        let mut routes = HashMap::from([("message-1".to_string(), test_route())]);
+        let mut inbound_metadata = HashMap::from([(
+            "message-1".to_string(),
+            json!({
+                "channel": {
+                    "platform": "line",
+                    "replyToken": "reply-token-1"
+                },
+                "incoming": true
+            }),
+        )]);
+        let mut streams = HashMap::new();
+
+        handle_socket_text(
+            &adapter_dyn,
+            &mut routes,
+            &mut inbound_metadata,
+            &mut streams,
+            r#"{
+                "type": "turn.final",
+                "payload": {
+                    "reply": {
+                        "messageId": "message-1",
+                        "text": "hello",
+                        "metadata": {
+                            "answer": true,
+                            "channel": { "mode": "reply" }
+                        }
+                    }
+                }
+            }"#,
+        );
+
+        assert!(inbound_metadata.is_empty());
+        let sent = adapter.sent.lock().unwrap();
+        let metadata = sent[0].metadata.as_ref().expect("metadata");
+        assert_eq!(
+            metadata
+                .get("channel")
+                .and_then(|channel| channel.get("replyToken"))
+                .and_then(Value::as_str),
+            Some("reply-token-1")
+        );
+        assert_eq!(
+            metadata
+                .get("channel")
+                .and_then(|channel| channel.get("mode"))
+                .and_then(Value::as_str),
+            Some("reply")
+        );
+        assert_eq!(metadata.get("answer").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            metadata.get("incoming").and_then(Value::as_bool),
+            Some(true)
+        );
     }
 
     #[test]
@@ -744,11 +846,13 @@ mod tests {
         }));
         let adapter_dyn: Arc<dyn PlatformAdapter> = adapter.clone();
         let mut routes = HashMap::from([("message-1".to_string(), test_route())]);
+        let mut inbound_metadata = HashMap::new();
         let mut streams = HashMap::new();
 
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "turn.delta",
@@ -758,6 +862,7 @@ mod tests {
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "event.publish",
@@ -772,6 +877,7 @@ mod tests {
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "turn.final",
@@ -804,11 +910,13 @@ mod tests {
         }));
         let adapter_dyn: Arc<dyn PlatformAdapter> = adapter.clone();
         let mut routes = HashMap::from([("inbound-1".to_string(), test_route())]);
+        let mut inbound_metadata = HashMap::new();
         let mut streams = HashMap::new();
 
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "turn.delta",
@@ -818,6 +926,7 @@ mod tests {
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "turn.delta",
@@ -827,6 +936,7 @@ mod tests {
         handle_socket_text(
             &adapter_dyn,
             &mut routes,
+            &mut inbound_metadata,
             &mut streams,
             r#"{
                 "type": "turn.final",

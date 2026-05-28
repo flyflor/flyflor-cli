@@ -238,3 +238,12 @@
 - [x] Gateway registry/doctor 将 SMS 标记为 native，并收紧 capability 只声明当前真实可用的 direct text / webhook payload。
 - [x] 新增 SMS 本地 mock HTTP smoke：Twilio webhook payload -> `gateway.message.send` -> `turn.final` -> Messages REST POST。
 - [ ] 后续补真实 HTTP webhook listener、Twilio signature validation、delivery status callback、MMS media 和多短信会话策略；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 LINE Native Channel Adapter
+
+- [x] 新增 LINE Messaging API native adapter，支持 webhook text event 入站和 reply token / push fallback 出站。
+- [x] LINE 入站 normalization 覆盖 user/group/room route、user allowlist、replyToken anchor、source message id 和 channel metadata。
+- [x] Gateway runtime 保存并合并 inbound channel anchor metadata，确保 replyToken/root/thread 等平台锚点不依赖内核原样回传。
+- [x] LINE outbound 覆盖 reply API、push fallback、text chunking、REST error 分类和 explicit media unavailable。
+- [x] 新增 LINE 本地 mock HTTP smoke：webhook event -> `gateway.message.send` -> `turn.final` -> reply token POST。
+- [ ] 后续补真实 HTTP webhook listener、LINE signature validation、rich menu/cards、media download/upload 和 slow response push policy；这些能力当前仍保持 explicit unavailable 或未声明。
