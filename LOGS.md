@@ -421,3 +421,21 @@
   原因：确认 ntfy JSON/JSONL poll normalization、sender allowlist、publish 分片/metadata、doctor availability 和 native runtime 状态红线无回归。
   验证：`cargo fmt --check`；`cargo test ntfy -- --nocapture`（5 passed）；`cargo test gateway -- --nocapture`（45 passed）；`cargo check --all-targets`；`cargo test`（237 passed）；`git diff --check`。
   风险：ntfy mock HTTP live smoke 仍待后续补齐。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：ntfy-live-smoke-closure
+  变动文件：`scripts/ntfy-gateway-smoke.ts`、`package.json`、`src/tui/gateway/channels/runtime.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 `smoke:gateway:ntfy`，用 mock ntfy HTTP server 与 mock `/ws` kernel 验证 poll JSONL -> `gateway.message.send` -> `turn.final` -> publish POST；同时为成功轮询增加默认 1000ms 节流。
+  原因：ntfy 单测只能证明 adapter 归一化和 publish 行为，不能证明 daemon 模式下真实 channel runtime、内核 websocket bridge 和 outbound delivery 连通；成功轮询无节流会造成本地/真实 ntfy 端点 tight loop。
+  验证：已运行 `npm run smoke:gateway:ntfy`（ok: true，1 GET + 1 POST）与 `cargo test poll_interval_defaults_to_one_second_and_allows_override_value -- --nocapture`；待运行格式、类型、全量测试和 whitespace 验证。
+  风险：本 smoke 使用本地 mock kernel，不依赖真实 Flyflor 内核推理；`FLYFLOR_GATEWAY_POLL_INTERVAL_MS` 只作为 runtime env override，后续可继续接 JSONC runtime config。
+
+- 状态：完成
+  执行者：main-codex
+  范围：ntfy-live-smoke-closure-verification
+  变动文件：同上
+  摘要：完成 ntfy live smoke、轮询节流 focused test、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 ntfy daemon 真实进程链路可从 mock ntfy poll 进入 `/ws` gateway bridge，并把 `turn.final` 通过 HTTP POST publish 回 ntfy topic，同时避免成功轮询 tight loop。
+  验证：`npm run smoke:gateway:ntfy`（ok: true，1 GET + 1 POST）；`cargo test poll_interval_defaults_to_one_second_and_allows_override_value -- --nocapture`；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（238 passed）；`git diff --check`。
+  风险：本 smoke 使用本地 mock kernel，不依赖真实 Flyflor 内核推理；真实第三方 ntfy server 仍依赖用户 topic/token 环境。

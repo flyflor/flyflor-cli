@@ -69,6 +69,7 @@ fn poll_platform_loop(
     tx: mpsc::Sender<NormalizedInboundMessage>,
 ) {
     let mut failures = 0usize;
+    let poll_interval = poll_interval_from_env();
     loop {
         match adapter.poll_updates() {
             Ok(messages) => {
@@ -79,6 +80,7 @@ fn poll_platform_loop(
                         return;
                     }
                 }
+                thread::sleep(poll_interval);
             }
             Err(error) => {
                 failures = failures.saturating_add(1);
@@ -107,6 +109,18 @@ fn poll_platform_loop(
             }
         }
     }
+}
+
+fn poll_interval_from_env() -> Duration {
+    poll_interval_from_value(env::var("FLYFLOR_GATEWAY_POLL_INTERVAL_MS").ok().as_deref())
+}
+
+fn poll_interval_from_value(value: Option<&str>) -> Duration {
+    value
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .filter(|value| *value > 0)
+        .map(Duration::from_millis)
+        .unwrap_or_else(|| Duration::from_millis(1_000))
 }
 
 fn websocket_bridge_loop(
@@ -843,6 +857,23 @@ mod tests {
         assert!(updates[2].final_update);
         assert!(routes.is_empty());
         assert!(streams.is_empty());
+    }
+
+    #[test]
+    fn poll_interval_defaults_to_one_second_and_allows_override_value() {
+        assert_eq!(poll_interval_from_value(None), Duration::from_millis(1_000));
+        assert_eq!(
+            poll_interval_from_value(Some("250")),
+            Duration::from_millis(250)
+        );
+        assert_eq!(
+            poll_interval_from_value(Some("0")),
+            Duration::from_millis(1_000)
+        );
+        assert_eq!(
+            poll_interval_from_value(Some("bad")),
+            Duration::from_millis(1_000)
+        );
     }
 
     fn test_route() -> MessageRoute {

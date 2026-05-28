@@ -183,4 +183,4 @@
 - [x] ntfy 入站 normalization 覆盖 topic route、sender allowlist、title/priority metadata 和 non-message event 过滤。
 - [x] ntfy outbound 覆盖 4096 字符分片、token header、explicit media unavailable 和 curl error 分类。
 - [x] Gateway registry/doctor 将 ntfy 标记为 native，并新增测试守住 native runtime 列表包含 Telegram、Weixin、Webhook、ntfy。
-- [ ] 后续补 ntfy 本地 mock HTTP smoke：poll JSONL -> `gateway.message.send` -> `turn.final` -> publish POST。
+- [x] 后续补 ntfy 本地 mock HTTP smoke：poll JSONL -> `gateway.message.send` -> `turn.final` -> publish POST。
