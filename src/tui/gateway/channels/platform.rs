@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use crate::tui::gateway::platforms::all_platforms;
 
 use super::bluebubbles::BlueBubblesAdapter;
+use super::email::EmailAdapter;
 use super::homeassistant::HomeAssistantAdapter;
 use super::irc::IrcAdapter;
 use super::line::LineAdapter;
@@ -318,6 +319,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "email" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        EmailAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "homeassistant" {
                 registry.register(PlatformEntry {
                     name,
@@ -520,6 +532,11 @@ mod tests {
         assert!(
             registry
                 .get("bluebubbles")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("email")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(

@@ -256,3 +256,12 @@
 - [x] Gateway registry/doctor 将 BlueBubbles 标记为 native，并收紧 capability 只声明当前真实可用的 webhook payload / REST text。
 - [x] 新增 BlueBubbles 本地 mock HTTP smoke：webhook payload -> `gateway.message.send` -> `turn.final` -> message/text REST POST。
 - [ ] 后续补真实 HTTP webhook listener、BlueBubbles webhook secret/signature、tapbacks、read receipts、attachments/media、private-api reply threading 和 iMessage availability；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 Email Native Channel Adapter
+
+- [x] 新增 Email native adapter，支持 env JSON 入站和 plain SMTP text 出站。
+- [x] Email 入站 normalization 覆盖 sender allowlist、self-loop filter、subject/thread metadata、context 透传和 direct route。
+- [x] Email outbound 覆盖 SMTP AUTH LOGIN、MAIL/RCPT/DATA、reply subject、In-Reply-To、dot-stuffing、explicit media unavailable 和 SMTP error 分类。
+- [x] Gateway registry/doctor 将 Email 标记为 native，并收紧 capability 只声明当前真实可用的 env payload / plain SMTP text。
+- [x] 新增 Email 本地 mock SMTP smoke：env message -> `gateway.message.send` -> `turn.final` -> SMTP DATA。
+- [ ] 后续补 IMAP polling、TLS/STARTTLS、OAuth/app password profiles、HTML stripping、attachment cache、thread discovery 和 noreply policy；这些能力当前仍保持 explicit unavailable 或未声明。

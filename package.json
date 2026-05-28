@@ -38,6 +38,7 @@
     "smoke:gateway:matrix": "tsx scripts/matrix-gateway-smoke.ts",
     "smoke:gateway:irc": "tsx scripts/irc-gateway-smoke.ts",
     "smoke:gateway:mattermost": "tsx scripts/mattermost-gateway-smoke.ts",
+    "smoke:gateway:email": "tsx scripts/email-gateway-smoke.ts",
     "smoke:gateway:homeassistant": "tsx scripts/homeassistant-gateway-smoke.ts",
     "smoke:gateway:open-webui": "tsx scripts/openwebui-gateway-smoke.ts",
     "smoke:gateway:sms": "tsx scripts/sms-gateway-smoke.ts",

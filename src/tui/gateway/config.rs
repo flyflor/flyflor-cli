@@ -837,6 +837,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "email" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "homeassistant" && item.native_runtime)
         );
         assert!(
@@ -987,6 +992,26 @@ mod tests {
         assert_eq!(
             item.present_required_env,
             vec!["MATTERMOST_URL", "MATTERMOST_TOKEN", "MATTERMOST_CHANNEL"]
+        );
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn email_native_channel_is_available_when_required_env_is_present() {
+        let config = GatewayConfig::default();
+        let email = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "email")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(email, |env| {
+            matches!(env, "EMAIL_ADDRESS" | "EMAIL_PASSWORD" | "EMAIL_SMTP_HOST")
+        });
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(
+            item.present_required_env,
+            vec!["EMAIL_ADDRESS", "EMAIL_PASSWORD", "EMAIL_SMTP_HOST"]
         );
         assert!(item.missing_required_env.is_empty());
     }
