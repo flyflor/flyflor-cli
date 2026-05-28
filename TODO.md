@@ -140,8 +140,8 @@
 
 - [x] 公民权限/高风险授权菜单标题渲染为 `Confirm 授权执行策略`，普通 ASK 菜单仍渲染为 `ASK`。
 - [x] 保留结构化 metadata 发送，不把 `continue-tools` 等授权 token 写成普通用户文本。
-- [x] 公民权限/高风险授权新增 `metadata.confirmAnswer`，`metadata.askAnswer` 仅作为 kernel 兼容保留；普通 ASK 仍只走 `askAnswer`。
-- [ ] 后续如内核提供独立 Confirm snapshot/event，再把当前 ASK-compatible permission metadata 迁移到真正独立 Confirm 组件。
+- [x] 公民权限/高风险授权新增 `metadata.confirmAnswer`；普通 ASK 仍只走 `askAnswer`。
+- [x] 内核提供独立 Confirm snapshot/event 后，公民权限发送路径已移除 ASK-compatible `metadata.askAnswer` fallback。
 
 ## 2026-05-28 Confirm Event Timeline
 
@@ -149,11 +149,11 @@
 - [x] Run timeline 将 `confirm.answered` 渲染为 `Confirm answered`，不混入 ASK crystallization 样式。
 - [x] Subagent tree 将 `confirm.answered` 用作 pending needs-user marker 的闭合信号。
 - [x] 启动 bootstrap 请求 `confirm.list`，并把 `confirm.snapshot` 恢复为 Run timeline Confirm row。
-- [ ] 后续接入完整独立 Confirm component UI 后，移除 ASK-compatible permission fallback。
+- [x] 接入 Confirm read-model owner 后，移除公民权限发送路径的 ASK-compatible permission fallback。
 
 ## 2026-05-28 Confirm Component Foundation
 
 - [x] 新增 `src/tui/confirm/` owner，集中解析 `confirm.snapshot` read-model 并持有 `ConfirmState`。
 - [x] `confirm.snapshot` 先进入 Confirm read-model state，再投影为 `confirm.answered` timeline row，不再由 `main.rs` 手写 ASK-compatible pseudo events。
 - [x] targeted tests 覆盖 Confirm snapshot 恢复不会生成 ASK continuation row，也不会携带 `askAnswer` 结晶入口。
-- [ ] 后续把公民权限 ASK-compatible metadata fallback 从发送路径移除，前提是 kernel/CLI/历史兼容面全部确认可迁移。
+- [x] 公民权限 ASK-compatible metadata fallback 已从 CLI 发送路径移除；内核仍可接受旧客户端 fallback。

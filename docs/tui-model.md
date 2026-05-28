@@ -74,7 +74,7 @@ Tool events and execution-job snapshots make the Executive exoskeleton visible. 
 
 Normal per-turn approval for kernel `toolApprovals.mcpToolCalls` and `toolApprovals.userToolCalls` is closed through `/approve`. It marks only the next send and then clears. YOLO mode remains a separate local high-privilege interaction marker sent as metadata.
 
-Citizen permission options such as `continue-tools`, `keep-budget`, and `keep-subagents` are rendered as Confirm authorization policy choices and sent as structured `confirmAnswer` metadata, with `askAnswer` retained only for kernel compatibility. Subscribed `confirm.answered` events appear in Run as Confirm rows and can close pending user-needed markers, but they must not be converted into ordinary user-message text or displayed with the ASK crystallization style. Normal ASK continuations still use the ASK menu and continuation metadata.
+Citizen permission options such as `continue-tools`, `keep-budget`, and `keep-subagents` are rendered as Confirm authorization policy choices and sent as structured `confirmAnswer` metadata without an ASK-compatible `askAnswer` fallback. Subscribed `confirm.answered` events appear in Run as Confirm rows and can close pending user-needed markers, but they must not be converted into ordinary user-message text or displayed with the ASK crystallization style. Normal ASK continuations still use the ASK menu and `askAnswer` metadata.
 
 Startup `confirm.snapshot` data is also displayed as Confirm rows in Run so recent authorization decisions survive CLI reconnects. It remains read-model/display state only and never creates ASK continuation rows or Crystal candidate UI.
 

@@ -313,3 +313,21 @@
   原因：确认 `ConfirmState` 恢复路径、Run timeline 投影和 ASK continuation 隔离无回归。
   验证：`cargo fmt --check`；`cargo test confirm_snapshot_restores_confirm_timeline_row`；`cargo test snapshot_records_keep_confirm_separate_from_ask`；`cargo test parses_required_event_families`；`cargo check --all-targets`；`cargo test`（220 passed）；`git diff --check`。
   风险：发送路径仍保留 `askAnswer` 兼容字段，后续需在完整迁移后移除 fallback。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：confirm-send-without-ask-fallback
+  变动文件：`src/tui/ask/command.rs`、`src/main.rs`、`docs/protocol.md`、`docs/protocol.zh.cn.md`、`docs/tui-model.md`、`docs/tui-model.zh.cn.md`、`TODO.md`、`LOGS.md`
+  摘要：公民权限/高风险授权发送路径移除 ASK-compatible `metadata.askAnswer` fallback，只发送 `metadata.confirmAnswer`、`citizenPermission` 和 continuation；普通 ASK continuation 仍走 `askAnswer`。
+  原因：内核已提供 Confirm metadata、event、read-model，CLI 已有 Confirm owner，继续发送 ASK-compatible fallback 会模糊 Confirm/ASK 分层。
+  验证：待运行 focused tests、格式、类型、全量测试和 whitespace 验证。
+  风险：旧客户端兼容仍由内核保留；本轮只改变 CLI 新发送路径，不改 TUI 视觉。
+
+- 状态：完成
+  执行者：main-codex
+  范围：confirm-send-without-ask-fallback-verification
+  变动文件：同上
+  摘要：完成 Confirm 发送路径移除 ASK fallback 的 focused、格式、类型、全量测试和 whitespace 验证。
+  原因：确认公民权限授权只携带 `confirmAnswer`，普通 ASK 仍保留 `askAnswer`，TUI 视觉和 gateway 透传不回退。
+  验证：`cargo fmt --check`；`cargo test tui::ask::command::tests`（5 passed）；`cargo test ask_citizen_permission_menu_sends_metadata_without_token_message_text`；`cargo test mock_ws_inbound_send_envelope_preserves_route_context_and_ask_metadata`；`cargo check --all-targets`；`cargo test`（220 passed）；`git diff --check`。
+  风险：旧客户端兼容仍由内核保留；CLI 新发送路径已不再使用 ASK-compatible permission fallback。

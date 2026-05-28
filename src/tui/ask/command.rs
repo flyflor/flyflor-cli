@@ -26,6 +26,13 @@ impl From<AskSelection> for AskAnswer {
 }
 
 pub fn ask_message_metadata_many(continuation: Value, answers: &[AskAnswer]) -> Value {
+    if let Some(permission) = citizen_permission_metadata(answers) {
+        return json!({
+            "continuation": continuation,
+            "citizenPermission": permission,
+            "confirmAnswer": confirm_answer_metadata(answers)
+        });
+    }
     let mut ask_answer = json!({
         "answers": answers.iter().map(ask_answer_metadata).collect::<Vec<_>>()
     });
@@ -40,14 +47,10 @@ pub fn ask_message_metadata_many(continuation: Value, answers: &[AskAnswer]) -> 
             }
         }
     }
-    let mut metadata = json!({
+    let metadata = json!({
         "continuation": continuation,
         "askAnswer": ask_answer
     });
-    if let Some(permission) = citizen_permission_metadata(answers) {
-        metadata["citizenPermission"] = permission;
-        metadata["confirmAnswer"] = confirm_answer_metadata(answers);
-    }
     metadata
 }
 
@@ -263,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn citizen_permission_answer_adds_structured_metadata_and_safe_text() {
+    fn citizen_permission_answer_adds_confirm_metadata_and_safe_text() {
         let answers = vec![AskAnswer {
             question_id: Some("permission".to_string()),
             choice_id: "continue-tools".to_string(),
@@ -275,6 +278,7 @@ mod tests {
         let metadata = ask_message_metadata_many(json!({ "snapshotId": "ask-1" }), &answers);
 
         assert_eq!(ask_message_text(&answers), "已提交执行授权策略");
+        assert!(metadata.get("askAnswer").is_none());
         assert_eq!(
             metadata
                 .get("citizenPermission")

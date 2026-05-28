@@ -9433,6 +9433,7 @@ mod tests {
                         .and_then(Value::as_str),
                     Some("continue-tools")
                 );
+                assert!(metadata.get("askAnswer").is_none());
             }
             _ => panic!("expected ask permission send message with metadata"),
         }
