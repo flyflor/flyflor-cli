@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use crate::tui::gateway::platforms::all_platforms;
 
 use super::telegram::TelegramBotAdapter;
+use super::webhook::WebhookAdapter;
 use super::weixin::WeixinIlinkAdapter;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -275,6 +276,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "webhook" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        WebhookAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             registry.register(PlatformEntry {
                 name,
                 label,
@@ -370,6 +382,11 @@ mod tests {
         assert!(
             registry
                 .get("telegram")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("webhook")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(

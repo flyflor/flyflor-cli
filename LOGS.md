@@ -376,3 +376,21 @@
   原因：确认 delta 首次发送占位消息、保存 bot message id、后续 delta/final 编辑同一 channel message，Telegram 可安全声明 edit streaming。
   验证：`cargo fmt --check`；`cargo test mock_ws_edit_stream_sends_placeholder_then_edits_channel_message -- --nocapture`（1 passed）；`cargo test telegram -- --nocapture`（5 passed）；`cargo test gateway -- --nocapture`（34 passed）；`cargo check --all-targets`；`cargo test`（226 passed）；`git diff --check`。
   风险：真实 Telegram sandbox smoke 仍待凭据环境验证。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：webhook-native-channel-adapter
+  变动文件：`src/tui/gateway/channels/webhook.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Webhook native adapter，本地 HTTP POST 入站归一化到 gateway bridge，outbound 通过 `WEBHOOK_PUBLIC_URL` callback 发送结构化 reply payload。
+  原因：继续推进 western/longtail channel adapter 真实闭环，选择可本地验证且不需要第三方账号的 Webhook 作为第二个新增 native channel。
+  验证：已运行 `cargo fmt --check`、`cargo test webhook -- --nocapture`（5 passed）、`cargo test native_runtime_status_only_marks_implemented_adapters -- --nocapture`、`cargo test gateway -- --nocapture`（40 passed）；待运行类型、全量和 whitespace 验证。
+  风险：本轮不启动真实 listener smoke；后续需覆盖 HTTP POST -> `/ws` -> callback 的 live 场景。
+
+- 状态：完成
+  执行者：main-codex
+  范围：webhook-native-channel-adapter-verification
+  变动文件：同上
+  摘要：完成 Webhook native adapter 第一阶段的 focused、gateway、类型、全量测试和 whitespace 验证。
+  原因：确认 Webhook secret/source 校验、context/metadata 入站归一化、outbound callback unavailable/degraded 语义、doctor availability 和 native runtime 状态红线无回归。
+  验证：`cargo fmt --check`；`cargo test webhook -- --nocapture`（5 passed）；`cargo test native_runtime_status_only_marks_implemented_adapters -- --nocapture`（1 passed）；`cargo test gateway -- --nocapture`（40 passed）；`cargo check --all-targets`；`cargo test`（232 passed）；`git diff --check`。
+  风险：真实 listener 到 kernel `/ws` 再到 callback 的 live smoke 仍待后续补齐。

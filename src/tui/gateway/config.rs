@@ -812,6 +812,11 @@ mod tests {
         assert!(
             items
                 .iter()
+                .any(|item| item.name == "webhook" && item.native_runtime)
+        );
+        assert!(
+            items
+                .iter()
                 .any(|item| item.name == "discord" && !item.native_runtime)
         );
     }
@@ -842,6 +847,21 @@ mod tests {
         assert_eq!(item.availability, ChannelAvailability::Available);
         assert!(item.native_runtime);
         assert_eq!(item.present_required_env, vec!["TELEGRAM_BOT_TOKEN"]);
+        assert!(item.missing_required_env.is_empty());
+    }
+
+    #[test]
+    fn webhook_native_channel_is_available_when_secret_is_present() {
+        let config = GatewayConfig::default();
+        let webhook = channel_list(&config)
+            .into_iter()
+            .find(|item| item.name == "webhook")
+            .unwrap();
+        let item = doctor_item_from_list_item_with_env(webhook, |env| env == "WEBHOOK_SECRET");
+
+        assert_eq!(item.availability, ChannelAvailability::Available);
+        assert!(item.native_runtime);
+        assert_eq!(item.present_required_env, vec!["WEBHOOK_SECRET"]);
         assert!(item.missing_required_env.is_empty());
     }
 

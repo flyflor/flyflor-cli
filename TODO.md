@@ -168,3 +168,11 @@
 - [x] Gateway runtime 为 edit-capable channel 增加先发占位消息并保存 bot message id 的 stream route anchor，Telegram 可声明 edit streaming。
 - [ ] 后续补 Telegram 真实 Bot API sandbox smoke，验证 delta -> placeholder send -> editMessageText -> final edit 的真实网络路径。
 - [ ] 继续按 lane 落地 Discord、Slack、Matrix、Email、Webhook 等 western adapters；每个 adapter 仍需覆盖 config doctor、missing credential unavailable、inbound normalization、outbound send、ASK/approval metadata。
+
+## 2026-05-28 Webhook Native Channel Adapter
+
+- [x] 新增 Webhook native adapter，使用本地 HTTP POST listener 接收入站 JSON，并通过现有 `/ws` gateway bridge 送入内核。
+- [x] Webhook 入站验证 `WEBHOOK_SECRET` / Bearer secret，支持 `WEBHOOK_ALLOWED_SOURCES`、context 透传、metadata 透传和 direct/group route normalization。
+- [x] Webhook outbound 使用 `WEBHOOK_PUBLIC_URL` callback 发送结构化 reply payload；未配置 callback 时 send capability 为 degraded，调用返回 explicit unavailable。
+- [x] Gateway registry/doctor 将 Webhook 标记为 native，并新增测试守住 native runtime 仅包含 Telegram、Weixin、Webhook，避免 planned channel 假成功。
+- [ ] 后续补 Webhook 本地 listener 到 kernel `/ws` 的真实 smoke：HTTP POST -> gateway.message.send -> turn.final -> callback。

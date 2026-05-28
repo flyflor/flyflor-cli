@@ -722,7 +722,7 @@ pub const PLATFORMS: &[PlatformMetadata] = &[
             "WEBHOOK_PUBLIC_URL",
             "FLYFLOR_WEBHOOK_SECRET",
         ],
-        status: PlatformRuntimeStatus::Planned,
+        status: PlatformRuntimeStatus::Native,
         capability: cap!(
             inbound_media,
             outbound_media,
@@ -1312,6 +1312,17 @@ mod tests {
         ] {
             assert!(names.contains(&expected), "{expected}");
         }
+    }
+
+    #[test]
+    fn native_runtime_status_only_marks_implemented_adapters() {
+        let native = PLATFORMS
+            .iter()
+            .filter(|platform| platform.native_runtime())
+            .map(|platform| platform.name)
+            .collect::<Vec<_>>();
+
+        assert_eq!(native, vec!["telegram", "weixin", "webhook"]);
     }
 
     #[test]
