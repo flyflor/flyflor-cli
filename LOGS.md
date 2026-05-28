@@ -295,3 +295,21 @@
   原因：确认 `confirm.list` 启动查询和 `confirm.snapshot` Run timeline 恢复不破坏 ASK/Confirm 分层，也不改 TUI 视觉结构。
   验证：`cargo fmt --check`；`cargo test bootstrap_preserves_command_order`；`cargo test bootstrap_order_is_wire_contract`；`cargo test confirm_snapshot_restores_confirm_timeline_row`；`cargo test gateway_message_builder_can_confirm_tools_without_yolo`；`cargo check --all-targets`；`cargo test`（219 passed）；`git diff --check`。
   风险：完整独立 Confirm component UI 与移除 ASK-compatible fallback 仍留后续。
+
+- 状态：进行中
+  执行者：main-codex
+  范围：confirm-component-foundation-client
+  变动文件：`src/tui/confirm/mod.rs`、`src/tui/confirm/parser.rs`、`src/tui/confirm/state.rs`、`src/tui/mod.rs`、`src/main.rs`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：新增 Confirm read-model owner，`confirm.snapshot` 先恢复到 `ConfirmState`，再投影为 Run timeline Confirm row。
+  原因：继续拆开 ASK 与 Confirm；Confirm 是授权/确认 audit，不应继续由 `main.rs` 内联伪造成 ASK-compatible runtime event。
+  验证：已运行 `cargo fmt --check`、`cargo test confirm_snapshot_restores_confirm_timeline_row`、`cargo test snapshot_records_keep_confirm_separate_from_ask`、`cargo test parses_required_event_families`；待运行 `cargo check --all-targets`、`cargo test`、`git diff --check`。
+  风险：本轮只新增 state owner 和 read-model 投影，不改 TUI 视觉；发送路径仍保留 `askAnswer` 兼容字段，后续再移除 fallback。
+
+- 状态：完成
+  执行者：main-codex
+  范围：confirm-component-foundation-client-verification
+  变动文件：同上
+  摘要：完成 Confirm read-model owner 切片的 focused、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 `ConfirmState` 恢复路径、Run timeline 投影和 ASK continuation 隔离无回归。
+  验证：`cargo fmt --check`；`cargo test confirm_snapshot_restores_confirm_timeline_row`；`cargo test snapshot_records_keep_confirm_separate_from_ask`；`cargo test parses_required_event_families`；`cargo check --all-targets`；`cargo test`（220 passed）；`git diff --check`。
+  风险：发送路径仍保留 `askAnswer` 兼容字段，后续需在完整迁移后移除 fallback。

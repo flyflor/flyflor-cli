@@ -150,3 +150,10 @@
 - [x] Subagent tree 将 `confirm.answered` 用作 pending needs-user marker 的闭合信号。
 - [x] 启动 bootstrap 请求 `confirm.list`，并把 `confirm.snapshot` 恢复为 Run timeline Confirm row。
 - [ ] 后续接入完整独立 Confirm component UI 后，移除 ASK-compatible permission fallback。
+
+## 2026-05-28 Confirm Component Foundation
+
+- [x] 新增 `src/tui/confirm/` owner，集中解析 `confirm.snapshot` read-model 并持有 `ConfirmState`。
+- [x] `confirm.snapshot` 先进入 Confirm read-model state，再投影为 `confirm.answered` timeline row，不再由 `main.rs` 手写 ASK-compatible pseudo events。
+- [x] targeted tests 覆盖 Confirm snapshot 恢复不会生成 ASK continuation row，也不会携带 `askAnswer` 结晶入口。
+- [ ] 后续把公民权限 ASK-compatible metadata fallback 从发送路径移除，前提是 kernel/CLI/历史兼容面全部确认可迁移。

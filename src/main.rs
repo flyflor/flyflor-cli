@@ -59,6 +59,10 @@ use tui::ask::{
 #[cfg(test)]
 use tui::clipboard::{OSC52_MAX_BYTES, osc52_sequence};
 use tui::clipboard::{read_clipboard_text, write_text_to_clipboard};
+use tui::confirm::{
+    parser::{records_from_snapshot_payload, runtime_event_from_record},
+    state::ConfirmState,
+};
 use tui::execution::{
     state::ExecutionRowStatus, view::execution_context_rows as build_execution_context_rows,
 };
@@ -1272,6 +1276,7 @@ struct App {
     tool_approval_next_turn: bool,
     task_todos: Option<Vec<TodoItem>>,
     run_timeline: RunTimeline,
+    confirm_state: ConfirmState,
     requested_execution_detail_job_ids: HashSet<String>,
     model_context_window_tokens: Option<usize>,
     model_name: Option<String>,
@@ -1497,6 +1502,7 @@ impl App {
                 None
             },
             run_timeline: RunTimeline::new(),
+            confirm_state: ConfirmState::new(),
             requested_execution_detail_job_ids: HashSet::new(),
             model_context_window_tokens: demo_mode.then_some(12000),
             model_name: demo_mode.then(|| "demo-model".to_string()),
@@ -1599,16 +1605,17 @@ impl App {
                     self.right_source.blackboard_status = format!("runtime event · {}", item.title);
                 }
             }
-            SocketEvent::RuntimeEvents(events) => {
+            SocketEvent::ConfirmSnapshot(records) => {
+                let events = records
+                    .iter()
+                    .map(runtime_event_from_record)
+                    .collect::<Vec<_>>();
+                self.confirm_state.apply_records(records);
                 let mut latest_title = None;
                 for event in events {
                     let item = self.run_timeline.apply_event_publish(&event);
                     self.attach_execution_row_to_active_turn();
-                    let status = self.apply_runtime_event_side_effects(&event);
-                    if let Some(job_id) = job_id_from_event_payload(&event) {
-                        self.request_execution_job_detail(job_id);
-                    }
-                    latest_title = status.or_else(|| item.map(|item| item.title));
+                    latest_title = item.map(|item| item.title);
                 }
                 if let Some(title) = latest_title {
                     self.right_source.blackboard_status = format!("runtime event · {title}");
@@ -5531,7 +5538,7 @@ enum SocketEvent {
     ForkMemoryLoaded(ForkMemorySnapshot),
     TaskListLoaded(Vec<TodoItem>),
     RuntimeEvent(Value),
-    RuntimeEvents(Vec<Value>),
+    ConfirmSnapshot(Vec<tui::confirm::state::ConfirmRecord>),
     ExecutionJobSnapshot(Value),
     StatusLoaded(StatusSnapshot),
     ContextSnapshotLoaded(Value),
@@ -6120,63 +6127,8 @@ fn parse_confirm_snapshot(raw: &str) -> Result<Option<SocketEvent>, String> {
     let Some(payload) = envelope.payload else {
         return Ok(None);
     };
-    let data = payload.get("data").unwrap_or(&payload);
-    let confirms = match data {
-        Value::Array(items) => items.clone(),
-        Value::Object(_) => vec![data.clone()],
-        _ => Vec::new(),
-    };
-    let events = confirms
-        .iter()
-        .filter_map(confirm_snapshot_runtime_event)
-        .collect::<Vec<_>>();
-    Ok((!events.is_empty()).then_some(SocketEvent::RuntimeEvents(events)))
-}
-
-fn confirm_snapshot_runtime_event(confirm: &Value) -> Option<Value> {
-    let answer = confirm.get("confirmAnswer").unwrap_or(confirm);
-    let summary = confirm_answer_summary(answer)
-        .or_else(|| value_string(confirm, "sourceSurface"))
-        .or_else(|| value_string(confirm, "sourceKey"))
-        .or_else(|| value_string(confirm, "askEventId"))
-        .unwrap_or_else(|| "confirm read-model restored".to_string());
-    let event_id = confirm
-        .get("event")
-        .and_then(|event| value_string(event, "id"))
-        .or_else(|| value_string(confirm, "snapshotId"))
-        .or_else(|| value_string(confirm, "askEventId"))
-        .unwrap_or_else(|| "confirm-snapshot".to_string());
-    Some(json!({
-        "id": format!("confirm-snapshot-{event_id}"),
-        "type": "confirm.answered",
-        "payload": {
-            "summary": summary,
-            "askEventId": value_string(confirm, "askEventId"),
-            "snapshotId": value_string(confirm, "snapshotId"),
-            "sourceKey": value_string(confirm, "sourceKey"),
-            "sourceSurface": value_string(confirm, "sourceSurface"),
-            "confirmAnswer": answer
-        }
-    }))
-}
-
-fn confirm_answer_summary(answer: &Value) -> Option<String> {
-    if let Some(summary) = value_string(answer, "summary")
-        .or_else(|| value_string(answer, "answerText"))
-        .or_else(|| value_string(answer, "text"))
-        .or_else(|| value_string(answer, "choiceId"))
-    {
-        return Some(summary);
-    }
-    let choices = answer.get("choiceIds")?.as_array()?;
-    let summary = choices
-        .iter()
-        .filter_map(Value::as_str)
-        .filter(|choice| !choice.trim().is_empty())
-        .take(3)
-        .collect::<Vec<_>>()
-        .join(", ");
-    (!summary.is_empty()).then_some(summary)
+    let records = records_from_snapshot_payload(&payload);
+    Ok((!records.is_empty()).then_some(SocketEvent::ConfirmSnapshot(records)))
 }
 
 fn parse_subscription_event(raw: &str) -> Result<Option<SocketEvent>, String> {
@@ -8655,6 +8607,11 @@ mod tests {
         let mut app = App::new();
         app.apply_socket_event(event);
 
+        assert_eq!(app.confirm_state.records.len(), 1);
+        assert_eq!(
+            app.confirm_state.records[0].source_surface.as_deref(),
+            Some("citizen-permission")
+        );
         let item = app
             .run_timeline
             .items

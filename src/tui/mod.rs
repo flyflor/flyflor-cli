@@ -2,6 +2,7 @@ use std::env;
 
 pub mod ask;
 pub mod clipboard;
+pub mod confirm;
 pub mod context;
 pub mod execution;
 pub mod fork;
