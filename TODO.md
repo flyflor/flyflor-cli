@@ -356,3 +356,12 @@
 - [x] Gateway registry/doctor 将 Google Chat 标记为 native，并收紧 capability 只声明当前真实可用的 Pub/Sub payload / REST text thread reply。
 - [x] 新增 Google Chat 本地 mock HTTP smoke：message payload -> `gateway.message.send` -> `turn.final` -> `/v1/spaces/{space}/messages` POST。
 - [ ] 后续补真实 Pub/Sub streaming pull、service-account JWT/OAuth token mint、CARD_CLICKED routing、cards/approval buttons、typing/edit/stream update、file upload/download、per-user OAuth 和 attachment SSRF guard；这些能力当前仍保持 explicit unavailable 或未声明。
+
+## 2026-05-28 MSGraph Webhook Native Channel Adapter
+
+- [x] 新增 Microsoft Graph webhook native adapter，支持 change notification payload JSON 入站和显式 reply webhook 出站闭环。
+- [x] MSGraph 入站 normalization 覆盖 `value[]` notifications、clientState timing-safe 校验、resource allowlist、dedup receipt、subscription route、source message id 和 channel metadata。
+- [x] MSGraph outbound 覆盖 `MSGRAPH_REPLY_WEBHOOK_URL` POST、route/metadata audit payload、REST error 分类和 explicit media unavailable。
+- [x] Gateway registry/doctor 将 MSGraph Webhook 标记为 native，并收紧 capability 只声明当前真实可用的 notification payload / reply webhook delivery。
+- [x] 新增 MSGraph 本地 mock HTTP smoke：notification payload -> `gateway.message.send` -> `turn.final` -> reply webhook POST。
+- [ ] 后续补真实 HTTP listener、Graph validationToken handshake、source CIDR allowlist、subscription lifecycle、Graph resource fetch/detail hydration、Teams meeting pipeline runtime、outbound Graph API delivery 和 richer audit；这些能力当前仍保持 explicit unavailable 或未声明。

@@ -9,6 +9,7 @@ pub mod irc;
 pub mod line;
 pub mod matrix;
 pub mod mattermost;
+pub mod msgraph_webhook;
 pub mod ntfy;
 pub mod openwebui;
 pub mod platform;

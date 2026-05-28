@@ -727,3 +727,12 @@
   原因：确认 Google Chat 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 Pub/Sub-style message payload 到 `/ws` 再到 Chat REST `spaces.messages.create` thread reply 的进程级闭环。
   验证：`cargo test google_chat -- --nocapture`（5 passed）；`npm run smoke:gateway:google-chat`（ok: true）；`cargo test gateway -- --nocapture`（148 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（340 passed）；`git diff --check`。
   风险：本轮只实现 env Pub/Sub message payload、Bearer token REST text send 和 thread reply anchor；真实 Pub/Sub streaming pull、service-account JWT/OAuth token mint、CARD_CLICKED routing、cards/approval buttons、typing/edit/stream update、file upload/download、per-user OAuth 和 attachment SSRF guard 后续继续补。
+
+- 状态：完成
+  执行者：main-codex
+  范围：msgraph-webhook-native-channel-adapter-verification
+  变动文件：`src/tui/gateway/channels/msgraph_webhook.rs`、`src/tui/gateway/channels/mod.rs`、`src/tui/gateway/channels/platform.rs`、`src/tui/gateway/config.rs`、`src/tui/gateway/platforms.rs`、`scripts/msgraph-webhook-gateway-smoke.ts`、`package.json`、`TODO.md`、`LOGS.md`、`session-table.md`
+  摘要：完成 Microsoft Graph webhook native adapter、mock HTTP live smoke、gateway/native planned 红线回归、格式、类型、全量测试和 whitespace 验证。
+  原因：确认 MSGraph Webhook 已作为真实 native adapter 接入 registry/doctor/runtime，并证明 change notification payload 到 `/ws` 再到显式 reply webhook POST 的进程级闭环。
+  验证：`cargo test msgraph -- --nocapture`（4 passed）；`npm run smoke:gateway:msgraph-webhook`（ok: true）；`cargo test gateway -- --nocapture`（152 passed）；`cargo fmt --check`；`cargo check --all-targets`；`cargo test`（344 passed）；`git diff --check`。
+  风险：本轮只实现 env change notification payload、clientState/resource/dedup 和 reply webhook delivery；真实 HTTP listener、Graph validationToken handshake、source CIDR allowlist、subscription lifecycle、Graph detail hydration、Teams meeting pipeline runtime 和 outbound Graph API delivery 后续继续补。

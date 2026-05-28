@@ -15,6 +15,7 @@ use super::irc::IrcAdapter;
 use super::line::LineAdapter;
 use super::matrix::MatrixAdapter;
 use super::mattermost::MattermostAdapter;
+use super::msgraph_webhook::MsGraphWebhookAdapter;
 use super::ntfy::NtfyAdapter;
 use super::openwebui::OpenWebuiAdapter;
 use super::qqbot::QqBotAdapter;
@@ -362,6 +363,17 @@ impl PlatformRegistry {
                 });
                 continue;
             }
+            if name == "msgraph-webhook" {
+                registry.register(PlatformEntry {
+                    name,
+                    label,
+                    factory: Box::new(|| {
+                        MsGraphWebhookAdapter::from_env().map(|adapter| Arc::new(adapter) as _)
+                    }),
+                    native_runtime: true,
+                });
+                continue;
+            }
             if name == "dingtalk" {
                 registry.register(PlatformEntry {
                     name,
@@ -662,6 +674,11 @@ mod tests {
         assert!(
             registry
                 .get("google-chat")
+                .is_some_and(|entry| entry.native_runtime)
+        );
+        assert!(
+            registry
+                .get("msgraph-webhook")
                 .is_some_and(|entry| entry.native_runtime)
         );
         assert!(
